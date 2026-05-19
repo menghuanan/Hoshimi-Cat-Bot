@@ -59,6 +59,16 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation:3.0.3") {
         exclude(group = "org.slf4j")
     }
+    // WebUI foundation 只引入最小 Ktor 服务端依赖，负责本地管理页启动、静态资源和占位 API。
+    implementation("io.ktor:ktor-server-core:3.0.3") {
+        exclude(group = "org.slf4j")
+    }
+    implementation("io.ktor:ktor-server-cio:3.0.3") {
+        exclude(group = "org.slf4j")
+    }
+    implementation("io.ktor:ktor-server-content-negotiation:3.0.3") {
+        exclude(group = "org.slf4j")
+    }
 
     // JSON 序列化
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")

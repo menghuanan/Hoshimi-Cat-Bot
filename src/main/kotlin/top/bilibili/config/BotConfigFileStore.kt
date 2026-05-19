@@ -1,6 +1,7 @@
 package top.bilibili.config
 
 import com.charleskorn.kaml.Yaml
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -81,6 +82,7 @@ private data class BotConfigDecodeResult(
 private data class BotConfigCompatDocument(
     val platform: PlatformCompatDocument = PlatformCompatDocument(),
     val napcat: NapCatConfig = NapCatConfig(),
+    val webui: top.bilibili.webui.config.WebUiConfig = top.bilibili.webui.config.WebUiConfig(),
     val targets: MutableList<TargetConfig> = mutableListOf(),
     val admins: MutableList<GroupAdminConfig> = mutableListOf(),
     @SerialName("first_run_flag")
@@ -93,6 +95,7 @@ private data class BotConfigCompatDocument(
         val runtimeConfig = BotConfig(
             platform = platform.toRuntimeConfig(),
             napcat = napcat,
+            webui = webui,
             targets = targets,
             admins = admins,
             firstRunFlag = firstRunFlag,
@@ -137,9 +140,12 @@ private data class PlatformCompatDocument(
 /**
  * 写回磁盘时使用的标准配置结构。
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 private data class CanonicalBotConfigDocument(
     val platform: PlatformConfig = PlatformConfig(),
+    @kotlinx.serialization.EncodeDefault
+    val webui: top.bilibili.webui.config.WebUiConfig = top.bilibili.webui.config.WebUiConfig(),
     val targets: MutableList<TargetConfig> = mutableListOf(),
     val admins: MutableList<GroupAdminConfig> = mutableListOf(),
     @SerialName("first_run_flag")
@@ -158,6 +164,7 @@ private data class CanonicalBotConfigDocument(
             }
             return CanonicalBotConfigDocument(
                 platform = platformConfig,
+                webui = normalized.webui,
                 targets = normalized.targets,
                 admins = normalized.admins,
                 firstRunFlag = normalized.firstRunFlag,

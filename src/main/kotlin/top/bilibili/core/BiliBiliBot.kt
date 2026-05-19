@@ -43,6 +43,7 @@ import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.ImageCache
 import top.bilibili.utils.actionNotify
 import top.bilibili.utils.closeUtilsClient
+import top.bilibili.webui.server.WebUiManager
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
@@ -87,6 +88,8 @@ object BiliBiliBot : CoroutineScope {
     var cookie = BiliCookie()
 
     private var connectorManager: PlatformConnectorManager? = null
+    // Bot 启动层只保留 WebUI 生命周期接线权，不在 core 内承载任何路由或页面逻辑。
+    private var webUiManager: WebUiManager? = null
 
     lateinit var config: top.bilibili.config.BotConfig
         private set
@@ -235,6 +238,16 @@ object BiliBiliBot : CoroutineScope {
                 isRunning.set(false)
                 lifecycleState.set(BotLifecycleState.STOPPED)
                 return
+            }
+
+            if (config.webui.enabled) {
+                logger.info("正在启动 WebUI...")
+                // WebUI 仅作为可选管理面启动，具体服务器与路由细节保持在 webui 包内部。
+                webUiManager = WebUiManager(config.webui.toSettings()).also { manager ->
+                    manager.start()
+                }
+            } else {
+                logger.info("WebUI 未启用，跳过启动")
             }
 
             logger.info("正在初始化平台适配器...")
@@ -566,6 +579,20 @@ object BiliBiliBot : CoroutineScope {
 
         resourceSupervisor.register(
             LambdaResourcePartition(
+                id = "webui-manager",
+                owns = listOf("WebUiManager"),
+                strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                shutdownPhase = ShutdownPhase.INGRESS,
+                stopAction = {
+                    // WebUI 属于本地管理入口，停机时需要先停止接收新请求，再继续释放底层依赖。
+                    webUiManager?.stop()
+                    webUiManager = null
+                },
+            ),
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
                 id = "event-collector",
                 owns = listOf("eventCollectorJob"),
                 strictness = ResourceStrictness.STRICT,
@@ -605,6 +632,14 @@ object BiliBiliBot : CoroutineScope {
             startupTaskBootstrapJob = null
         }.onFailure {
             logger.warn("兜底停止启动延迟协程失败: ${it.message}", it)
+        }
+
+        runCatching {
+            // 兜底停机同样先关闭本地管理入口，避免停机期间继续接入新的 HTTP 请求。
+            webUiManager?.stop()
+            webUiManager = null
+        }.onFailure {
+            logger.warn("兜底停止 WebUI 失败: ${it.message}", it)
         }
 
         runCatching {

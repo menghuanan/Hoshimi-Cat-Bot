@@ -1,0 +1,80 @@
+:root {
+    color-scheme: light;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(160deg, #f5f7fb 0%, #e9eefb 100%);
+    color: #182033;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+}
+
+.shell {
+    width: min(100%, 720px);
+}
+
+.card {
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(24, 32, 51, 0.08);
+    border-radius: 20px;
+    padding: 32px;
+    box-shadow: 0 18px 60px rgba(42, 63, 110, 0.12);
+}
+
+.eyebrow {
+    margin: 0 0 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #4b5d90;
+}
+
+h1 {
+    margin: 0 0 16px;
+    font-size: clamp(2rem, 6vw, 3rem);
+    line-height: 1.05;
+}
+
+.lead {
+    margin: 0 0 24px;
+    font-size: 1rem;
+    line-height: 1.7;
+    color: #3f4b67;
+}
+
+.status-list {
+    margin: 0;
+    display: grid;
+    gap: 14px;
+}
+
+.status-list div {
+    padding: 16px 18px;
+    border-radius: 14px;
+    background: #f7f9ff;
+}
+
+dt {
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+dd {
+    margin: 0;
+    color: #4f5e80;
+}
+
+@media (max-width: 640px) {
+    .card {
+        padding: 24px;
+    }
+}

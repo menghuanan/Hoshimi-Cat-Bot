@@ -49,10 +49,12 @@ class BotConfigFileStoreTest {
         assertEquals("host.docker.internal", config.selectedOneBot11Config().host)
         assertEquals(6199, config.selectedOneBot11Config().port)
         assertEquals(".NK@FFlU4@,WBM39", config.selectedOneBot11Config().token)
+        assertFalse(config.webui.enabled)
         assertEquals(1, config.targets.size)
         assertEquals(1, config.admins.size)
         assertEquals(1, config.firstRunFlag)
         assertTrue(rewritten.contains("platform:"), rewritten)
+        assertTrue(rewritten.contains("webui:"), rewritten)
         assertTrue(rewritten.contains("onebot11:"), rewritten)
         assertFalse(rewritten.contains("\nnapcat:"), rewritten)
     }
@@ -66,7 +68,10 @@ class BotConfigFileStoreTest {
         val saved = Files.readString(configDir.toPath().resolve("bot.yml"), StandardCharsets.UTF_8)
 
         assertEquals("onebot11", config.platform.adapter)
+        assertFalse(config.webui.enabled)
         assertTrue(saved.contains("platform:"), saved)
+        assertTrue(saved.contains("webui:"), saved)
+        assertTrue(saved.contains("enabled: false"), saved)
         assertTrue(saved.contains("adapter:"), saved)
         assertFalse(saved.contains("\nnapcat:"), saved)
     }
@@ -95,6 +100,7 @@ class BotConfigFileStoreTest {
             saved,
         )
         assertTrue(saved.contains("onebot11:"), saved)
+        assertTrue(saved.contains("webui:"), saved)
         assertTrue(saved.contains("token: \"napcat-token\""), saved)
         assertFalse(saved.contains("\nnapcat:"), saved)
     }

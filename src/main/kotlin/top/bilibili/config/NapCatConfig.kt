@@ -3,9 +3,11 @@ package top.bilibili.config
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformType
 import top.bilibili.utils.normalizeContactSubject
+import top.bilibili.webui.config.WebUiConfig
 
 /**
  * OneBot11/NapCat 连接参数配置。
@@ -143,6 +145,7 @@ data class QQOfficialConfig(
 /**
  * 当前选中平台的统一配置包装。
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class PlatformConfig(
     val type: PlatformType = PlatformType.ONEBOT11,
@@ -157,11 +160,15 @@ data class PlatformConfig(
 /**
  * Bot 运行期使用的根配置对象。
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class BotConfig(
     val platform: PlatformConfig = PlatformConfig(),
     // Legacy OneBot11 config. Retained for backward-compatible config loading.
     val napcat: NapCatConfig = NapCatConfig(),
+    // WebUI 运行时配置只描述本地管理面的启动行为，不承载业务配置读写职责。
+    @EncodeDefault
+    val webui: WebUiConfig = WebUiConfig(),
     val targets: MutableList<TargetConfig> = mutableListOf(),
     val admins: MutableList<GroupAdminConfig> = mutableListOf(),
     @SerialName("first_run_flag")
@@ -207,7 +214,12 @@ data class BotConfig(
      */
     fun normalizedBotConfig(): BotConfig {
         val normalizedPlatform = normalizedPlatformConfig()
-        return if (normalizedPlatform == platform) this else copy(platform = normalizedPlatform)
+        val normalizedWebUi = webui.normalized()
+        return if (normalizedPlatform == platform && normalizedWebUi == webui) {
+            this
+        } else {
+            copy(platform = normalizedPlatform, webui = normalizedWebUi)
+        }
     }
 
     /**
