@@ -1,3 +1,6 @@
+import org.gradle.internal.os.OperatingSystem
+import java.io.ByteArrayOutputStream
+
 plugins {
     val kotlinVersion = "2.0.0"
     kotlin("jvm") version kotlinVersion
@@ -123,6 +126,95 @@ tasks.shadowJar {
 }
 
 val generatedDistributionScriptsDir = layout.buildDirectory.dir("generated/distribution-scripts")
+val detectedRuntimeModulesFile = layout.buildDirectory.file("generated/runtime-modules/jlink-modules.txt")
+val linkedRuntimeImageDir = layout.buildDirectory.dir("release-platform/runtime-image")
+
+// 统一解析当前构建机 JDK 工具路径，确保 jdeps/jlink 直接使用本次构建的 JDK 版本。
+val hostOs = OperatingSystem.current()
+val hostExecutableSuffix = if (hostOs.isWindows) ".exe" else ""
+val configuredJavaHome = file(System.getenv("JAVA_HOME") ?: System.getProperty("java.home"))
+val jdepsExecutable = configuredJavaHome.resolve("bin/jdeps$hostExecutableSuffix")
+val jlinkExecutable = configuredJavaHome.resolve("bin/jlink$hostExecutableSuffix")
+
+// 基于主程序 class 文件与 fat jar 依赖图自动探测最小模块集合，并补齐 jdeps 无法静态识别的 TLS 模块。
+val detectRuntimeModules = tasks.register("detectRuntimeModules") {
+    dependsOn(tasks.shadowJar, tasks.classes)
+    outputs.file(detectedRuntimeModulesFile)
+
+    doLast {
+        val shadowJarFile = tasks.shadowJar.get().archiveFile.get().asFile
+        val mainClassesDir = layout.buildDirectory.dir("classes/kotlin/main").get().asFile
+        val outputFile = detectedRuntimeModulesFile.get().asFile
+        outputFile.parentFile.mkdirs()
+
+        require(jdepsExecutable.isFile) {
+            "jdeps executable not found: ${jdepsExecutable.absolutePath}. Please build with a full JDK 17."
+        }
+
+        val jdepsOutput = ByteArrayOutputStream()
+        exec {
+            executable = jdepsExecutable.absolutePath
+            args(
+                "--multi-release", "17",
+                "--ignore-missing-deps",
+                "--print-module-deps",
+                "--class-path", shadowJarFile.absolutePath,
+                mainClassesDir.absolutePath
+            )
+            standardOutput = jdepsOutput
+        }
+
+        val detectedModules = jdepsOutput.toString(Charsets.UTF_8.name())
+            .trim()
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        // HTTPS/TLS 在运行期依赖 jdk.crypto.ec，jdeps 对该类动态使用场景通常无法完整覆盖。
+        val finalModules = (detectedModules + listOf("jdk.crypto.ec"))
+            .distinct()
+            .sorted()
+            .joinToString(",")
+
+        outputFile.writeText(finalModules + System.lineSeparator(), Charsets.UTF_8)
+        logger.lifecycle("Detected runtime modules for jlink: $finalModules")
+    }
+}
+
+// 使用 jlink 构建当前平台精简运行时，供裸机发行包内置使用，避免用户额外安装 Java。
+val createLinkedRuntimeImage = tasks.register("createLinkedRuntimeImage") {
+    dependsOn(detectRuntimeModules)
+    outputs.dir(linkedRuntimeImageDir)
+
+    doLast {
+        val modules = detectedRuntimeModulesFile.get().asFile.readText(Charsets.UTF_8).trim()
+        val runtimeOutputDir = linkedRuntimeImageDir.get().asFile
+        runtimeOutputDir.mkdirs()
+
+        require(jlinkExecutable.isFile) {
+            "jlink executable not found: ${jlinkExecutable.absolutePath}. Please build with a full JDK 17."
+        }
+
+        val jmodsDir = configuredJavaHome.resolve("jmods")
+        require(jmodsDir.isDirectory) {
+            "JDK jmods directory not found: ${jmodsDir.absolutePath}. Please set JAVA_HOME to a full JDK 17."
+        }
+
+        delete(runtimeOutputDir)
+        exec {
+            executable = jlinkExecutable.absolutePath
+            args(
+                "--module-path", jmodsDir.absolutePath,
+                "--add-modules", modules,
+                "--strip-debug",
+                "--no-header-files",
+                "--no-man-pages",
+                "--compress=2",
+                "--output", runtimeOutputDir.absolutePath
+            )
+        }
+    }
+}
 
 val createDistributionStartScripts = tasks.register("createDistributionStartScripts") {
     val outputDir = generatedDistributionScriptsDir.get().asFile
@@ -149,8 +241,17 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
             set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
             set JAVA_OPTS=%JAVA_OPTS% -Dskiko.hardwareAcceleration=false
+            set "JAVA_BIN=runtime\bin\java.exe"
 
-            java %JAVA_OPTS% -jar lib\dynamic-bot-${version}.jar
+            rem 优先使用发行包内置运行时，确保用户无需额外安装 Java。
+            if not exist "%JAVA_BIN%" (
+                echo ERROR: bundled runtime not found at "%JAVA_BIN%".
+                echo Please re-download the release package or rebuild with jlink enabled.
+                pause
+                exit /b 1
+            )
+
+            "%JAVA_BIN%" %JAVA_OPTS% -jar lib\dynamic-bot-${version}.jar
             pause
             """.trimIndent()
         )
@@ -251,8 +352,16 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             JAVA_OPTS="${'$'}JAVA_OPTS -Duser.timezone=Asia/Shanghai"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.renderApi=SOFTWARE"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.hardwareAcceleration=false"
+            JAVA_BIN="./runtime/bin/java"
 
-            java ${'$'}JAVA_OPTS -jar lib/dynamic-bot-${version}.jar
+            # 优先使用发行包内置运行时，确保用户无需额外安装 Java。
+            if [ ! -x "${'$'}JAVA_BIN" ]; then
+                echo "ERROR: bundled runtime not found at ${'$'}JAVA_BIN."
+                echo "Please re-download the release package or rebuild with jlink enabled." >&2
+                exit 1
+            fi
+
+            "${'$'}JAVA_BIN" ${'$'}JAVA_OPTS -jar lib/dynamic-bot-${version}.jar
             """.trimIndent()
         )
 
@@ -264,7 +373,7 @@ val sharedReleaseContentsDir = layout.buildDirectory.dir("release-platform/share
 
 // 平台发行包共享同一份 fat jar 与资源，避免 Windows/Linux 打包逻辑重复维护公共 payload。
 val stageSharedReleaseContents = tasks.register<Sync>("stageSharedReleaseContents") {
-    dependsOn(tasks.shadowJar)
+    dependsOn(tasks.shadowJar, createLinkedRuntimeImage)
     into(sharedReleaseContentsDir)
 
     from(tasks.shadowJar) {
@@ -274,6 +383,10 @@ val stageSharedReleaseContents = tasks.register<Sync>("stageSharedReleaseContent
         into("resources")
         exclude("logback")
     }
+    // 将 jlink 生成的精简运行时写入 runtime 目录，启动脚本仅依赖此路径，不再依赖系统 Java。
+    from(createLinkedRuntimeImage) {
+        into("runtime")
+    }
 }
 
 // Windows 发布资产只暴露 Windows 启动入口，避免用户在发行包中误用 Linux 或 Gradle 默认脚本。
@@ -281,6 +394,7 @@ val windowsReleaseDistZip = tasks.register<Zip>("windowsReleaseDistZip") {
     group = "distribution"
     description = "Builds the Windows x64 release archive with the packaged start.bat entrypoint."
     dependsOn(stageSharedReleaseContents, createDistributionStartScripts)
+    onlyIf { hostOs.isWindows }
 
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
     archiveFileName.set("dynamic-bot-windows-x64-v${project.version}.zip")
@@ -297,6 +411,7 @@ val linuxReleaseDistTar = tasks.register<Tar>("linuxReleaseDistTar") {
     group = "distribution"
     description = "Builds the Linux x64 release archive with the packaged start.sh entrypoint."
     dependsOn(stageSharedReleaseContents, createDistributionStartScripts)
+    onlyIf { hostOs.isLinux }
 
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
     archiveFileName.set("dynamic-bot-linux-x64-v${project.version}.tar.gz")
