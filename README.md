@@ -126,7 +126,7 @@ platform:
 1. 在项目主页点击Releases标签。
 2. Windows x64 下载 `dynamic-bot-windows-x64-v<版本>.zip`。
 3. Linux x64 下载 `dynamic-bot-linux-x64-v<版本>.tar.gz`。
-4. 解压后通过包内启动脚本运行。
+4. 解压后直接通过包内启动脚本运行，发行包已内置精简 runtime，无需额外安装 JDK。
 
 #### 方法 二：本地自行编译
 > **在本地编译之前需要先安装并配置好 JDK 17 及以上版本。**
@@ -149,7 +149,7 @@ chmod +x gradlew
 
 #### 方式一：使用发行包启动脚本
 
-发行包启动脚本会补齐 JVM、编码、时区与软件渲染参数。
+发行包启动脚本会优先使用包内内置 runtime，并补齐 JVM、编码、时区与软件渲染参数。
 
 Windows 解压并启动：
 ```powershell
@@ -166,7 +166,7 @@ chmod +x bin/start.sh
 ./bin/start.sh
 ```
 
-Linux 启动脚本会优先复用已经包含 `libjemalloc.so.2` 的 `LD_PRELOAD`；如果没有，则从常见系统路径和 `ldconfig -p` 中查找 jemalloc。若仍未找到且当前是交互式终端，脚本会询问是否通过系统官方包管理器安装；非交互场景会直接提示手动安装并退出。默认 `MALLOC_CONF` 与 Docker 镜像保持一致，如需覆盖请在启动前显式设置环境变量。
+Linux 启动脚本会优先复用已经包含 `libjemalloc.so.2` 的 `LD_PRELOAD`；如果没有，则从常见系统路径和 `ldconfig -p` 中查找 jemalloc。若仍未找到且当前是交互式终端，脚本会询问是否通过系统官方包管理器安装；非交互场景会直接提示手动安装并退出。默认 `MALLOC_CONF` 与 Docker 镜像保持一致，如需覆盖请在启动前显式设置环境变量。发行包本身已内置精简 runtime，不需要再单独下载 JDK。
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
 

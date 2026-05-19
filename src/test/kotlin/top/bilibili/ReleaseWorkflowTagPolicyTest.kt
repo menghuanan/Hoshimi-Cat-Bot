@@ -30,12 +30,13 @@ class ReleaseWorkflowTagPolicyTest {
             text.contains("type=raw,value=\${{ env.MAJOR_MINOR_TAG }}"),
             "workflow should not publish a major-minor Docker tag alias",
         )
-        // 发布构建必须输出详细 Gradle 日志，避免在 test 阶段静默失败且缺少定位信息。
+        // 发布构建现在分成 verify、Windows package、Linux package 和 release 聚合四段，避免单点平台打包失败。
         assertTrue(
             text.contains("name: Compile with Gradle") &&
                 text.contains("name: Test with Gradle") &&
-                text.contains("name: Package with Gradle"),
-            "workflow should split release build into compile/test/package stages for clearer diagnostics",
+                text.contains("name: Package Windows Release") &&
+                text.contains("name: Package Linux Release"),
+            "workflow should split release build into platform-specific packaging stages for clearer diagnostics",
         )
         assertTrue(
             text.contains("--stacktrace") && text.contains("--info") && text.contains("--warning-mode all"),
