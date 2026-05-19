@@ -4,6 +4,7 @@ import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.encodeToString
 import top.bilibili.service.TemplateRuntimeCoordinator
 import top.bilibili.service.TemplateSelectionService
+import top.bilibili.service.TemplateService
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -79,6 +80,36 @@ class BiliConfigManagerNamespaceMigrationTest {
         assertTrue(BiliData.atAll.containsKey(migratedSubject))
         assertEquals(setOf(migratedSubject, customSubject), BiliData.group["ops"]?.contacts?.toSet())
         assertEquals(setOf(migratedSubject, customSubject), BiliData.bangumi[404L]?.contacts?.toSet())
+    }
+
+    /**
+     * 旧订阅文件只保留 contacts 时，迁移应根据现有分组关系重建 groupRef 绑定。
+     * 这样升级后的模板和配置查询才能继续命中原来的作用域，而不是要求用户手动重绑。
+     */
+    @Test
+    fun `migrate should restore legacy groupRef bindings from expanded contacts`() {
+        val groupSubject = "onebot11:group:10001"
+        val directSubject = "onebot11:private:20001"
+        val uid = 123456L
+
+        BiliData.dataVersion = 1
+        BiliData.dynamic[uid] = SubData(
+            name = "测试UP",
+            contacts = mutableSetOf(groupSubject, directSubject),
+        )
+        BiliData.group["ops"] = Group(
+            name = "ops",
+            creator = 1L,
+            contacts = mutableSetOf(groupSubject),
+        )
+
+        val changed = migrateViaReflection()
+        val result = TemplateService.addTemplate("d", "OneMsg", groupSubject, uid, "ops")
+
+        assertTrue(changed, "旧 contacts 迁移应重建来源引用")
+        assertEquals(setOf("groupRef:ops", "direct:$directSubject"), BiliData.dynamic[uid]?.sourceRefs?.toSet())
+        assertTrue(result.contains("成功"))
+        assertEquals(listOf("OneMsg"), BiliData.dynamicTemplatePolicyByScope["groupRef:ops"]?.get(uid)?.templates?.toList())
     }
 
     @Test

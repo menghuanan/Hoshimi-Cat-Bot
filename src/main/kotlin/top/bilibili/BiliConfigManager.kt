@@ -153,32 +153,13 @@ object BiliConfigManager {
     private fun migrateDataIfNeeded(data: BiliData): Boolean {
         var changed = false
 
-        if (data.dataVersion < 2) {
-            data.dynamic.values.forEach { sub ->
-                if (sub.sourceRefs.isEmpty() && sub.contacts.isNotEmpty()) {
-                    sub.contacts.forEach { contact ->
-                        // 补齐 direct 引用，是为了让旧订阅数据接入新的来源追踪模型。
-                        sub.sourceRefs.add("direct:$contact")
-                    }
-                    changed = true
-                }
-            }
-        }
-
         changed = migrateLegacyContactSubjects(data) || changed
         if (data.dataVersion < 4) {
             changed = migrateLegacyTemplatePolicies(data) || changed
             changed = clearLegacyTemplateBindings(data) || changed
         }
-
-        data.dynamic.values.forEach { sub ->
-            if (sub.sourceRefs.isEmpty() && sub.contacts.isNotEmpty()) {
-                sub.contacts.forEach { contact ->
-                    sub.sourceRefs.add("direct:$contact")
-                }
-                changed = true
-            }
-        }
+        // 旧文件只有 contacts 时，需要在加载阶段反推来源引用，避免升级后模板/配置查询丢失 groupRef 绑定。
+        changed = restoreLegacySubscriptionSources(data) || changed
 
         if (changed || data.dataVersion < CURRENT_DATA_VERSION) {
             data.dataVersion = CURRENT_DATA_VERSION
@@ -207,6 +188,45 @@ object BiliConfigManager {
         data.liveCloseTemplateByUid = mutableMapOf()
 
         return hadLegacyData
+    }
+
+    /**
+     * 为旧订阅记录补回来源引用。
+     * 当历史文件只剩下展开后的 contacts 时，优先按当前分组成员关系恢复 groupRef，再为剩余联系人补 direct 来源。
+     */
+    private fun restoreLegacySubscriptionSources(data: BiliData): Boolean {
+        var changed = false
+        val normalizedGroupContacts = data.group.mapValues { (_, group) ->
+            group.contacts.mapNotNullTo(linkedSetOf()) { contact -> normalizeContactSubject(contact) ?: contact }
+        }
+
+        data.dynamic.values.forEach { sub ->
+            if (sub.sourceRefs.isNotEmpty() || sub.contacts.isEmpty()) {
+                return@forEach
+            }
+
+            val inferredSourceRefs = linkedSetOf<String>()
+            val coveredContacts = linkedSetOf<String>()
+            normalizedGroupContacts.forEach { (groupName, contactsInGroup) ->
+                if (contactsInGroup.isNotEmpty() && sub.contacts.containsAll(contactsInGroup)) {
+                    inferredSourceRefs.add("groupRef:$groupName")
+                    coveredContacts.addAll(contactsInGroup)
+                }
+            }
+
+            sub.contacts.forEach { contact ->
+                if (contact !in coveredContacts) {
+                    inferredSourceRefs.add("direct:$contact")
+                }
+            }
+
+            if (inferredSourceRefs.isNotEmpty()) {
+                sub.sourceRefs.addAll(inferredSourceRefs)
+                changed = true
+            }
+        }
+
+        return changed
     }
 
     /**
