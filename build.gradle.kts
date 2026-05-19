@@ -90,6 +90,9 @@ dependencies {
 
     // 测试
     testImplementation(kotlin("test"))
+    testImplementation("io.ktor:ktor-server-test-host:3.0.3") {
+        exclude(group = "org.slf4j")
+    }
 }
 
 tasks.test {

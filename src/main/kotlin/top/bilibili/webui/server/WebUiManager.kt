@@ -2,6 +2,7 @@ package top.bilibili.webui.server
 
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
+import io.ktor.server.application.Application
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
@@ -9,9 +10,15 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.routing.routing
 import org.slf4j.LoggerFactory
 import top.bilibili.utils.json
+import top.bilibili.webui.auth.WebUiAuthService
+import top.bilibili.webui.auth.WebUiCredentialStore
+import top.bilibili.webui.auth.WebUiTokenService
 import top.bilibili.webui.config.WebUiSettings
+import top.bilibili.webui.routes.registerWebUiAuthRoutes
 import top.bilibili.webui.routes.registerWebUiApiRoutes
 import top.bilibili.webui.routes.registerWebUiStaticRoutes
+import top.bilibili.webui.service.WebUiConfigFacade
+import top.bilibili.webui.service.WebUiRuntimeFacade
 
 /**
  * WebUI 管理器只拥有嵌入式服务器生命周期，不承载业务编排或配置写回职责。
@@ -31,15 +38,30 @@ class WebUiManager(
             return
         }
 
+        val credentialStore = WebUiCredentialStore(settings.credentialStateFile)
+        val tokenService = WebUiTokenService(settings.tokenTtlSeconds)
+        val authService = WebUiAuthService(
+            credentialStore = credentialStore,
+            tokenService = tokenService,
+        )
+        val bootstrap = authService.bootstrapCredentials()
+        if (bootstrap.initialPassword != null) {
+            // 初始密码只在本地启动期输出一次，方便管理员完成首次登录和强制改密。
+            logger.warn(
+                "WebUI 初始密码已生成，请立即登录并修改密码。credentialFile={}, initialPassword={}",
+                settings.credentialStateFile.absolutePath,
+                bootstrap.initialPassword,
+            )
+        }
+
         // 服务器只安装最小 JSON 与路由能力，为后续管理接口保留清晰边界。
         val startedServer = embeddedServer(CIO, host = settings.host, port = settings.port) {
-            install(ContentNegotiation) {
-                json(json)
-            }
-            routing {
-                registerWebUiStaticRoutes(settings)
-                registerWebUiApiRoutes()
-            }
+            installWebUiModule(
+                settings = settings,
+                authService = authService,
+                runtimeFacade = WebUiRuntimeFacade(),
+                configFacade = WebUiConfigFacade(),
+            )
         }
         startedServer.start(wait = false)
         server = startedServer
@@ -57,5 +79,24 @@ class WebUiManager(
         } finally {
             server = null
         }
+    }
+}
+
+/**
+ * WebUI 应用模块只负责安装内容协商并把认证、静态页和只读 API 接到同一条受控路由树上。
+ */
+fun Application.installWebUiModule(
+    settings: WebUiSettings,
+    authService: WebUiAuthService,
+    runtimeFacade: WebUiRuntimeFacade,
+    configFacade: WebUiConfigFacade,
+) {
+    install(ContentNegotiation) {
+        json(json)
+    }
+    routing {
+        registerWebUiStaticRoutes(settings, authService)
+        registerWebUiAuthRoutes(authService)
+        registerWebUiApiRoutes(authService, runtimeFacade, configFacade)
     }
 }

@@ -18,6 +18,14 @@ data class WebUiConfig(
     val host: String = "127.0.0.1",
     @EncodeDefault
     val port: Int = 18080,
+    // 凭据文件只保存 WebUI 本地认证状态，和 bot.yml 中的运行参数保持分离。
+    @EncodeDefault
+    @SerialName("credential_file")
+    val credentialFile: String = "webui-credentials.json",
+    // token 过期时间只影响 WebUI 会话，不影响业务层任何平台鉴权。
+    @EncodeDefault
+    @SerialName("token_ttl_seconds")
+    val tokenTtlSeconds: Long = 3600L,
     @EncodeDefault
     @SerialName("static_dir")
     val staticDir: String = "",
@@ -28,23 +36,36 @@ data class WebUiConfig(
     fun normalized(): WebUiConfig {
         val normalizedHost = host.trim().ifBlank { "127.0.0.1" }
         val normalizedPort = port.takeIf { it in 1..65535 } ?: 18080
+        val normalizedCredentialFile = credentialFile.trim().ifBlank { "webui-credentials.json" }
+        val normalizedTokenTtlSeconds = tokenTtlSeconds.takeIf { it > 0L } ?: 3600L
         val normalizedStaticDir = staticDir.trim()
         return if (
             normalizedHost == host &&
             normalizedPort == port &&
+            normalizedCredentialFile == credentialFile &&
+            normalizedTokenTtlSeconds == tokenTtlSeconds &&
             normalizedStaticDir == staticDir
         ) {
             this
         } else {
-            copy(host = normalizedHost, port = normalizedPort, staticDir = normalizedStaticDir)
+            copy(
+                host = normalizedHost,
+                port = normalizedPort,
+                credentialFile = normalizedCredentialFile,
+                tokenTtlSeconds = normalizedTokenTtlSeconds,
+                staticDir = normalizedStaticDir,
+            )
         }
     }
 
     /**
      * 将持久化配置转换为启动期只读设置，顺带解析外部静态目录是否可用。
      */
-    fun toSettings(): WebUiSettings {
+    fun toSettings(configDir: File = File("config")): WebUiSettings {
         val normalized = normalized()
+        val credentialStateFile = File(normalized.credentialFile).let { file ->
+            if (file.isAbsolute) file else File(configDir, normalized.credentialFile)
+        }
         val externalStaticRoot = normalized.staticDir.takeIf { it.isNotBlank() }
             ?.let(::File)
             ?.takeIf { it.isDirectory }
@@ -52,6 +73,8 @@ data class WebUiConfig(
             enabled = normalized.enabled,
             host = normalized.host,
             port = normalized.port,
+            credentialStateFile = credentialStateFile,
+            tokenTtlSeconds = normalized.tokenTtlSeconds,
             staticDir = externalStaticRoot?.absolutePath.orEmpty(),
         )
     }
@@ -64,5 +87,7 @@ data class WebUiSettings(
     val enabled: Boolean,
     val host: String,
     val port: Int,
+    val credentialStateFile: File,
+    val tokenTtlSeconds: Long,
     val staticDir: String,
 )

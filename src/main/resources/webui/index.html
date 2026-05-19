@@ -3,25 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>dynamic-bot WebUI</title>
+    <title>dynamic-bot WebUI Shell</title>
     <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
 <main class="shell">
     <section class="card">
         <p class="eyebrow">dynamic-bot</p>
-        <h1>WebUI foundation is loaded.</h1>
-        <p class="lead">当前阶段只提供管理面骨架与占位资源，实际管理功能尚未开放。</p>
-        <dl class="status-list">
-            <div>
-                <dt>Static</dt>
-                <dd>Bundled placeholder page</dd>
-            </div>
-            <div>
-                <dt>API</dt>
-                <dd id="api-status">Checking /api/health ...</dd>
-            </div>
-        </dl>
+        <h1>Authenticated WebUI shell</h1>
+        <p class="lead">当前阶段提供只读运行态和配置视图，编辑、日志与运行控制仍未开放。</p>
+        <section class="panel">
+            <h2>Runtime Summary</h2>
+            <pre id="runtime-summary">Loading runtime summary...</pre>
+        </section>
+        <section class="panel">
+            <h2>BiliConfig.yml</h2>
+            <pre id="bili-config">Loading config snapshot...</pre>
+        </section>
+        <section class="panel">
+            <h2>BiliData.yml</h2>
+            <pre id="bili-data">Loading data snapshot...</pre>
+        </section>
+        <section class="panel">
+            <h2>bot.yml</h2>
+            <pre id="bot-config">Loading bot snapshot...</pre>
+        </section>
     </section>
 </main>
 <script src="/assets/app.js"></script>

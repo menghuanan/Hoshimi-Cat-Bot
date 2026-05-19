@@ -1,0 +1,71 @@
+package top.bilibili.webui.auth
+
+import java.security.SecureRandom
+import java.util.Base64
+
+/**
+ * WebUI token 服务只维护本地内存会话，不把认证 token 持久化到磁盘或业务配置。
+ */
+class WebUiTokenService(
+    private val tokenTtlSeconds: Long,
+    private val random: SecureRandom = SecureRandom(),
+    private val clock: () -> Long = { System.currentTimeMillis() / 1000L },
+) {
+    private val sessions = linkedMapOf<String, WebUiTokenSession>()
+
+    /**
+     * 为当前 tokenVersion 签发新的会话 token。
+     */
+    fun issueToken(tokenVersion: Long): WebUiTokenSession {
+        val issuedAt = clock()
+        val session = WebUiTokenSession(
+            token = generateTokenValue(),
+            tokenVersion = tokenVersion,
+            issuedAtEpochSecond = issuedAt,
+            expiresAtEpochSecond = issuedAt + tokenTtlSeconds,
+        )
+        sessions[session.token] = session
+        return session
+    }
+
+    /**
+     * 校验 token 是否仍然存在、未过期且与当前凭据版本匹配。
+     */
+    fun verifyToken(token: String, expectedTokenVersion: Long): WebUiTokenSession? {
+        val session = sessions[token] ?: return null
+        return when {
+            session.tokenVersion != expectedTokenVersion -> null
+            clock() > session.expiresAtEpochSecond -> {
+                sessions.remove(token)
+                null
+            }
+            else -> session
+        }
+    }
+
+    /**
+     * 当前只有单一 WebUI 本地账号，因此改密时直接清空全部会话即可。
+     */
+    fun revokeAll() {
+        sessions.clear()
+    }
+
+    /**
+     * 使用 URL-safe Base64 生成 token，避免前端 header 传输时出现额外转义负担。
+     */
+    private fun generateTokenValue(size: Int = 32): String {
+        val bytes = ByteArray(size)
+        random.nextBytes(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+}
+
+/**
+ * token 会话元数据只记录 WebUI 本地认证所需的最小信息。
+ */
+data class WebUiTokenSession(
+    val token: String,
+    val tokenVersion: Long,
+    val issuedAtEpochSecond: Long,
+    val expiresAtEpochSecond: Long,
+)

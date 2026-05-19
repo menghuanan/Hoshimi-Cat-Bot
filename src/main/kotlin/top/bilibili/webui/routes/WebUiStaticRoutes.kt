@@ -5,41 +5,71 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.http.content.staticFiles
 import io.ktor.server.http.content.staticResources
 import io.ktor.server.response.respondFile
+import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import top.bilibili.webui.auth.WebUiAuthService
 import top.bilibili.webui.config.WebUiSettings
 import java.io.File
 
 /**
- * WebUI 静态路由只负责页面与资源分发；页面本身仍保持纯占位状态。
+ * WebUI 静态路由只负责登录页、认证后壳页与静态资源分发，不在这里处理认证业务。
  */
-fun Route.registerWebUiStaticRoutes(settings: WebUiSettings) {
+fun Route.registerWebUiStaticRoutes(
+    settings: WebUiSettings,
+    authService: WebUiAuthService,
+) {
     val externalStaticRoot = settings.staticDir.takeIf { it.isNotBlank() }?.let(::File)
-    if (externalStaticRoot != null) {
-        // 外部静态目录存在时优先服务该目录，便于后续前端独立调试而不改变路由边界。
-        get("/") {
-            call.respondFile(externalStaticRoot.resolve("index.html"))
+    get("/") {
+        val session = authService.resolveSession(call.extractWebUiToken())
+        if (session == null || session.mustChangePassword) {
+            call.respondRedirect("/login", permanent = false)
+            return@get
         }
-        staticFiles("/assets", externalStaticRoot.resolve("assets"))
-        return
+        call.respondManagedHtmlPage(
+            externalStaticRoot = externalStaticRoot,
+            externalFileName = "index.html",
+            bundledResourcePath = "webui/index.html",
+        )
     }
 
-    get("/") {
-        call.respondBundledTextResource("webui/index.html", ContentType.Text.Html)
+    get("/login") {
+        val session = authService.resolveSession(call.extractWebUiToken())
+        if (session != null && !session.mustChangePassword) {
+            call.respondRedirect("/", permanent = false)
+            return@get
+        }
+        call.respondManagedHtmlPage(
+            externalStaticRoot = externalStaticRoot,
+            externalFileName = "login.html",
+            bundledResourcePath = "webui/login.html",
+        )
     }
-    staticResources("/assets", "webui/assets")
+
+    if (externalStaticRoot != null) {
+        // 外部静态目录存在时优先服务该目录，便于后续前端独立调试而不改变鉴权边界。
+        staticFiles("/assets", externalStaticRoot.resolve("assets"))
+    } else {
+        staticResources("/assets", "webui/assets")
+    }
 }
 
 /**
- * 统一以 UTF-8 响应内置文本资源，确保占位页在不同宿主编码下保持稳定。
+ * HTML 页面统一在受控入口里选择外部文件或 bundled 资源，保证登录壳与主壳走同一套门禁。
  */
-private suspend fun ApplicationCall.respondBundledTextResource(
-    resourcePath: String,
-    contentType: ContentType,
+private suspend fun ApplicationCall.respondManagedHtmlPage(
+    externalStaticRoot: File?,
+    externalFileName: String,
+    bundledResourcePath: String,
 ) {
-    val content = loadBundledTextResource(resourcePath)
-    respondText(content, contentType)
+    val externalFile = externalStaticRoot?.resolve(externalFileName)
+    if (externalFile?.isFile == true) {
+        respondFile(externalFile)
+        return
+    }
+    val content = loadBundledTextResource(bundledResourcePath)
+    respondText(content, ContentType.Text.Html)
 }
 
 /**

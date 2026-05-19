@@ -29,10 +29,14 @@ class WebUiFoundationSourceRegressionTest {
     fun `webui routes should reserve root assets and api boundaries`() {
         val apiRoutes = read("src/main/kotlin/top/bilibili/webui/routes/WebUiApiRoutes.kt")
         val staticRoutes = read("src/main/kotlin/top/bilibili/webui/routes/WebUiStaticRoutes.kt")
+        val authRoutes = read("src/main/kotlin/top/bilibili/webui/routes/WebUiAuthRoutes.kt")
 
-        assertTrue(apiRoutes.contains("/api/health"))
-        assertTrue(staticRoutes.contains("""staticResources("/assets", "webui/assets")"""))
+        assertTrue(apiRoutes.contains("/api/runtime/summary"))
+        assertTrue(apiRoutes.contains("/api/config/bili-config"))
+        assertTrue(authRoutes.contains("/api/auth/login"))
+        assertTrue(authRoutes.contains("/api/auth/change-password"))
         assertTrue(staticRoutes.contains("""get("/")"""))
+        assertTrue(staticRoutes.contains("""get("/login")"""))
     }
 
     @Test
@@ -44,5 +48,21 @@ class WebUiFoundationSourceRegressionTest {
         assertFalse(botSource.contains("embeddedServer("))
         assertFalse(botSource.contains("/api/health"))
         assertTrue(managerSource.contains("embeddedServer("))
+    }
+
+    @Test
+    fun `frontend shell should include login page and remain api driven`() {
+        val loginPage = read("src/main/resources/webui/login.html")
+        val shellPage = read("src/main/resources/webui/index.html")
+        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val authScript = read("src/main/resources/webui/assets/auth.js")
+
+        assertTrue(loginPage.contains("id=\"login-form\""))
+        assertTrue(shellPage.contains("id=\"runtime-summary\""))
+        assertTrue(shellScript.contains("/api/auth/session"))
+        assertTrue(shellScript.contains("/api/runtime/summary"))
+        assertTrue(shellScript.contains("/api/config/bili-config"))
+        assertTrue(authScript.contains("/api/auth/login"))
+        assertTrue(authScript.contains("/api/auth/change-password"))
     }
 }

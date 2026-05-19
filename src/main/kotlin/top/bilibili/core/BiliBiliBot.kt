@@ -115,6 +115,11 @@ object BiliBiliBot : CoroutineScope {
     fun isStopping(): Boolean = lifecycleState.get() == BotLifecycleState.STOPPING
 
     /**
+     * 返回当前生命周期状态快照，供只读运行态观测面安全消费。
+     */
+    fun currentLifecycleState(): BotLifecycleState = lifecycleState.get()
+
+    /**
      * 返回已初始化的运行期配置，不存在时抛出异常。
      */
     fun requireConfig(): top.bilibili.config.BotConfig {

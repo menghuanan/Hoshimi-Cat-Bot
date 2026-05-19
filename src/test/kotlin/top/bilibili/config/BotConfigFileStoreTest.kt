@@ -69,11 +69,17 @@ class BotConfigFileStoreTest {
 
         assertEquals("onebot11", config.platform.adapter)
         assertFalse(config.webui.enabled)
+        assertEquals("webui-credentials.json", config.webui.credentialFile)
+        assertEquals(3600L, config.webui.tokenTtlSeconds)
         assertTrue(saved.contains("platform:"), saved)
         assertTrue(saved.contains("webui:"), saved)
         assertTrue(saved.contains("enabled: false"), saved)
+        assertTrue(saved.contains("credential_file:"), saved)
+        assertTrue(saved.contains("token_ttl_seconds:"), saved)
         assertTrue(saved.contains("adapter:"), saved)
         assertFalse(saved.contains("\nnapcat:"), saved)
+        assertFalse(saved.contains("password_hash"), saved)
+        assertFalse(saved.contains("must_change_password"), saved)
     }
 
     @Test
@@ -101,7 +107,9 @@ class BotConfigFileStoreTest {
         )
         assertTrue(saved.contains("onebot11:"), saved)
         assertTrue(saved.contains("webui:"), saved)
+        assertTrue(saved.contains("credential_file:"), saved)
         assertTrue(saved.contains("token: \"napcat-token\""), saved)
         assertFalse(saved.contains("\nnapcat:"), saved)
+        assertFalse(saved.contains("password_hash"), saved)
     }
 }
