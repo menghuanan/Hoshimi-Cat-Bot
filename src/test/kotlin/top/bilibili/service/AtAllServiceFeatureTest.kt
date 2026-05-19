@@ -22,6 +22,7 @@ class AtAllServiceFeatureTest {
     fun cleanup() {
         BiliData.atAll.clear()
         BiliData.dynamic.clear()
+        clearCooldownState()
     }
 
     @Test
@@ -102,6 +103,53 @@ class AtAllServiceFeatureTest {
         assertEquals("UID($uid): 全部动态", AtAllService.listAtAll(subject = subject), "列表展示应回到全部动态")
     }
 
+    @Test
+    fun `shouldAtAll 应在直播全体成功后阻断同群同UID同类型两小时`() = runBlocking {
+        val uid = 3108865L
+        val now = 1_800_000_000_000L
+        BiliData.atAll[persistedSubject] = mutableMapOf(
+            uid to mutableSetOf(AtAllType.LIVE),
+        )
+
+        val live = liveMessage(uid = uid)
+
+        assertTrue(AtAllService.shouldAtAll(subject, uid, live, now), "首次命中策略时应允许注入 @全体")
+
+        AtAllService.recordAtAllSuccess(subject, uid, live, now)
+
+        assertFalse(AtAllService.shouldAtAll(subject, uid, live, now + 30 * 60 * 1000L), "两小时窗口内同类型直播应被冷却阻断")
+    }
+
+    @Test
+    fun `shouldAtAll 应在直播冷却窗口内放行不同实际类型`() = runBlocking {
+        val uid = 3108865L
+        val now = 1_800_000_000_000L
+        BiliData.atAll[persistedSubject] = mutableMapOf(
+            uid to mutableSetOf(AtAllType.ALL),
+        )
+
+        val live = liveMessage(uid = uid)
+        val video = dynamicMessage(type = DynamicType.DYNAMIC_TYPE_AV, uid = uid)
+
+        AtAllService.recordAtAllSuccess(subject, uid, live, now)
+
+        assertTrue(AtAllService.shouldAtAll(subject, uid, video, now + 30 * 60 * 1000L), "ALL 策略下直播冷却不应压住视频类型")
+    }
+
+    @Test
+    fun `shouldAtAll 应在冷却过期后重新放行同类型通知`() = runBlocking {
+        val uid = 3108865L
+        val now = 1_800_000_000_000L
+        BiliData.atAll[persistedSubject] = mutableMapOf(
+            uid to mutableSetOf(AtAllType.LIVE),
+        )
+
+        val live = liveMessage(uid = uid)
+        AtAllService.recordAtAllSuccess(subject, uid, live, now)
+
+        assertTrue(AtAllService.shouldAtAll(subject, uid, live, now + 2 * 60 * 60 * 1000L + 1L), "冷却过期后同类型通知应重新允许注入 @全体")
+    }
+
     private fun dynamicMessage(type: DynamicType, uid: Long): DynamicMessage {
         return DynamicMessage(
             did = "100",
@@ -149,5 +197,16 @@ class AtAllServiceFeatureTest {
             drawPath = null,
             contact = null,
         )
+    }
+
+    /**
+     * 测试清理阶段按反射移除冷却表，避免未来新增字段后影响其他用例。
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun clearCooldownState() {
+        val field = runCatching { BiliData::class.java.getDeclaredField("atAllCooldownUntil") }.getOrNull() ?: return
+        field.isAccessible = true
+        val value = field.get(BiliData) as? MutableMap<String, Long> ?: return
+        value.clear()
     }
 }

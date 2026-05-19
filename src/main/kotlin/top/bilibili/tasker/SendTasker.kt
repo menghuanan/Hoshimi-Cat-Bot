@@ -45,7 +45,7 @@ object SendTasker : BiliTasker("SendTasker") {
     private const val AT_ALL_WARN_SWEEP_INTERVAL_MS = 10 * 60 * 1000L
     private const val AT_ALL_WARN_CACHE_MAX_SIZE = 1024
 
-    private val messageQueue = Channel<Pair<PlatformContact, List<OutgoingPart>>>(100)
+    private val messageQueue = Channel<QueuedMessage>(100)
     private val atAllPermissionWarnTs = mutableMapOf<String, Long>()
     private var lastAtAllWarnSweepTs = 0L
 
@@ -82,31 +82,23 @@ object SendTasker : BiliTasker("SendTasker") {
      * 处理消息发送队列
      */
     private suspend fun processMessageQueue() {
-        for ((contact, segments) in messageQueue) {
+        for (queuedMessage in messageQueue) {
             if (BiliBiliBot.isStopping()) {
                 BiliBiliBot.logger.info("停机期间停止 SendTasker 队列处理协程")
                 return
             }
             try {
-                val gateway = top.bilibili.service.MessageGatewayProvider.require()
-                var success = gateway.sendMessageGuarded(contact, segments)
-
-                if (!success && contact.type == PlatformChatType.GROUP && containsAtAllSegment(segments)) {
-                    // @全体 失败时优先降级普通消息，避免整条推送因权限或次数问题完全丢失。
-                    val downgradedSegments = segments.filterNot { it is OutgoingPart.MentionAll }
-                    if (downgradedSegments.isNotEmpty()) {
-                        BiliBiliBot.logger.warn("检测到 @全体 发送失败，尝试降级重发: ${contact.toSubject()}")
-                        success = gateway.sendMessageGuarded(contact, downgradedSegments)
-                        if (success) {
-                            notifyAtAllFallback(contact.id)
-                        }
-                    }
-                }
+                val success = deliverQueuedMessage(
+                    contact = queuedMessage.contact,
+                    segments = queuedMessage.segments,
+                    cooldownSubject = queuedMessage.cooldownSubject,
+                    sourceMessage = queuedMessage.sourceMessage,
+                )
 
                 if (success) {
-                    BiliBiliBot.logger.info("消息已发送到 {}", contact.toSubject())
+                    BiliBiliBot.logger.info("消息已发送到 {}", queuedMessage.contact.toSubject())
                 } else {
-                    BiliBiliBot.logger.warn("消息发送失败: {}", contact.toSubject())
+                    BiliBiliBot.logger.warn("消息发送失败: {}", queuedMessage.contact.toSubject())
                 }
 
                 // 发送间隔，避免同一轮推送连续压垮平台发送链路。
@@ -125,6 +117,38 @@ object SendTasker : BiliTasker("SendTasker") {
                 BiliBiliBot.logger.error("发送消息时出错: ${e.message}", e)
             }
         }
+    }
+
+    /**
+     * 统一执行单条队列消息的发送与 @全体 成功记账，确保降级重发不会误启动冷却。
+     */
+    internal suspend fun deliverQueuedMessage(
+        contact: PlatformContact,
+        segments: List<OutgoingPart>,
+        cooldownSubject: String? = null,
+        sourceMessage: BiliMessage? = null,
+    ): Boolean {
+        val gateway = top.bilibili.service.MessageGatewayProvider.require()
+        val containsAtAll = containsAtAllSegment(segments)
+        var success = gateway.sendMessageGuarded(contact, segments)
+
+        if (success && containsAtAll && cooldownSubject != null && sourceMessage != null) {
+            AtAllService.recordAtAllSuccess(cooldownSubject, sourceMessage.mid, sourceMessage)
+        }
+
+        if (!success && contact.type == PlatformChatType.GROUP && containsAtAll) {
+            // @全体 失败时优先降级普通消息，避免整条推送因权限或次数问题完全丢失。
+            val downgradedSegments = segments.filterNot { it is OutgoingPart.MentionAll }
+            if (downgradedSegments.isNotEmpty()) {
+                BiliBiliBot.logger.warn("检测到 @全体 发送失败，尝试降级重发: ${contact.toSubject()}")
+                success = gateway.sendMessageGuarded(contact, downgradedSegments)
+                if (success) {
+                    notifyAtAllFallback(contact.id)
+                }
+            }
+        }
+
+        return success
     }
 
     /**
@@ -192,8 +216,15 @@ object SendTasker : BiliTasker("SendTasker") {
                     return
                 }
                 val segments = buildMessageSegments(message, specificContact, dynamicSub, messageIdentity)
-                val finalSegments = applyAtAllIfNeeded(contact, specificContact, message, segments)
-                messageQueue.send(contact to finalSegments)
+                val atAllDecision = applyAtAllIfNeeded(contact, specificContact, message, segments)
+                messageQueue.send(
+                    QueuedMessage(
+                        contact = contact,
+                        segments = atAllDecision.segments,
+                        cooldownSubject = specificContact.takeIf { atAllDecision.injected },
+                        sourceMessage = message.takeIf { atAllDecision.injected },
+                    ),
+                )
             } finally {
                 TemplateSelectionService.clearBatchSelections(messageIdentity)
             }
@@ -222,10 +253,17 @@ object SendTasker : BiliTasker("SendTasker") {
                     val segments = buildMessageSegments(message, contactStr, dynamicSub, messageIdentity)
                     BiliBiliBot.logger.info("为联系人 $contactStr 构建了 ${segments.size} 个消息段")
 
-                    val finalSegments = applyAtAllIfNeeded(contact, contactStr, message, segments)
+                    val atAllDecision = applyAtAllIfNeeded(contact, contactStr, message, segments)
 
                     // 加入发送队列
-                    messageQueue.send(contact to finalSegments)
+                    messageQueue.send(
+                        QueuedMessage(
+                            contact = contact,
+                            segments = atAllDecision.segments,
+                            cooldownSubject = contactStr.takeIf { atAllDecision.injected },
+                            sourceMessage = message.takeIf { atAllDecision.injected },
+                        ),
+                    )
                     BiliBiliBot.logger.info("消息已加入发送队列: {}", contact.toSubject())
 
                     // 消息间隔
@@ -253,12 +291,12 @@ object SendTasker : BiliTasker("SendTasker") {
         contactStr: String,
         message: BiliMessage,
         segments: List<OutgoingPart>
-    ): List<OutgoingPart> {
-        if (contact.type != PlatformChatType.GROUP) return segments
+    ): AtAllInjectionDecision {
+        if (contact.type != PlatformChatType.GROUP) return AtAllInjectionDecision(segments = segments)
         val alreadyAtAll = segments.any { it.type == "at" && it.data["qq"] == "all" }
-        if (alreadyAtAll) return segments
+        if (alreadyAtAll) return AtAllInjectionDecision(segments = segments)
         val atAllEnabled = AtAllService.shouldAtAll(contactStr, message.mid, message)
-        if (!atAllEnabled) return segments
+        if (!atAllEnabled) return AtAllInjectionDecision(segments = segments)
 
         val atAllGuard = runCatching {
             PlatformCapabilityService.guardAtAllInContact(contact)
@@ -275,10 +313,13 @@ object SendTasker : BiliTasker("SendTasker") {
             )
             // 权限不足时只降级当前增强分支，保留普通推送可避免错过实际通知。
             notifyAtAllPermissionMissing(contact.id, message.mid)
-            return segments
+            return AtAllInjectionDecision(segments = segments)
         }
 
-        return listOf(OutgoingPart.atAll()) + segments
+        return AtAllInjectionDecision(
+            segments = listOf(OutgoingPart.atAll()) + segments,
+            injected = true,
+        )
     }
 
     /**
@@ -500,7 +541,7 @@ object SendTasker : BiliTasker("SendTasker") {
         )
         val contact = parsePlatformContact(contactStr) ?: return segments
         // 预热阶段仅覆盖“发送前处理”路径，不触发实际发送。
-        return applyAtAllIfNeeded(contact, contactStr, message, segments)
+        return applyAtAllIfNeeded(contact, contactStr, message, segments).segments
     }
 
     /**
@@ -577,5 +618,23 @@ object SendTasker : BiliTasker("SendTasker") {
             is LiveCloseMessage -> "liveClose:${message.rid}:${message.timestamp}"
         }
     }
+
+    /**
+     * 队列里显式保留 @全体 自动注入的上下文，保证成功记账只绑定业务层追加的增强分支。
+     */
+    private data class QueuedMessage(
+        val contact: PlatformContact,
+        val segments: List<OutgoingPart>,
+        val cooldownSubject: String? = null,
+        val sourceMessage: BiliMessage? = null,
+    )
+
+    /**
+     * 发送前处理会显式区分“原样发送”和“本轮自动补入 @全体”，避免把模板内原生 @全体 误记为冷却。
+     */
+    private data class AtAllInjectionDecision(
+        val segments: List<OutgoingPart>,
+        val injected: Boolean = false,
+    )
 }
 

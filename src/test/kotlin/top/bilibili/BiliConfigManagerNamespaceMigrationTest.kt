@@ -2,9 +2,12 @@ package top.bilibili
 
 import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.encodeToString
+import kotlinx.coroutines.runBlocking
 import top.bilibili.service.TemplateRuntimeCoordinator
 import top.bilibili.service.TemplateSelectionService
 import top.bilibili.service.TemplateService
+import top.bilibili.service.AtAllService
+import top.bilibili.data.LiveMessage
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -28,6 +31,7 @@ class BiliConfigManagerNamespaceMigrationTest {
         BiliData.liveCloseTemplatePolicyByScope.clear()
         BiliData.dynamicColorByUid.clear()
         BiliData.atAll.clear()
+        BiliData.atAllCooldownUntil.clear()
         BiliData.group.clear()
         BiliData.bangumi.clear()
         BiliData.linkParseBlacklist.clear()
@@ -196,6 +200,33 @@ class BiliConfigManagerNamespaceMigrationTest {
         assertTrue(TemplateRuntimeCoordinator.snapshotBatchTemplateState().isEmpty())
     }
 
+    @Test
+    fun `load data should preserve atall cooldown state across wrapper reload`() = runBlocking {
+        val subject = "onebot11:group:10001"
+        val runtimeSubject = "group:10001"
+        val uid = 123456L
+        val now = 1_800_000_000_000L
+        BiliData.dataVersion = 4
+        BiliData.atAll[subject] = mutableMapOf(uid to mutableSetOf(AtAllType.LIVE))
+        AtAllService.recordAtAllSuccess(runtimeSubject, uid, liveMessage(uid), now)
+
+        val serialized = Yaml(
+            configuration = Yaml.default.configuration.copy(
+                strictMode = false,
+            ),
+        ).encodeToString(BiliDataWrapper.from(BiliData))
+
+        BiliData.atAll.clear()
+        BiliData.atAllCooldownUntil.clear()
+
+        val changed = loadFromYamlViaReflection(serialized)
+
+        assertFalse(changed, "当前 schema 重载不应再触发迁移")
+        assertTrue(serialized.contains("atAllCooldownUntil:"), "冷却表应进入当前持久化结构")
+        assertFalse(AtAllService.shouldAtAll(runtimeSubject, uid, liveMessage(uid), now + 30 * 60 * 1000L), "重载后两小时窗口内仍应阻断同类型通知")
+        assertTrue(AtAllService.shouldAtAll(runtimeSubject, uid, liveMessage(uid), now + 2 * 60 * 60 * 1000L + 1L), "冷却过期后应重新放行")
+    }
+
     private fun migrateViaReflection(): Boolean {
         val method = BiliConfigManager::class.java.getDeclaredMethod("migrateDataIfNeeded", BiliData::class.java)
         method.isAccessible = true
@@ -206,5 +237,24 @@ class BiliConfigManagerNamespaceMigrationTest {
         val method = BiliConfigManager::class.java.getDeclaredMethod("loadDataFromContent", String::class.java, BiliData::class.java)
         method.isAccessible = true
         return method.invoke(BiliConfigManager, content, BiliData) as Boolean
+    }
+
+    /**
+     * 构造一个最小直播消息，供冷却持久化用例验证当前 schema 的重载行为。
+     */
+    private fun liveMessage(uid: Long): LiveMessage {
+        return LiveMessage(
+            rid = 1000L,
+            mid = uid,
+            name = "测试主播",
+            time = "2026-05-20 18:00:00",
+            timestamp = 1778992800,
+            title = "测试直播",
+            cover = "https://example.com/cover.jpg",
+            area = "测试分区",
+            link = "https://live.bilibili.com/1000",
+            drawPath = null,
+            contact = null,
+        )
     }
 }

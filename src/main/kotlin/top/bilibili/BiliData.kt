@@ -42,6 +42,9 @@ object BiliData {
 // key: subject -> uid -> at-all types
     var atAll: MutableMap<String, MutableMap<Long, MutableSet<AtAllType>>> = mutableMapOf()
 
+    // key: normalized subject|uid|actual at-all type name -> cooldown expire timestamp millis
+    var atAllCooldownUntil: MutableMap<String, Long> = mutableMapOf()
+
     // key: group name - 分组
     var group: MutableMap<String, Group> = mutableMapOf()
 

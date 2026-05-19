@@ -17,6 +17,7 @@ import top.bilibili.utils.parsePlatformContact
  * 集中维护按会话和 UID 生效的 @全体 策略，避免推送路径直接操作原始存储。
  */
 object AtAllService {
+    private const val AT_ALL_COOLDOWN_MS = 2 * 60 * 60 * 1000L
     private val mutex = Mutex()
 
     private fun toAtAllType(type: String) =
@@ -122,18 +123,51 @@ object AtAllService {
     /**
      * 在推送前统一判断是否需要 @全体，避免消息链路各自重复实现类型映射逻辑。
      */
-    suspend fun shouldAtAll(subject: String, uid: Long, message: BiliMessage): Boolean = mutex.withLock {
+    suspend fun shouldAtAll(subject: String, uid: Long, message: BiliMessage): Boolean {
+        return shouldAtAll(subject, uid, message, System.currentTimeMillis())
+    }
+
+    /**
+     * 在推送前统一判断是否需要 @全体，并在同群同 UID 同实际类型命中冷却时直接降级。
+     */
+    suspend fun shouldAtAll(subject: String, uid: Long, message: BiliMessage, now: Long): Boolean = mutex.withLock {
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock false
         val list = BiliData.atAll[normalizedSubject]?.get(uid) ?: return@withLock false
         if (list.isEmpty()) return@withLock false
+
+        val actualType = resolveActualType(message) ?: return@withLock false
+        if (isCooldownActive(normalizedSubject, uid, actualType, now)) return@withLock false
         if (AtAllType.ALL in list) return@withLock true
 
-        return@withLock when (message) {
+        return@withLock when (actualType) {
+            AtAllType.LIVE -> AtAllType.LIVE in list
+            AtAllType.VIDEO -> AtAllType.DYNAMIC in list || AtAllType.VIDEO in list
+            AtAllType.MUSIC -> AtAllType.DYNAMIC in list || AtAllType.MUSIC in list
+            AtAllType.ARTICLE -> AtAllType.DYNAMIC in list || AtAllType.ARTICLE in list
+            AtAllType.DYNAMIC -> AtAllType.DYNAMIC in list
+            AtAllType.ALL -> false
+        }
+    }
+
+    /**
+     * 在带 @全体 的消息确认发送成功后记录冷却结束时间，避免失败或降级路径误占用配额。
+     */
+    suspend fun recordAtAllSuccess(subject: String, uid: Long, message: BiliMessage, now: Long = System.currentTimeMillis()) = mutex.withLock {
+        val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock
+        val actualType = resolveActualType(message) ?: return@withLock
+        BiliData.atAllCooldownUntil[cooldownKey(normalizedSubject, uid, actualType)] = now + AT_ALL_COOLDOWN_MS
+    }
+
+    /**
+     * 把运行时消息模型统一映射为冷却粒度使用的实际通知类型。
+     */
+    internal fun resolveActualType(message: BiliMessage): AtAllType? {
+        return when (message) {
             is DynamicMessage -> {
-                AtAllType.DYNAMIC in list || mapDynamicTypeToAtAll(message.type) in list
+                mapDynamicTypeToAtAll(message.type)
             }
-            is LiveMessage -> AtAllType.LIVE in list
-            is LiveCloseMessage -> false
+            is LiveMessage -> AtAllType.LIVE
+            is LiveCloseMessage -> null
         }
     }
 
@@ -144,6 +178,26 @@ object AtAllService {
             DynamicType.DYNAMIC_TYPE_ARTICLE -> AtAllType.ARTICLE
             else -> AtAllType.DYNAMIC
         }
+    }
+
+    /**
+     * 冷却命中时顺手清理过期键，避免 7x24 运行下持久化表持续累积历史垃圾。
+     */
+    private fun isCooldownActive(subject: String, uid: Long, actualType: AtAllType, now: Long): Boolean {
+        val key = cooldownKey(subject, uid, actualType)
+        val cooldownUntil = BiliData.atAllCooldownUntil[key] ?: return false
+        if (cooldownUntil <= now) {
+            BiliData.atAllCooldownUntil.remove(key)
+            return false
+        }
+        return true
+    }
+
+    /**
+     * 冷却表键由归一化联系人、订阅 UID 与实际通知类型组成，保持业务判断粒度稳定。
+     */
+    private fun cooldownKey(subject: String, uid: Long, actualType: AtAllType): String {
+        return "$subject|$uid|${actualType.name}"
     }
 
     private fun validateUidScope(uid: Long, subject: String): String? {
