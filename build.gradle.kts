@@ -262,16 +262,13 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
 
 val sharedReleaseContentsDir = layout.buildDirectory.dir("release-platform/shared")
 
-// 平台发行包共享同一份 fat jar、资源与 README，避免 Windows/Linux 打包逻辑重复维护公共 payload。
+// 平台发行包共享同一份 fat jar 与资源，避免 Windows/Linux 打包逻辑重复维护公共 payload。
 val stageSharedReleaseContents = tasks.register<Sync>("stageSharedReleaseContents") {
     dependsOn(tasks.shadowJar)
     into(sharedReleaseContentsDir)
 
     from(tasks.shadowJar) {
         into("lib")
-    }
-    from("README.md") {
-        into("")
     }
     from("src/main/resources") {
         into("resources")
@@ -318,9 +315,6 @@ distributions {
         contents {
             from(tasks.shadowJar) {
                 into("lib")
-            }
-            from("README.md") {
-                into("")
             }
             from("src/main/resources") {
                 into("resources")
