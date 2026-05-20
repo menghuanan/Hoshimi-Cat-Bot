@@ -272,6 +272,47 @@ class WebUiRouteSmokeTest {
         assertTrue(records.any { it.target == "high-risk-confirmation" })
     }
 
+    /**
+     * 登出路由必须同时让当前 token 失效并清理 cookie，确保浏览器随后回到登录边界。
+     */
+    @Test
+    fun `logout route should revoke current session and expire auth cookie`() = testApplication {
+        val authService = buildAuthService()
+        val bootstrapPassword = authService.bootstrapCredentials().initialPassword!!
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(sink = {}),
+            )
+        }
+
+        val token = reloginForPhase3(authService, bootstrapPassword)
+        val client = createWebUiClient()
+        val logout = client.post("/api/auth/logout") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val runtimeAfterLogout = client.get("/api/runtime/summary") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val sessionAfterLogout = client.get("/api/auth/session") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }.body<WebUiSessionDto>()
+
+        assertEquals(HttpStatusCode.OK, logout.status)
+        assertTrue(logout.headers.getAll(HttpHeaders.SetCookie).orEmpty().any { cookie ->
+            cookie.contains("${top.bilibili.webui.routes.WebUiTokenCookieName}=") && cookie.contains("Max-Age=0")
+        })
+        assertEquals(HttpStatusCode.Unauthorized, runtimeAfterLogout.status)
+        assertEquals(false, sessionAfterLogout.authenticated)
+    }
+
     @Test
     fun `config save routes should stay file scoped reject stale snapshots and require stronger confirmation`() = testApplication {
         val authService = buildAuthService()

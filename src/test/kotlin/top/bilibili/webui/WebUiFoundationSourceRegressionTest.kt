@@ -120,6 +120,43 @@ class WebUiFoundationSourceRegressionTest {
     }
 
     /**
+     * 主壳页的交互脚本和样式必须带资源版本，避免 hash 页面复用旧缓存后管理员按钮没有事件绑定。
+     */
+    @Test
+    fun `frontend shell should version account control assets`() {
+        val shellPage = read("src/main/resources/webui/index.html")
+
+        assertTrue(shellPage.contains("""/assets/app.css?v=account-controls"""))
+        assertTrue(shellPage.contains("""/assets/app.js?v=account-controls"""))
+    }
+
+    /**
+     * 顶栏管理员入口必须暴露菜单、退出登录和居中改密弹窗，避免视觉按钮回退成不可交互文本。
+     */
+    @Test
+    fun `frontend shell should expose usable admin account controls`() {
+        val shellPage = read("src/main/resources/webui/index.html")
+        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+
+        assertTrue(shellPage.contains("""id="admin-menu-button""""))
+        assertTrue(shellPage.contains("""id="admin-menu""""))
+        assertTrue(shellPage.contains("""id="change-password-modal""""))
+        assertTrue(shellPage.contains("""id="modal-current-password""""))
+        assertTrue(shellPage.contains("""id="modal-new-password""""))
+        assertTrue(shellPage.contains("""id="modal-confirm-password""""))
+        assertTrue(shellPage.contains("退出登录"))
+        assertTrue(shellPage.contains("修改密码"))
+        assertTrue(shellScript.contains("/api/auth/logout"))
+        assertTrue(shellScript.contains("/api/auth/change-password"))
+        assertTrue(shellScript.contains("旧密码错误"))
+        assertTrue(shellScript.contains("新密码和确认密码不一致"))
+        assertTrue(shellStyle.contains(".admin-menu"))
+        assertTrue(shellStyle.contains(".modal-backdrop"))
+        assertTrue(shellStyle.contains(".password-modal"))
+    }
+
+    /**
      * 日志窗口需要自动轮询并保持可滚动尾部视图，避免只靠手动刷新才能看到新日志。
      */
     @Test

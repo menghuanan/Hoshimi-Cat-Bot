@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>dynamic-bot WebUI Shell</title>
     <script src="/assets/theme.js"></script>
-    <link rel="stylesheet" href="/assets/app.css">
+    <link rel="stylesheet" href="/assets/app.css?v=account-controls">
 </head>
 <body class="dashboard-page">
 <svg aria-hidden="true" focusable="false" class="svg-sprite">
@@ -193,11 +193,19 @@
                 <span id="page-title">首页</span>
             </div>
             <div class="topbar-actions" aria-label="顶部工具区">
-                <span class="avatar" aria-hidden="true"></span>
-                <span class="admin-name">管理员</span>
-                <svg viewBox="0 0 24 24" class="topbar-chevron">
-                    <use href="#icon-chevron"></use>
-                </svg>
+                <div class="admin-account">
+                    <button id="admin-menu-button" class="admin-menu-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="admin-menu">
+                        <span class="avatar" aria-hidden="true"></span>
+                        <span class="admin-name">管理员</span>
+                        <svg viewBox="0 0 24 24" class="topbar-chevron">
+                            <use href="#icon-chevron"></use>
+                        </svg>
+                    </button>
+                    <div id="admin-menu" class="admin-menu" role="menu" hidden>
+                        <button id="open-change-password" class="admin-menu-item" type="button" role="menuitem">修改密码</button>
+                        <button id="logout-button" class="admin-menu-item admin-menu-item--danger" type="button" role="menuitem">退出登录</button>
+                    </div>
+                </div>
             </div>
         </header>
 
@@ -777,6 +785,33 @@
         </main>
     </div>
 </div>
-<script src="/assets/app.js"></script>
+<div id="change-password-modal" class="modal-backdrop" hidden>
+    <section class="password-modal" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
+        <div class="modal-head">
+            <h2 id="change-password-title">修改密码</h2>
+            <button id="close-change-password" class="modal-close" type="button" aria-label="关闭修改密码窗口">×</button>
+        </div>
+        <form id="modal-change-password-form" class="modal-form">
+            <label class="field">
+                <span>旧密码</span>
+                <input id="modal-current-password" name="currentPassword" type="password" autocomplete="current-password" required>
+            </label>
+            <label class="field">
+                <span>新密码</span>
+                <input id="modal-new-password" name="newPassword" type="password" autocomplete="new-password" required>
+            </label>
+            <label class="field">
+                <span>确认新密码</span>
+                <input id="modal-confirm-password" name="confirmPassword" type="password" autocomplete="new-password" required>
+            </label>
+            <p id="modal-password-status" class="modal-status" aria-live="polite"></p>
+            <div class="modal-actions">
+                <button id="cancel-change-password" class="btn btn-secondary" type="button">取消</button>
+                <button class="btn btn-primary" type="submit">确认</button>
+            </div>
+        </form>
+    </section>
+</div>
+<script src="/assets/app.js?v=account-controls"></script>
 </body>
 </html>

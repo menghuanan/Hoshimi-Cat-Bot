@@ -44,6 +44,13 @@ class WebUiTokenService(
     }
 
     /**
+     * 登出只撤销当前浏览器持有的 token，避免影响同一账号的其他有效会话。
+     */
+    fun revokeToken(token: String): Boolean {
+        return sessions.remove(token) != null
+    }
+
+    /**
      * 当前只有单一 WebUI 本地账号，因此改密时直接清空全部会话即可。
      */
     fun revokeAll() {

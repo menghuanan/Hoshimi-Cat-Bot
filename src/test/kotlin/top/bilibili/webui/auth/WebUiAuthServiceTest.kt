@@ -62,6 +62,28 @@ class WebUiAuthServiceTest {
         assertFalse(service.login(bootstrap.initialPassword).success)
     }
 
+    /**
+     * 登出只应撤销当前会话 token，避免同一管理员在其他浏览器中的有效会话被意外踢下线。
+     */
+    @Test
+    fun `logout should revoke only the current token`() {
+        val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
+        val bootstrap = store.loadOrCreate()
+        val tokenService = WebUiTokenService(tokenTtlSeconds = 300L)
+        val service = WebUiAuthService(
+            credentialStore = store,
+            tokenService = tokenService,
+        )
+
+        val firstToken = service.login(bootstrap.initialPassword!!).token!!
+        val secondToken = service.login(bootstrap.initialPassword).token!!
+        val loggedOut = service.logout(firstToken)
+
+        assertTrue(loggedOut)
+        assertNull(service.resolveSession(firstToken))
+        assertNotNull(service.resolveSession(secondToken))
+    }
+
     @Test
     fun `high risk confirmation should require the current password`() {
         val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())

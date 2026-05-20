@@ -109,4 +109,26 @@ fun Route.registerWebUiAuthRoutes(
             ),
         )
     }
+
+    post("/api/auth/logout") {
+        val session = call.requireWebUiSession(authService, auditService, allowMustChangePassword = true) ?: return@post
+        val revoked = authService.logout(session.token)
+        auditService.recordAuthEvent(
+            target = "logout",
+            success = revoked,
+            outcome = if (revoked) "LOGOUT_SUCCEEDED" else "LOGOUT_TOKEN_MISSING",
+            detailSummary = "tokenVersion=${session.tokenVersion}",
+        )
+        // 登出后清理同源 cookie，前端同时会清掉 sessionStorage 中的 Bearer token。
+        call.response.cookies.append(
+            Cookie(
+                name = WebUiTokenCookieName,
+                value = "",
+                path = "/",
+                httpOnly = true,
+                maxAge = 0,
+            ),
+        )
+        call.respond(WebUiAuthResponseDto(success = true, message = "logged out"))
+    }
 }

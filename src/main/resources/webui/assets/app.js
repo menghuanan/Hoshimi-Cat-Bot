@@ -25,6 +25,18 @@ const runtimeLists = new Map(
 );
 const themePreferenceButtons = Array.from(document.querySelectorAll("[data-theme-option]"));
 const themePreferenceLabel = document.querySelector("[data-theme-label]");
+const adminMenuButton = document.getElementById("admin-menu-button");
+const adminMenu = document.getElementById("admin-menu");
+const openChangePasswordButton = document.getElementById("open-change-password");
+const logoutButton = document.getElementById("logout-button");
+const changePasswordModal = document.getElementById("change-password-modal");
+const closeChangePasswordButton = document.getElementById("close-change-password");
+const cancelChangePasswordButton = document.getElementById("cancel-change-password");
+const modalChangePasswordForm = document.getElementById("modal-change-password-form");
+const modalCurrentPasswordInput = document.getElementById("modal-current-password");
+const modalNewPasswordInput = document.getElementById("modal-new-password");
+const modalConfirmPasswordInput = document.getElementById("modal-confirm-password");
+const modalPasswordStatus = document.getElementById("modal-password-status");
 const themePreferenceCookieName = window.WebUiTheme?.cookieName || "dynamic_bot_webui_theme";
 const runtimeRefreshIntervalMs = 30_000;
 
@@ -33,6 +45,23 @@ const runtimeRefreshIntervalMs = 30_000;
  */
 function getWebUiToken() {
     return sessionStorage.getItem("webuiToken") || "";
+}
+
+/**
+ * 认证请求统一附带 Bearer token 和 JSON 协商头，便于登出、改密和运行态刷新保持同一认证来源。
+ */
+function buildAuthHeaders(includeJson = false) {
+    const headers = {
+        Accept: "application/json",
+    };
+    const token = getWebUiToken();
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+    if (includeJson) {
+        headers["Content-Type"] = "application/json";
+    }
+    return headers;
 }
 
 /**
@@ -353,17 +382,115 @@ function renderRuntimeSummary(summary) {
 }
 
 /**
+ * 账号菜单展开态只由按钮的 aria-expanded 和菜单 hidden 状态决定，避免视觉态与可访问状态分叉。
+ */
+function setAdminMenuOpen(open) {
+    if (!adminMenuButton || !adminMenu) {
+        return;
+    }
+    adminMenu.hidden = !open;
+    adminMenuButton.setAttribute("aria-expanded", String(open));
+}
+
+/**
+ * 改密弹窗每次打开都清空旧输入和提示，防止敏感内容或错误文案跨会话残留。
+ */
+function openChangePasswordModal() {
+    if (!changePasswordModal || !modalCurrentPasswordInput || !modalNewPasswordInput || !modalConfirmPasswordInput) {
+        return;
+    }
+    setAdminMenuOpen(false);
+    modalCurrentPasswordInput.value = "";
+    modalNewPasswordInput.value = "";
+    modalConfirmPasswordInput.value = "";
+    setPasswordModalStatus("");
+    changePasswordModal.hidden = false;
+    modalCurrentPasswordInput.focus();
+}
+
+/**
+ * 关闭改密弹窗时同步清理密码框，避免用户取消后旧密码留在 DOM 中。
+ */
+function closeChangePasswordModal() {
+    if (!changePasswordModal || !modalCurrentPasswordInput || !modalNewPasswordInput || !modalConfirmPasswordInput) {
+        return;
+    }
+    modalCurrentPasswordInput.value = "";
+    modalNewPasswordInput.value = "";
+    modalConfirmPasswordInput.value = "";
+    setPasswordModalStatus("");
+    changePasswordModal.hidden = true;
+}
+
+/**
+ * 弹窗底部状态统一处理成功和失败颜色，让旧密码错误等服务端校验结果固定显示在窗口底部。
+ */
+function setPasswordModalStatus(message, success = false) {
+    if (!modalPasswordStatus) {
+        return;
+    }
+    modalPasswordStatus.textContent = message;
+    modalPasswordStatus.classList.toggle("is-success", success);
+}
+
+/**
+ * 登出成功或会话失效都回到登录页，避免浏览器继续停留在已经无法刷新数据的主壳。
+ */
+async function logoutAndReturnToLogin() {
+    try {
+        await fetch("/api/auth/logout", {
+            method: "POST",
+            headers: buildAuthHeaders(),
+        });
+    } finally {
+        sessionStorage.removeItem("webuiToken");
+        window.location.replace("/login");
+    }
+}
+
+/**
+ * 主壳改密先做本地必填和确认密码一致性校验，再交给后端验证旧密码和密码策略。
+ */
+async function submitPasswordChange() {
+    const currentPassword = modalCurrentPasswordInput?.value || "";
+    const newPassword = modalNewPasswordInput?.value || "";
+    const confirmPassword = modalConfirmPasswordInput?.value || "";
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        setPasswordModalStatus("请完整填写旧密码、新密码和确认新密码");
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        setPasswordModalStatus("新密码和确认密码不一致");
+        return;
+    }
+
+    const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({
+            currentPassword,
+            newPassword,
+        }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const message = payload.message === "invalid credentials"
+            ? "旧密码错误"
+            : (payload.message || `修改密码失败：HTTP ${response.status}`);
+        setPasswordModalStatus(message);
+        return;
+    }
+    setPasswordModalStatus("密码已修改，请重新登录", true);
+    sessionStorage.removeItem("webuiToken");
+    setTimeout(() => window.location.replace("/login"), 500);
+}
+
+/**
  * 调用受认证保护的运行态接口；认证失效时回到登录页完成重新登录。
  */
 async function refreshRuntimeSummary() {
-    const headers = {};
-    const token = getWebUiToken();
-    if (token) {
-        headers.Authorization = `Bearer ${token}`;
-    }
-
     try {
-        const response = await fetch("/api/runtime/summary", {headers});
+        const response = await fetch("/api/runtime/summary", {headers: buildAuthHeaders()});
         if (response.status === 401 || response.status === 403) {
             location.href = "/login";
             return;
@@ -421,6 +548,65 @@ themePreferenceButtons.forEach((button) => {
     button.addEventListener("click", () => {
         applyThemePreference(button.dataset.themeOption || "system");
     });
+});
+
+if (adminMenuButton) {
+    adminMenuButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setAdminMenuOpen(adminMenu?.hidden !== false);
+    });
+}
+
+if (openChangePasswordButton) {
+    openChangePasswordButton.addEventListener("click", openChangePasswordModal);
+}
+
+if (logoutButton) {
+    logoutButton.addEventListener("click", logoutAndReturnToLogin);
+}
+
+if (closeChangePasswordButton) {
+    closeChangePasswordButton.addEventListener("click", closeChangePasswordModal);
+}
+
+if (cancelChangePasswordButton) {
+    cancelChangePasswordButton.addEventListener("click", closeChangePasswordModal);
+}
+
+if (changePasswordModal) {
+    changePasswordModal.addEventListener("click", (event) => {
+        if (event.target === changePasswordModal) {
+            closeChangePasswordModal();
+        }
+    });
+}
+
+if (modalChangePasswordForm) {
+    modalChangePasswordForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        submitPasswordChange().catch((error) => {
+            setPasswordModalStatus(error.message || "修改密码失败，请稍后重试");
+        });
+    });
+}
+
+document.addEventListener("click", (event) => {
+    if (!adminMenu || !adminMenuButton) {
+        return;
+    }
+    if (!adminMenu.hidden && !adminMenu.contains(event.target) && !adminMenuButton.contains(event.target)) {
+        setAdminMenuOpen(false);
+    }
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
+        return;
+    }
+    setAdminMenuOpen(false);
+    if (changePasswordModal && !changePasswordModal.hidden) {
+        closeChangePasswordModal();
+    }
 });
 
 const initialView = location.hash.replace(/^#/, "");

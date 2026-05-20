@@ -50,6 +50,14 @@ class WebUiAuthService(
     }
 
     /**
+     * 登出只处理当前 token 的内存会话，凭据文件和其他已登录会话保持不变。
+     */
+    fun logout(token: String?): Boolean {
+        val resolvedToken = token?.takeIf { it.isNotBlank() } ?: return false
+        return tokenService.revokeToken(resolvedToken)
+    }
+
+    /**
      * 强制改密和常规改密共用同一入口；成功后统一清空旧 token 并要求重新认证。
      */
     fun changePassword(

@@ -453,6 +453,66 @@ input:focus {
     font-weight: 700;
 }
 
+/* 管理员账号区使用原地弹出菜单，保持右上角操作不打断当前页面上下文。 */
+.admin-account {
+    position: relative;
+}
+
+.admin-menu-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 34px;
+    border: 0;
+    border-radius: 10px;
+    padding: 0 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.admin-menu-button:hover,
+.admin-menu-button[aria-expanded="true"] {
+    background: var(--surface-soft);
+}
+
+.admin-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 30;
+    min-width: 132px;
+    padding: 6px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-strong);
+    box-shadow: var(--shadow-md);
+}
+
+.admin-menu-item {
+    width: 100%;
+    min-height: 34px;
+    border: 0;
+    border-radius: 8px;
+    padding: 0 10px;
+    background: transparent;
+    color: var(--text-strong);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.admin-menu-item:hover {
+    background: var(--surface-muted);
+}
+
+.admin-menu-item--danger {
+    color: #ef4444;
+}
+
 .topbar-icon-wrap {
     position: relative;
     display: inline-flex;
@@ -1046,6 +1106,86 @@ input:focus {
 .btn-add {
     min-height: 36px;
     padding: 0 14px;
+}
+
+/* 修改密码弹窗居中覆盖当前工作区，底部状态专门承载旧密码和确认密码校验结果。 */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(3px);
+}
+
+.password-modal {
+    width: min(100%, 420px);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface-strong);
+    box-shadow: var(--shadow-lg);
+}
+
+.modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 10px;
+}
+
+.modal-head h2 {
+    color: var(--text-strong);
+    font-size: 1.02rem;
+    font-weight: 800;
+}
+
+.modal-close {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--muted-strong);
+    font: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modal-form {
+    display: grid;
+    gap: 12px;
+    padding: 10px 20px 20px;
+}
+
+.modal-status {
+    min-height: 20px;
+    color: #ef4444;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.modal-status.is-success {
+    color: var(--green);
+}
+
+.modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.modal-actions button {
+    cursor: pointer;
+}
+
+.modal-actions .btn-primary {
+    border: 0;
 }
 
 /* 功能开关页使用八宫格布局，右下角“更多功能”卡片只保留展示态。 */
