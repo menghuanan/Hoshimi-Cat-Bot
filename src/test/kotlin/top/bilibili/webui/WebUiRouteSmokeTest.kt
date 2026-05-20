@@ -17,6 +17,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import top.bilibili.BiliData
 import top.bilibili.BiliAccountConfig
 import top.bilibili.BiliConfig
 import top.bilibili.config.BotConfig
@@ -48,10 +49,18 @@ import top.bilibili.webui.service.WebUiRuntimeFacade
 
 class WebUiRouteSmokeTest {
     private val tempRoot = Files.createTempDirectory("webui-route-smoke")
+    private val originalDataVersion = BiliData.dataVersion
+    private val originalDynamic = BiliData.dynamic.toMutableMap()
+    private val originalGroup = BiliData.group.toMutableMap()
+    private val originalBlacklist = BiliData.linkParseBlacklistContacts.toMutableSet()
 
     @AfterTest
     fun cleanup() {
         tempRoot.toFile().deleteRecursively()
+        BiliData.dataVersion = originalDataVersion
+        BiliData.dynamic = originalDynamic.toMutableMap()
+        BiliData.group = originalGroup.toMutableMap()
+        BiliData.linkParseBlacklistContacts = originalBlacklist.toMutableSet()
     }
 
     @Test
@@ -143,6 +152,8 @@ class WebUiRouteSmokeTest {
         assertEquals(false, sessionProbe.mustChangePassword)
         assertEquals(true, sessionProbe.authenticated)
         assertEquals("RUNNING", runtimeResponse.body<WebUiRuntimeSummaryDto>().lifecycleState)
+        assertEquals(true, runtimeResponse.body<WebUiRuntimeSummaryDto>().platformReady)
+        assertEquals("MANUAL_RESTART_REQUIRED", runtimeResponse.body<WebUiRuntimeSummaryDto>().restartRequestMode)
         assertEquals("bot.yml", configResponse.body<WebUiConfigFileDto>().sourceFile)
     }
 
@@ -154,18 +165,43 @@ class WebUiRouteSmokeTest {
             adminContact = "onebot11:private:1",
             accountConfig = BiliAccountConfig(cookie = "raw-cookie"),
         )
+        var currentBiliData = BiliData.apply {
+            dataVersion = 4
+            dynamic = mutableMapOf()
+            group = mutableMapOf()
+            linkParseBlacklistContacts = mutableSetOf("onebot11:private:1")
+        }
+        var currentBotConfig = BotConfig(
+            platform = PlatformConfig(
+                type = top.bilibili.connector.PlatformType.ONEBOT11,
+                adapter = "onebot11",
+                onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001, token = "raw-token"),
+            ),
+        )
         var savedConfig: BiliConfig? = null
+        var savedBlacklist: Set<String>? = null
+        var savedBotConfig: BotConfig? = null
         val configFacade = WebUiConfigFacade(
             biliConfigProvider = { currentBiliConfig },
-            botConfigProvider = { BotConfig() },
+            biliDataProvider = { currentBiliData },
+            botConfigProvider = { currentBotConfig },
         )
         val configWriteFacade = WebUiConfigWriteFacade(
             configFacade = configFacade,
             biliConfigProvider = { currentBiliConfig },
-            botConfigProvider = { BotConfig() },
+            botConfigProvider = { currentBotConfig },
             saveBiliConfigAction = { updated ->
                 savedConfig = updated
                 currentBiliConfig = updated
+            },
+            saveBiliDataAction = { contacts ->
+                savedBlacklist = contacts
+                currentBiliData.linkParseBlacklistContacts = contacts.toMutableSet()
+                true
+            },
+            saveBotConfigAction = { updated ->
+                savedBotConfig = updated
+                currentBotConfig = updated
             },
         )
 
@@ -184,6 +220,12 @@ class WebUiRouteSmokeTest {
 
         val token = reloginForPhase3(authService, bootstrapPassword)
         val currentSnapshot = createWebUiClient().get("/api/config/bili-config") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }.body<WebUiConfigFileDto>()
+        val dataSnapshot = createWebUiClient().get("/api/config/bili-data") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }.body<WebUiConfigFileDto>()
+        val botSnapshot = createWebUiClient().get("/api/config/bot") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }.body<WebUiConfigFileDto>()
         val missingConfirmation = createWebUiClient().post("/api/config/bili-config") {
@@ -216,6 +258,47 @@ class WebUiRouteSmokeTest {
                 ),
             )
         }
+        val dataSaved = createWebUiClient().post("/api/config/bili-data") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(
+                top.bilibili.webui.model.WebUiBiliDataWriteRequestDto(
+                    snapshotToken = dataSnapshot.snapshotToken,
+                    linkParseBlacklistContacts = listOf("onebot11:private:2", "onebot11:group:3"),
+                    confirmationPassword = "Better123!@",
+                ),
+            )
+        }
+        val botStaleSnapshot = createWebUiClient().post("/api/config/bot") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(
+                top.bilibili.webui.model.WebUiBotConfigWriteRequestDto(
+                    snapshotToken = "stale-token",
+                    platformType = "ONEBOT11",
+                    adapter = "onebot11",
+                    oneBot11Host = "127.0.0.1",
+                    oneBot11Port = 3001,
+                    oneBot11Token = "",
+                    confirmationPassword = "Better123!@",
+                ),
+            )
+        }
+        val botSaved = createWebUiClient().post("/api/config/bot") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(
+                top.bilibili.webui.model.WebUiBotConfigWriteRequestDto(
+                    snapshotToken = botSnapshot.snapshotToken,
+                    platformType = "ONEBOT11",
+                    adapter = "onebot11",
+                    oneBot11Host = "10.0.0.2",
+                    oneBot11Port = 3100,
+                    oneBot11Token = "",
+                    confirmationPassword = "Better123!@",
+                ),
+            )
+        }
         val saved = createWebUiClient().post("/api/config/bili-config") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $token")
@@ -234,9 +317,14 @@ class WebUiRouteSmokeTest {
 
         assertEquals(HttpStatusCode.Forbidden, missingConfirmation.status)
         assertEquals(HttpStatusCode.Conflict, staleSnapshot.status)
+        assertEquals(HttpStatusCode.OK, dataSaved.status)
+        assertEquals(HttpStatusCode.Conflict, botStaleSnapshot.status)
+        assertEquals(HttpStatusCode.OK, botSaved.status)
         assertEquals(HttpStatusCode.OK, saved.status)
         assertEquals("onebot11:private:2", savedConfig?.adminContact)
         assertEquals("raw-cookie", savedConfig?.accountConfig?.cookie)
+        assertEquals(setOf("onebot11:private:2", "onebot11:group:3"), savedBlacklist)
+        assertEquals("10.0.0.2", savedBotConfig?.selectedOneBot11Config()?.host)
         assertTrue(saved.body<WebUiConfigSaveResultDto>().persisted)
     }
 
@@ -293,8 +381,12 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.OK, restart.status)
         assertEquals(listOf("main"), sourceList.body<WebUiLogSourceListDto>().sources.map { source -> source.id })
         assertEquals(2, logWindow.body<WebUiLogWindowDto>().lineCount)
+        assertEquals(listOf(2), logWindow.body<WebUiLogWindowDto>().availableTailLines)
+        assertEquals(false, logWindow.body<WebUiLogWindowDto>().sourceMissing)
         assertEquals("reload-config", reload.body<WebUiActionResultDto>().action)
+        assertEquals(top.bilibili.webui.model.WebUiActionOutcome.RELOAD_CONFIG_REQUESTED, reload.body<WebUiActionResultDto>().outcome)
         assertEquals("request-restart", restart.body<WebUiActionResultDto>().action)
+        assertEquals(top.bilibili.webui.model.WebUiActionOutcome.RESTART_REQUESTED_MANUAL_FALLBACK, restart.body<WebUiActionResultDto>().outcome)
         assertEquals(1, reloadCalls)
         assertEquals(1, shutdownCalls)
     }

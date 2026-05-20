@@ -52,8 +52,15 @@ object ConfigManager {
      * 将当前运行期配置规范化后保存到磁盘。
      */
     fun saveConfig() {
+        saveConfig(botConfig)
+    }
+
+    /**
+     * 将指定运行期配置规范化后保存到磁盘，供外部 owner 入口统一写回 `bot.yml`。
+     */
+    fun saveConfig(configToSave: BotConfig) {
         try {
-            botConfig = botConfig.normalizedBotConfig()
+            botConfig = configToSave.normalizedBotConfig()
             store.save(botConfig)
             logger.info("配置已保存到: ${File(configDir, "bot.yml").absolutePath}")
         } catch (e: Exception) {

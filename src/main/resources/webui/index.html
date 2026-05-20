@@ -14,6 +14,7 @@
         <p class="lead">当前阶段提供运行态概览、文件级配置保存、固定日志查看和受控系统动作。所有交互都通过 `/api/*` 完成。</p>
         <section class="panel hero-panel">
             <h2>Runtime Summary</h2>
+            <p class="panel-copy">运行态摘要会同时显示平台就绪状态和重启请求模式，方便本地调试。</p>
             <pre id="runtime-summary">Loading runtime summary...</pre>
             <p id="runtime-status" class="status-note">Checking session...</p>
         </section>
@@ -21,27 +22,34 @@
         <div class="panel-grid">
             <section class="panel">
                 <h2>BiliConfig.yml</h2>
+                <p class="panel-copy">保存会按文件级快照提交，并在必要时提示 reload。</p>
                 <form id="bili-config-form" class="stack">
-                    <label class="field">
-                        <span>Admin Contact</span>
-                        <input id="bili-config-admin-contact" type="text" autocomplete="off">
-                    </label>
-                    <label class="field">
-                        <span>Cookie</span>
-                        <input id="bili-config-cookie" type="password" autocomplete="off" placeholder="留空表示保留现有值">
-                    </label>
-                    <label class="field">
-                        <span>Baidu APP_ID</span>
-                        <input id="bili-config-baidu-app-id" type="text" autocomplete="off">
-                    </label>
-                    <label class="field">
-                        <span>Baidu SECURITY_KEY</span>
-                        <input id="bili-config-baidu-security-key" type="password" autocomplete="off" placeholder="留空表示保留现有值">
-                    </label>
-                    <label class="field checkbox-field">
-                        <input id="bili-config-debug-mode" type="checkbox">
-                        <span>Debug Mode</span>
-                    </label>
+                    <div class="field-group">
+                        <h3>Editable fields</h3>
+                        <label class="field">
+                            <span>Admin Contact</span>
+                            <input id="bili-config-admin-contact" type="text" autocomplete="off">
+                        </label>
+                        <label class="field">
+                            <span>Baidu APP_ID</span>
+                            <input id="bili-config-baidu-app-id" type="text" autocomplete="off">
+                        </label>
+                        <label class="field checkbox-field">
+                            <input id="bili-config-debug-mode" type="checkbox">
+                            <span>Debug Mode</span>
+                        </label>
+                    </div>
+                    <div class="field-group">
+                        <h3>Secrets</h3>
+                        <label class="field">
+                            <span>Cookie</span>
+                            <input id="bili-config-cookie" type="password" autocomplete="off" placeholder="留空表示保留现有值">
+                        </label>
+                        <label class="field">
+                            <span>Baidu SECURITY_KEY</span>
+                            <input id="bili-config-baidu-security-key" type="password" autocomplete="off" placeholder="留空表示保留现有值">
+                        </label>
+                    </div>
                     <label class="field">
                         <span>Confirmation Password</span>
                         <input id="bili-config-confirmation" type="password" autocomplete="current-password">
@@ -53,11 +61,15 @@
 
             <section class="panel">
                 <h2>BiliData.yml</h2>
+                <p class="panel-copy">当前只开放黑名单联系人集合，保存后立即生效。</p>
                 <form id="bili-data-form" class="stack">
-                    <label class="field">
-                        <span>Link Parse Blacklist Contacts</span>
-                        <textarea id="bili-data-blacklist" rows="8" placeholder="每行一个联系人 subject"></textarea>
-                    </label>
+                    <div class="field-group">
+                        <h3>Policy window</h3>
+                        <label class="field">
+                            <span>Link Parse Blacklist Contacts</span>
+                            <textarea id="bili-data-blacklist" rows="8" placeholder="每行一个联系人 subject"></textarea>
+                        </label>
+                    </div>
                     <label class="field">
                         <span>Confirmation Password</span>
                         <input id="bili-data-confirmation" type="password" autocomplete="current-password">
@@ -69,27 +81,34 @@
 
             <section class="panel">
                 <h2>bot.yml</h2>
+                <p class="panel-copy">平台配置修改后会提示重启语义，并保留当前 token 的空值回填行为。</p>
                 <form id="bot-config-form" class="stack">
-                    <label class="field">
-                        <span>Platform Type</span>
-                        <input id="bot-config-platform-type" type="text" autocomplete="off">
-                    </label>
-                    <label class="field">
-                        <span>Adapter</span>
-                        <input id="bot-config-adapter" type="text" autocomplete="off">
-                    </label>
-                    <label class="field">
-                        <span>OneBot11 Host</span>
-                        <input id="bot-config-host" type="text" autocomplete="off">
-                    </label>
-                    <label class="field">
-                        <span>OneBot11 Port</span>
-                        <input id="bot-config-port" type="number" min="1" max="65535">
-                    </label>
-                    <label class="field">
-                        <span>OneBot11 Token</span>
-                        <input id="bot-config-token" type="password" autocomplete="off" placeholder="留空表示保留现有值">
-                    </label>
+                    <div class="field-group">
+                        <h3>Platform</h3>
+                        <label class="field">
+                            <span>Platform Type</span>
+                            <input id="bot-config-platform-type" type="text" autocomplete="off">
+                        </label>
+                        <label class="field">
+                            <span>Adapter</span>
+                            <input id="bot-config-adapter" type="text" autocomplete="off">
+                        </label>
+                    </div>
+                    <div class="field-group">
+                        <h3>Connection</h3>
+                        <label class="field">
+                            <span>OneBot11 Host</span>
+                            <input id="bot-config-host" type="text" autocomplete="off">
+                        </label>
+                        <label class="field">
+                            <span>OneBot11 Port</span>
+                            <input id="bot-config-port" type="number" min="1" max="65535">
+                        </label>
+                        <label class="field">
+                            <span>OneBot11 Token</span>
+                            <input id="bot-config-token" type="password" autocomplete="off" placeholder="留空表示保留现有值">
+                        </label>
+                    </div>
                     <label class="field">
                         <span>Confirmation Password</span>
                         <input id="bot-config-confirmation" type="password" autocomplete="current-password">
@@ -101,19 +120,26 @@
 
             <section class="panel">
                 <h2>Log Viewer</h2>
+                <p class="panel-copy">固定 source 白名单配合尾长切换，适合本地排查最近日志。</p>
                 <div class="stack compact-stack">
                     <label class="field">
                         <span>Source</span>
                         <select id="log-source-select"></select>
                     </label>
+                    <label class="field">
+                        <span>Tail Window</span>
+                        <select id="log-tail-select"></select>
+                    </label>
                     <button id="refresh-log-viewer" type="button">Refresh Log</button>
                 </div>
                 <pre id="log-viewer">Loading log sources...</pre>
+                <p id="log-window-meta" class="status-note">Tail window options will appear after the source loads.</p>
                 <p id="log-status" class="status-note">Awaiting source selection...</p>
             </section>
 
             <section class="panel">
                 <h2>System Actions</h2>
+                <p class="panel-copy">动作结果会明确区分 reload、graceful shutdown 和 restart request。</p>
                 <div class="stack">
                     <label class="field">
                         <span>Confirmation Password</span>

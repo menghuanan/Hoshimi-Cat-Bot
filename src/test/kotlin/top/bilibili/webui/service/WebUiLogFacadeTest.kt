@@ -69,10 +69,33 @@ class WebUiLogFacadeTest {
         assertNotNull(window)
         assertEquals("main", window.sourceId)
         assertEquals(2, window.lineCount)
+        assertEquals(listOf(2), window.availableTailLines)
         assertTrue(window.text.contains("第三行"))
         assertTrue(window.text.contains("第四行"))
         assertFalse(window.text.contains("第一行"))
         assertTrue(window.hasMore)
+        assertFalse(window.sourceMissing)
         assertTrue(window.lastModifiedEpochMillis > 0L)
+    }
+
+    /**
+     * 固定日志来源即使当前文件不存在，也应返回可调试的空窗口元数据，而不是把 source 语义直接丢失。
+     */
+    @Test
+    fun `missing fixed log files should still return empty debug metadata`() {
+        val facade = WebUiLogFacade(
+            sourceResolvers = mapOf(
+                "main" to { tempRoot.resolve("missing.log").toFile() },
+            ),
+            maxTailLines = 10,
+        )
+
+        val window = facade.readLogWindow("main", tailLines = 40)
+
+        assertNotNull(window)
+        assertEquals(0, window.lineCount)
+        assertEquals(10, window.requestedTailLines)
+        assertEquals(listOf(10), window.availableTailLines)
+        assertTrue(window.sourceMissing)
     }
 }

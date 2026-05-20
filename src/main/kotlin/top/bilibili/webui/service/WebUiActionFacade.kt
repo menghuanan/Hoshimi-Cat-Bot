@@ -4,6 +4,7 @@ import top.bilibili.core.BiliBiliBot
 import top.bilibili.webui.model.WebUiActionConfirmationRequestDto
 import top.bilibili.webui.model.WebUiActionRequestDto
 import top.bilibili.webui.model.WebUiActionResultDto
+import top.bilibili.webui.model.WebUiActionOutcome
 
 /**
  * WebUI 动作 facade 只负责把 reload、shutdown 和 restart-request 映射到明确分离的运行语义。
@@ -25,10 +26,11 @@ class WebUiActionFacade(
         confirmation: WebUiActionConfirmationRequestDto,
     ): WebUiActionResultDto {
         reloadAction()
-        return WebUiActionResultDto(
-            success = true,
-            action = request.action,
+        return buildResult(
+            request = request,
+            outcome = WebUiActionOutcome.RELOAD_CONFIG_REQUESTED,
             message = "configuration reload requested",
+            operatorHint = "Refresh the config panels and inspect the runtime summary after reload.",
             gracefulStopScheduled = false,
             restartExpected = false,
             inProcessRestartPerformed = false,
@@ -44,10 +46,11 @@ class WebUiActionFacade(
         confirmation: WebUiActionConfirmationRequestDto,
     ): WebUiActionResultDto {
         shutdownAction()
-        return WebUiActionResultDto(
-            success = true,
-            action = request.action,
+        return buildResult(
+            request = request,
+            outcome = WebUiActionOutcome.GRACEFUL_SHUTDOWN_REQUESTED,
             message = "graceful shutdown requested",
+            operatorHint = "Wait for the process to exit before starting it again.",
             gracefulStopScheduled = true,
             restartExpected = false,
             inProcessRestartPerformed = false,
@@ -64,17 +67,52 @@ class WebUiActionFacade(
     ): WebUiActionResultDto {
         val autoRestartSupported = restartSupportedProvider()
         shutdownAction()
-        return WebUiActionResultDto(
-            success = true,
-            action = request.action,
+        return buildResult(
+            request = request,
+            outcome = if (autoRestartSupported) {
+                WebUiActionOutcome.RESTART_REQUESTED_WITH_SUPERVISOR
+            } else {
+                WebUiActionOutcome.RESTART_REQUESTED_MANUAL_FALLBACK
+            },
             message = if (autoRestartSupported) {
                 "restart requested; external supervisor is expected to bring the service back"
             } else {
                 "restart requested; graceful shutdown has been scheduled and manual restart is required"
             },
+            operatorHint = if (autoRestartSupported) {
+                "Watch the supervisor or container manager for the next process start."
+            } else {
+                "Restart the bot manually after the stop completes."
+            },
             gracefulStopScheduled = true,
             restartExpected = autoRestartSupported,
             inProcessRestartPerformed = false,
+            autoRestartSupported = autoRestartSupported,
+        )
+    }
+
+    /**
+     * 动作结果统一收口到同一构造路径，避免每个方法各自拼字段导致语义漂移。
+     */
+    private fun buildResult(
+        request: WebUiActionRequestDto,
+        outcome: WebUiActionOutcome,
+        message: String,
+        operatorHint: String,
+        gracefulStopScheduled: Boolean,
+        restartExpected: Boolean,
+        inProcessRestartPerformed: Boolean,
+        autoRestartSupported: Boolean,
+    ): WebUiActionResultDto {
+        return WebUiActionResultDto(
+            success = true,
+            action = request.action,
+            outcome = outcome,
+            message = message,
+            operatorHint = operatorHint,
+            gracefulStopScheduled = gracefulStopScheduled,
+            restartExpected = restartExpected,
+            inProcessRestartPerformed = inProcessRestartPerformed,
             autoRestartSupported = autoRestartSupported,
         )
     }

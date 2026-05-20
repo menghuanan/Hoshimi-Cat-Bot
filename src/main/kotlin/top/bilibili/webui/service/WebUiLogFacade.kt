@@ -37,15 +37,18 @@ class WebUiLogFacade(
         }
 
         val logFile = resolver() ?: return null
+        val availableTailLines = tailLinePresets()
         if (!logFile.exists() || !logFile.isFile) {
             return WebUiLogWindowDto(
                 sourceId = sourceId,
                 title = defaultLogSourceTitle(sourceId),
                 requestedTailLines = boundedTailLines(tailLines),
+                availableTailLines = availableTailLines,
                 lineCount = 0,
                 text = "",
                 lastModifiedEpochMillis = 0L,
                 hasMore = false,
+                sourceMissing = true,
             )
         }
 
@@ -56,10 +59,12 @@ class WebUiLogFacade(
             sourceId = sourceId,
             title = defaultLogSourceTitle(sourceId),
             requestedTailLines = boundedTailLines,
+            availableTailLines = availableTailLines,
             lineCount = windowLines.size,
             text = windowLines.joinToString(System.lineSeparator()),
             lastModifiedEpochMillis = logFile.lastModified(),
             hasMore = lines.size > windowLines.size,
+            sourceMissing = false,
         )
     }
 
@@ -68,6 +73,17 @@ class WebUiLogFacade(
      */
     private fun boundedTailLines(requestedTailLines: Int): Int {
         return requestedTailLines.coerceIn(1, maxTailLines)
+    }
+
+    /**
+     * 日志窗口提供固定尾部预设，方便前端直接切换常用历史长度而不暴露任意分页接口。
+     */
+    private fun tailLinePresets(): List<Int> {
+        return listOf(20, 50, maxTailLines)
+            .map { it.coerceAtMost(maxTailLines) }
+            .filter { it > 0 }
+            .distinct()
+            .sorted()
     }
 
     companion object {

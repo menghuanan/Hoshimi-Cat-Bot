@@ -133,6 +133,41 @@ class WebUiConfigWriteFacadeTest {
         assertEquals(0, savedBotConfigCalls)
     }
 
+    /**
+     * `BiliData.yml` 发生快照冲突时必须先拒绝写入，再把新的 snapshot token 回传给前端刷新。
+     */
+    @Test
+    fun `bili data writes should reject stale snapshots before owner save runs`() {
+        var saveCalls = 0
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(setOf("onebot11:private:1")) },
+                botConfigProvider = { BotConfig() },
+            ),
+            saveBiliDataAction = {
+                saveCalls += 1
+                true
+            },
+        )
+
+        val staleToken = WebUiConfigFacade(
+            biliDataProvider = { configuredBiliData(setOf("onebot11:private:2")) },
+        ).readBiliData().snapshotToken
+        val result = facade.saveBiliData(
+            WebUiBiliDataWriteRequestDto(
+                snapshotToken = staleToken,
+                linkParseBlacklistContacts = listOf("onebot11:private:9"),
+            ),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.conflictDetected)
+        assertEquals(WebUiSaveEffectLevel.REJECTED_CONFLICT, result.effectiveLevel)
+        assertEquals(WebUiRecommendedAction.REFRESH_AND_RETRY, result.recommendedAction)
+        assertEquals(0, saveCalls)
+    }
+
     @Test
     fun `bot config writes should go only through bot config owner and preserve masked token`() {
         var currentBotConfig = BotConfig(
@@ -189,6 +224,69 @@ class WebUiConfigWriteFacadeTest {
         assertEquals("raw-token", savedBotConfig?.selectedOneBot11Config()?.token)
         assertEquals(0, savedBiliConfigCalls)
         assertEquals(0, savedBiliDataCalls)
+    }
+
+    /**
+     * bot.yml 的校验失败必须在 owner 写入前返回，避免无效平台参数被落盘。
+     */
+    @Test
+    fun `bot config writes should reject invalid values without invoking owner save`() {
+        var saveCalls = 0
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = {
+                    BotConfig(
+                        platform = PlatformConfig(
+                            type = PlatformType.ONEBOT11,
+                            adapter = "onebot11",
+                            onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001),
+                        ),
+                    )
+                },
+            ),
+            botConfigProvider = {
+                BotConfig(
+                    platform = PlatformConfig(
+                        type = PlatformType.ONEBOT11,
+                        adapter = "onebot11",
+                        onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001),
+                    ),
+                )
+            },
+            saveBotConfigAction = {
+                saveCalls += 1
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(
+            botConfigProvider = {
+                BotConfig(
+                    platform = PlatformConfig(
+                        type = PlatformType.ONEBOT11,
+                        adapter = "onebot11",
+                        onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001),
+                    ),
+                )
+            },
+        ).readBotConfig().snapshotToken
+        val result = facade.saveBotConfig(
+            WebUiBotConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                platformType = "INVALID",
+                adapter = "invalid",
+                oneBot11Host = "",
+                oneBot11Port = 0,
+                oneBot11Token = "",
+            ),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.validationErrors.isNotEmpty())
+        assertEquals(WebUiSaveEffectLevel.REJECTED_VALIDATION, result.effectiveLevel)
+        assertEquals(WebUiRecommendedAction.FIX_VALIDATION_ERRORS, result.recommendedAction)
+        assertEquals(0, saveCalls)
     }
 
     @Test

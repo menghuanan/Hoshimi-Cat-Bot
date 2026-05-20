@@ -19,9 +19,9 @@ fun Route.registerWebUiActionRoutes(
     auditService: WebUiAuditService,
 ) {
     post("/api/actions/reload-config") {
-        call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService) ?: return@post
         val confirmation = call.receive<WebUiActionConfirmationRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, confirmation.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword)) {
             return@post
         }
         val result = actionFacade.reloadConfig(WebUiActionRequestDto("reload-config"), confirmation)
@@ -30,9 +30,9 @@ fun Route.registerWebUiActionRoutes(
     }
 
     post("/api/actions/shutdown") {
-        call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService) ?: return@post
         val confirmation = call.receive<WebUiActionConfirmationRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, confirmation.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword)) {
             return@post
         }
         val result = actionFacade.shutdown(WebUiActionRequestDto("shutdown"), confirmation)
@@ -41,9 +41,9 @@ fun Route.registerWebUiActionRoutes(
     }
 
     post("/api/actions/request-restart") {
-        call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService) ?: return@post
         val confirmation = call.receive<WebUiActionConfirmationRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, confirmation.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword)) {
             return@post
         }
         val result = actionFacade.requestRestart(WebUiActionRequestDto("request-restart"), confirmation)

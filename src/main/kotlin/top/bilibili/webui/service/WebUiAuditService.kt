@@ -11,6 +11,7 @@ data class WebUiAuditRecord(
     val eventType: String,
     val target: String,
     val success: Boolean,
+    val outcome: String,
     val detailSummary: String,
 )
 
@@ -37,14 +38,15 @@ class WebUiAuditService(
         detailSummary: String,
     ) {
         sink(
-            WebUiAuditRecord(
-                eventType = "config-save",
-                target = sourceFile,
-                success = result.success,
-                detailSummary = sanitizeDetailSummary(
-                    "$detailSummary outcome=${result.effectiveLevel} recommended=${result.recommendedAction}",
+                WebUiAuditRecord(
+                    eventType = "config-save",
+                    target = sourceFile,
+                    success = result.success,
+                    outcome = result.effectiveLevel.name,
+                    detailSummary = sanitizeDetailSummary(
+                        "$detailSummary outcome=${result.effectiveLevel} recommended=${result.recommendedAction}",
+                    ),
                 ),
-            ),
         )
     }
 
@@ -57,13 +59,14 @@ class WebUiAuditService(
         detailSummary: String,
     ) {
         sink(
-            WebUiAuditRecord(
-                eventType = "risky-action",
-                target = action,
-                success = result.success,
-                detailSummary = sanitizeDetailSummary("$detailSummary message=${result.message}"),
-            ),
-        )
+                WebUiAuditRecord(
+                    eventType = "risky-action",
+                    target = action,
+                    success = result.success,
+                    outcome = result.outcome.name,
+                    detailSummary = sanitizeDetailSummary("$detailSummary message=${result.message}"),
+                ),
+            )
     }
 
     /**

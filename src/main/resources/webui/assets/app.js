@@ -7,8 +7,10 @@ const biliConfigStatus = document.getElementById("bili-config-status");
 const biliDataStatus = document.getElementById("bili-data-status");
 const botConfigStatus = document.getElementById("bot-config-status");
 const logSourceSelect = document.getElementById("log-source-select");
+const logTailSelect = document.getElementById("log-tail-select");
 const refreshLogViewerButton = document.getElementById("refresh-log-viewer");
 const logViewer = document.getElementById("log-viewer");
+const logWindowMeta = document.getElementById("log-window-meta");
 const logStatus = document.getElementById("log-status");
 const reloadConfigActionButton = document.getElementById("reload-config-action");
 const shutdownActionButton = document.getElementById("shutdown-action");
@@ -71,12 +73,20 @@ async function readJsonResponse(path, options = {}) {
  */
 function describeResult(payload, fallbackStatus) {
     const message = payload.message || `HTTP ${fallbackStatus}`;
+    const outcome = payload.outcome ? `outcome=${payload.outcome}` : "";
     const effect = payload.effectiveLevel ? `effect=${payload.effectiveLevel}` : "";
     const recommendedAction = payload.recommendedAction ? `next=${payload.recommendedAction}` : "";
+    const operatorHint = payload.operatorHint ? `hint=${payload.operatorHint}` : "";
+    const gracefulStopScheduled = typeof payload.gracefulStopScheduled === "boolean"
+        ? `stop=${payload.gracefulStopScheduled ? "scheduled" : "not-scheduled"}`
+        : "";
+    const restartExpected = typeof payload.restartExpected === "boolean"
+        ? `restart=${payload.restartExpected ? "expected" : "manual"}`
+        : "";
     const validationErrors = Array.isArray(payload.validationErrors) && payload.validationErrors.length > 0
         ? `errors=${payload.validationErrors.join(", ")}`
         : "";
-    return [message, effect, recommendedAction, validationErrors]
+    return [message, outcome, effect, recommendedAction, operatorHint, gracefulStopScheduled, restartExpected, validationErrors]
         .filter((part) => part)
         .join(" | ");
 }
@@ -93,6 +103,43 @@ function setSecretInputValue(input, field) {
     input.placeholder = field && field.value ? "留空表示保留现有值" : "当前未设置";
 }
 
+/**
+ * 日志窗口会为前端提供固定的尾长预设，方便本地快速切换最近窗口而不暴露任意分页。
+ */
+function renderTailOptions(availableTailLines, selectedTailLines) {
+    const options = Array.isArray(availableTailLines) && availableTailLines.length > 0
+        ? availableTailLines
+        : [20, 50, 200];
+    logTailSelect.innerHTML = "";
+    options.forEach((tailLines) => {
+        const option = document.createElement("option");
+        option.value = String(tailLines);
+        option.textContent = `${tailLines} lines`;
+        logTailSelect.append(option);
+    });
+    const selectedValue = options.includes(selectedTailLines) ? String(selectedTailLines) : String(options[0]);
+    logTailSelect.value = selectedValue;
+}
+
+/**
+ * 日志窗口元数据统一显示 source、tail、hasMore 和缺失状态，减少本地调试时的猜测成本。
+ */
+function describeLogWindow(payload) {
+    const sourceMissing = payload.sourceMissing ? "sourceMissing=true" : "sourceMissing=false";
+    const hasMore = typeof payload.hasMore === "boolean" ? `hasMore=${payload.hasMore}` : "";
+    const requestedTailLines = typeof payload.requestedTailLines === "number" ? `tail=${payload.requestedTailLines}` : "";
+    const lineCount = typeof payload.lineCount === "number" ? `lines=${payload.lineCount}` : "";
+    const availableTailLines = Array.isArray(payload.availableTailLines) && payload.availableTailLines.length > 0
+        ? `available=${payload.availableTailLines.join(", ")}`
+        : "";
+    const lastModifiedEpochMillis = typeof payload.lastModifiedEpochMillis === "number"
+        ? `lastModified=${payload.lastModifiedEpochMillis}`
+        : "";
+    return [requestedTailLines, lineCount, hasMore, sourceMissing, availableTailLines, lastModifiedEpochMillis]
+        .filter((part) => part)
+        .join(" | ");
+}
+
 async function loadRuntimeSummary() {
     const { response, payload } = await readJsonResponse("/api/runtime/summary");
     if (!response.ok) {
@@ -100,7 +147,7 @@ async function loadRuntimeSummary() {
         return;
     }
     runtimeSummary.textContent = JSON.stringify(payload, null, 2);
-    runtimeStatus.textContent = "Runtime summary loaded.";
+    runtimeStatus.textContent = `state=${payload.lifecycleState} | platformReady=${payload.platformReady} | restartRequestMode=${payload.restartRequestMode}`;
 }
 
 async function loadBiliConfigPanel() {
@@ -236,6 +283,7 @@ async function loadLogSources() {
         await refreshLogViewer();
     } else {
         logViewer.textContent = "";
+        logWindowMeta.textContent = "No source metadata is currently available.";
         logStatus.textContent = "No allowed log sources are available.";
     }
 }
@@ -246,13 +294,18 @@ async function refreshLogViewer() {
         logStatus.textContent = "Choose a log source first.";
         return;
     }
-    const { response, payload } = await readJsonResponse(`${LOGS_BASE}${encodeURIComponent(sourceId)}?tail=200`);
+    const requestedTail = Number(logTailSelect.value || 200);
+    const { response, payload } = await readJsonResponse(`${LOGS_BASE}${encodeURIComponent(sourceId)}?tail=${requestedTail}`);
     if (!response.ok) {
         logStatus.textContent = describeResult(payload, response.status);
         return;
     }
+    renderTailOptions(payload.availableTailLines, payload.requestedTailLines);
     logViewer.textContent = payload.text || "(empty log window)";
-    logStatus.textContent = `lines=${payload.lineCount} | hasMore=${payload.hasMore} | lastModified=${payload.lastModifiedEpochMillis}`;
+    logWindowMeta.textContent = describeLogWindow(payload);
+    logStatus.textContent = payload.sourceMissing
+        ? "Selected log file is not currently available."
+        : "Log window loaded.";
 }
 
 async function runAction(path, statusTarget) {
@@ -261,11 +314,14 @@ async function runAction(path, statusTarget) {
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-            confirmationPassword: document.getElementById("action-confirmation").value,
-        }),
-    });
+            body: JSON.stringify({
+                confirmationPassword: document.getElementById("action-confirmation").value,
+            }),
+        });
     statusTarget.textContent = describeResult(payload, response.status);
+    if (response.ok) {
+        document.getElementById("action-confirmation").value = "";
+    }
 }
 
 async function loadManagementShell() {
@@ -292,6 +348,11 @@ refreshLogViewerButton.addEventListener("click", () => {
     });
 });
 logSourceSelect.addEventListener("change", () => {
+    refreshLogViewer().catch((error) => {
+        logStatus.textContent = `failed to refresh log: ${error.message}`;
+    });
+});
+logTailSelect.addEventListener("change", () => {
     refreshLogViewer().catch((error) => {
         logStatus.textContent = `failed to refresh log: ${error.message}`;
     });

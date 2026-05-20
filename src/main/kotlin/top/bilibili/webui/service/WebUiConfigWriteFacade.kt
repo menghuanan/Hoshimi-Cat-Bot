@@ -6,7 +6,7 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.TranslateConfig
 import top.bilibili.config.BotConfig
-import top.bilibili.config.BotConfigFileStore
+import top.bilibili.config.ConfigManager
 import top.bilibili.config.NapCatConfig
 import top.bilibili.config.PlatformConfig
 import top.bilibili.connector.PlatformType
@@ -17,7 +17,6 @@ import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
 import top.bilibili.webui.model.WebUiRecommendedAction
 import top.bilibili.webui.model.WebUiSaveEffectLevel
-import java.io.File
 
 /**
  * WebUI 配置写 facade 负责统一处理快照冲突、secret 保留和 manager-owned 持久化边界。
@@ -32,7 +31,7 @@ class WebUiConfigWriteFacade(
         BiliConfigManager.saveData(BiliData)
     },
     private val saveBotConfigAction: (BotConfig) -> Unit = { configToSave ->
-        BotConfigFileStore(File("config")).save(configToSave.normalizedBotConfig())
+        ConfigManager.saveConfig(configToSave)
     },
 ) {
     /**

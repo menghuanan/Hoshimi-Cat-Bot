@@ -10,7 +10,9 @@ data class WebUiRuntimeSummaryDto(
     val lifecycleState: String,
     val uptimeSeconds: Long,
     val platformAdapterInitialized: Boolean,
+    val platformReady: Boolean,
     val webUiEnabled: Boolean,
+    val restartRequestMode: String,
     val subscriptionCount: Int,
     val groupCount: Int,
 )

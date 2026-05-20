@@ -63,6 +63,8 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellPage.contains("id=\"bili-data-form\""))
         assertTrue(shellPage.contains("id=\"bot-config-form\""))
         assertTrue(shellPage.contains("id=\"log-source-select\""))
+        assertTrue(shellPage.contains("id=\"log-tail-select\""))
+        assertTrue(shellPage.contains("id=\"log-window-meta\""))
         assertTrue(shellPage.contains("id=\"reload-config-action\""))
         assertTrue(shellPage.contains("id=\"shutdown-action\""))
         assertTrue(shellPage.contains("id=\"request-restart-action\""))
@@ -76,8 +78,12 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellScript.contains("/api/actions/reload-config"))
         assertTrue(shellScript.contains("/api/actions/shutdown"))
         assertTrue(shellScript.contains("/api/actions/request-restart"))
+        assertTrue(shellScript.contains("availableTailLines"))
+        assertTrue(shellScript.contains("sourceMissing"))
+        assertTrue(shellScript.contains("operatorHint"))
         assertFalse(shellScript.contains("/api/config/save-all"))
         assertTrue(authScript.contains("/api/auth/login"))
         assertTrue(authScript.contains("/api/auth/change-password"))
+        assertTrue(shellScript.contains("restartRequestMode"))
     }
 }

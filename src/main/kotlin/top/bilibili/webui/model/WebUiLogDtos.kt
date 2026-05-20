@@ -27,8 +27,10 @@ data class WebUiLogWindowDto(
     val sourceId: String,
     val title: String,
     val requestedTailLines: Int,
+    val availableTailLines: List<Int>,
     val lineCount: Int,
     val text: String,
     val lastModifiedEpochMillis: Long,
     val hasMore: Boolean,
+    val sourceMissing: Boolean,
 )

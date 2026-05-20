@@ -59,9 +59,9 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/config/bili-config") {
-        call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService) ?: return@post
         val request = call.receive<WebUiBiliConfigWriteRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, request.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword)) {
             return@post
         }
         val result = configWriteFacade.saveBiliConfig(request)
@@ -70,9 +70,9 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/config/bili-data") {
-        call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService) ?: return@post
         val request = call.receive<WebUiBiliDataWriteRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, request.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword)) {
             return@post
         }
         val result = configWriteFacade.saveBiliData(request)
@@ -81,9 +81,9 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/config/bot") {
-        call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService) ?: return@post
         val request = call.receive<WebUiBotConfigWriteRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, request.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword)) {
             return@post
         }
         val result = configWriteFacade.saveBotConfig(request)

@@ -13,6 +13,7 @@ class WebUiRuntimeFacade(
     private val uptimeSecondsProvider: () -> Long = { BiliBiliBot.getUptimeSeconds() },
     private val platformAdapterInitializedProvider: () -> Boolean = { BiliBiliBot.isPlatformAdapterInitialized() },
     private val webUiEnabledProvider: () -> Boolean = { runCatching { ConfigManager.botConfig.webui.enabled }.getOrDefault(false) },
+    private val restartSupportedProvider: () -> Boolean = { false },
     private val subscriptionCountProvider: () -> Int = { runCatching { BiliConfigManager.data.dynamic.size }.getOrDefault(0) },
     private val groupCountProvider: () -> Int = { runCatching { BiliConfigManager.data.group.size }.getOrDefault(0) },
 ) {
@@ -24,9 +25,22 @@ class WebUiRuntimeFacade(
             lifecycleState = lifecycleStateProvider(),
             uptimeSeconds = uptimeSecondsProvider(),
             platformAdapterInitialized = platformAdapterInitializedProvider(),
+            platformReady = platformAdapterInitializedProvider() && lifecycleStateProvider() == "RUNNING",
             webUiEnabled = webUiEnabledProvider(),
+            restartRequestMode = resolveRestartRequestMode(),
             subscriptionCount = subscriptionCountProvider(),
             groupCount = groupCountProvider(),
         )
+    }
+
+    /**
+     * 运行态只输出一个面向 operator 的重启模式摘要，避免泄露更细的进程管理实现细节。
+     */
+    private fun resolveRestartRequestMode(): String {
+        return if (restartSupportedProvider()) {
+            "SUPERVISOR_CONTROLLED"
+        } else {
+            "MANUAL_RESTART_REQUIRED"
+        }
     }
 }

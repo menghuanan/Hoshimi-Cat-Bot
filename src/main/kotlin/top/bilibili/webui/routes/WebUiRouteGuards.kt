@@ -54,9 +54,10 @@ fun ApplicationCall.extractWebUiToken(): String? {
  */
 suspend fun ApplicationCall.requireHighRiskConfirmation(
     authService: WebUiAuthService,
+    session: WebUiAuthenticatedSession,
     confirmationPassword: String,
 ): Boolean {
-    val result = authService.confirmHighRiskOperation(confirmationPassword)
+    val result = authService.confirmHighRiskOperation(session, confirmationPassword)
     if (!result.confirmed) {
         respond(
             HttpStatusCode.Forbidden,

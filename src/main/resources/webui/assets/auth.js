@@ -67,10 +67,14 @@ async function restoreSession() {
     }
     const response = await fetch("/api/auth/session", { headers });
     if (!response.ok) {
+        // 会话探测失败时立即清掉本地旧 token，避免登录页重复带着失效状态发起请求。
+        sessionStorage.removeItem("webuiToken");
         return;
     }
     const session = await response.json();
     if (!session.authenticated) {
+        // 服务端明确判定未认证时也同步清理本地 token，确保后续登录走干净状态。
+        sessionStorage.removeItem("webuiToken");
         return;
     }
     if (session.mustChangePassword) {

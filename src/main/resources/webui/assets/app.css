@@ -79,6 +79,12 @@ dd {
     background: #f7f9ff;
 }
 
+.panel-copy {
+    margin: 0 0 16px;
+    color: #53627f;
+    line-height: 1.6;
+}
+
 .hero-panel {
     margin-top: 0;
 }
@@ -107,6 +113,23 @@ pre {
 .stack {
     display: grid;
     gap: 14px;
+}
+
+.field-group {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(49, 66, 95, 0.08);
+}
+
+.field-group h3 {
+    margin: 0;
+    font-size: 0.88rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #4a5b7b;
 }
 
 .field {

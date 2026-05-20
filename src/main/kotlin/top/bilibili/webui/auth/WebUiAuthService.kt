@@ -7,6 +7,9 @@ class WebUiAuthService(
     private val credentialStore: WebUiCredentialStore,
     private val tokenService: WebUiTokenService,
     private val passwordPolicy: WebUiPasswordPolicy = WebUiPasswordPolicy,
+    private val confirmationTtlMillis: Long = 60_000L,
+    private val timeProvider: () -> Long = { System.currentTimeMillis() },
+    private val confirmationExpiryByToken: MutableMap<String, Long> = mutableMapOf(),
 ) {
     /**
      * 启动期确保凭据状态存在，供 WebUI 在开放登录入口前完成本地认证前置条件准备。
@@ -72,6 +75,8 @@ class WebUiAuthService(
             newPassword = newPassword,
             mustChangePassword = false,
         )
+        // 改密后立即清空旧确认状态，避免旧密码确认窗口跨越 token 失效周期继续生效。
+        confirmationExpiryByToken.clear()
         tokenService.revokeAll()
         return WebUiPasswordChangeResult(
             success = true,
@@ -80,7 +85,41 @@ class WebUiAuthService(
     }
 
     /**
-     * 高风险操作统一要求再次校验当前密码，避免单靠登录 token 就执行保存或停机动作。
+     * 高风险操作统一要求显式确认；当前密码校验成功后会在当前会话内缓存一个短时确认窗口。
+     */
+    fun confirmHighRiskOperation(
+        session: WebUiAuthenticatedSession,
+        currentPassword: String,
+    ): WebUiHighRiskConfirmationResult {
+        val now = timeProvider()
+        val cachedExpiry = confirmationExpiryByToken[session.token]
+        if (currentPassword.isBlank() && cachedExpiry != null && cachedExpiry > now) {
+            return WebUiHighRiskConfirmationResult(
+                confirmed = true,
+                reusedGrant = true,
+                expiresAtEpochMillis = cachedExpiry,
+                message = "confirmed",
+            )
+        }
+        if (currentPassword.isBlank()) {
+            if (cachedExpiry != null && cachedExpiry <= now) {
+                confirmationExpiryByToken.remove(session.token)
+                return WebUiHighRiskConfirmationResult(
+                    confirmed = false,
+                    message = "confirmation expired, re-enter current password",
+                )
+            }
+            return WebUiHighRiskConfirmationResult(
+                confirmed = false,
+                message = "confirmation password required",
+            )
+        }
+        pruneExpiredConfirmations()
+        return confirmWithPassword(session, currentPassword, now)
+    }
+
+    /**
+     * 不带会话上下文的确认入口只用于本地服务测试；它不会缓存确认窗口。
      */
     fun confirmHighRiskOperation(currentPassword: String): WebUiHighRiskConfirmationResult {
         val state = credentialStore.loadState()
@@ -89,6 +128,40 @@ class WebUiAuthService(
             confirmed = confirmed,
             message = if (confirmed) "confirmed" else "invalid confirmation password",
         )
+    }
+
+    /**
+     * 确认成功后把 TTL 绑定到当前 session token，避免不同浏览器标签或旧 token 互相复用高风险授权。
+     */
+    private fun confirmWithPassword(
+        session: WebUiAuthenticatedSession,
+        currentPassword: String,
+        now: Long,
+    ): WebUiHighRiskConfirmationResult {
+        val state = credentialStore.loadState()
+        val confirmed = credentialStore.matchesPassword(state, currentPassword)
+        if (!confirmed) {
+            return WebUiHighRiskConfirmationResult(
+                confirmed = false,
+                message = "invalid confirmation password",
+            )
+        }
+        val expiresAt = now + confirmationTtlMillis
+        confirmationExpiryByToken[session.token] = expiresAt
+        return WebUiHighRiskConfirmationResult(
+            confirmed = true,
+            reusedGrant = false,
+            expiresAtEpochMillis = expiresAt,
+            message = "confirmed",
+        )
+    }
+
+    /**
+     * 过期确认窗口在每次检查前清理，避免服务端长期保留已经无效的高风险授权状态。
+     */
+    private fun pruneExpiredConfirmations() {
+        val now = timeProvider()
+        confirmationExpiryByToken.entries.removeIf { (_, expiresAt) -> expiresAt <= now }
     }
 }
 
@@ -121,9 +194,11 @@ data class WebUiAuthenticatedSession(
 )
 
 /**
- * 高风险确认结果只描述确认是否通过，供保存与动作路由统一消费。
+ * 高风险确认结果既描述是否通过，也描述是否复用了短时确认窗口，供路由和测试统一消费。
  */
 data class WebUiHighRiskConfirmationResult(
     val confirmed: Boolean,
+    val reusedGrant: Boolean = false,
+    val expiresAtEpochMillis: Long = 0L,
     val message: String = "",
 )

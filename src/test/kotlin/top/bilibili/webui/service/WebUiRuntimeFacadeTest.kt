@@ -3,6 +3,7 @@ package top.bilibili.webui.service
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class WebUiRuntimeFacadeTest {
     @Test
@@ -15,6 +16,7 @@ class WebUiRuntimeFacadeTest {
             uptimeSecondsProvider = { uptimeSeconds },
             platformAdapterInitializedProvider = { true },
             webUiEnabledProvider = { true },
+            restartSupportedProvider = { true },
             subscriptionCountProvider = { subscriptionCount },
             groupCountProvider = { groupCount },
         )
@@ -28,6 +30,8 @@ class WebUiRuntimeFacadeTest {
         assertEquals(120L, snapshot.uptimeSeconds)
         assertEquals(3, snapshot.subscriptionCount)
         assertEquals(2, snapshot.groupCount)
+        assertTrue(snapshot.platformReady)
+        assertEquals("SUPERVISOR_CONTROLLED", snapshot.restartRequestMode)
         assertFalse(snapshot.platformAdapterInitialized.not())
     }
 }
