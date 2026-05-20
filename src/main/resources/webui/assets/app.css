@@ -700,6 +700,11 @@ input:focus {
     font-size: 0.84rem;
 }
 
+.feed-row--empty {
+    grid-template-columns: 1fr;
+    min-height: 42px;
+}
+
 .feed-tags {
     display: inline-flex;
     align-items: center;
@@ -734,11 +739,22 @@ input:focus {
     background: #eef2f8;
 }
 
+.feed-pill--red {
+    color: #ef4444;
+    background: #ffe9eb;
+}
+
 .feed-text {
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.feed-empty {
+    color: #94a3b8;
+    font-size: 0.82rem;
+    font-weight: 700;
 }
 
 .feed-row time {

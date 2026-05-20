@@ -83,6 +83,8 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellPage.contains("""data-runtime-field="memoryUsage""""))
         assertTrue(shellPage.contains("""data-runtime-field="storageUsage""""))
         assertTrue(shellPage.contains("""data-runtime-field="dockerStatus""""))
+        assertTrue(shellPage.contains("""data-runtime-list="recentPushRecords""""))
+        assertFalse(shellPage.contains("查看全部"))
         assertTrue(shellPage.contains("""data-runtime-progress="cpuUsage""""))
         assertTrue(shellPage.contains("""data-runtime-progress="memoryUsage""""))
         assertTrue(shellPage.contains("""data-runtime-progress="storageUsage""""))
@@ -92,6 +94,7 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellScript.contains("/api/runtime/summary"))
         assertTrue(shellScript.contains("refreshRuntimeSummary"))
         assertTrue(shellScript.contains("renderHostRuntimeStatus"))
+        assertTrue(shellScript.contains("renderRecentPushRecords"))
         assertTrue(authScript.contains("/api/auth/login"))
         assertTrue(authScript.contains("/api/auth/change-password"))
     }

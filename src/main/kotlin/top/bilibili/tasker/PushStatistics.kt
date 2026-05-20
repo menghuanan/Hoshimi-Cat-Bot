@@ -39,6 +39,18 @@ data class DailyPushStatsSnapshot(
     val liveClose: Int,
     val failed: Int,
     val lastSuccessAtEpochMillis: Long?,
+    val recentRecords: List<PushDeliveryRecordSnapshot>,
+)
+
+/**
+ * 最近推送记录快照只保留首页需要的时间、类型、状态和摘要，避免把任务内部对象直接暴露出去。
+ */
+data class PushDeliveryRecordSnapshot(
+    val timestampEpochMillis: Long,
+    val type: String,
+    val success: Boolean,
+    val summary: String,
+    val target: String?,
 )
 
 /**
@@ -48,32 +60,60 @@ internal class DailyPushStatsCounter(
     private val todayProvider: () -> LocalDate = { LocalDate.now() },
     private val currentTimeMillisProvider: () -> Long = { System.currentTimeMillis() },
 ) {
+    private companion object {
+        // 首页只展示最近几条推送，避免任务进程长期运行时把内存历史无限放大。
+        const val MAX_RECENT_RECORDS = 5
+    }
+
     private var currentDate: LocalDate = todayProvider()
     private var dynamicSuccessCount = 0
     private var liveSuccessCount = 0
     private var liveCloseSuccessCount = 0
     private var failureCount = 0
     private var lastSuccessAtEpochMillis: Long? = null
+    private val recentRecords = ArrayDeque<PushDeliveryRecordSnapshot>()
 
     /**
      * 记录一次成功投递，计数口径按“实际发送到单个联系人”累计。
      */
     fun recordSuccess(type: PushStatisticType) = synchronized(this) {
-        ensureCurrentDate()
-        when (type) {
-            PushStatisticType.DYNAMIC -> dynamicSuccessCount += 1
-            PushStatisticType.LIVE -> liveSuccessCount += 1
-            PushStatisticType.LIVE_CLOSE -> liveCloseSuccessCount += 1
-        }
-        lastSuccessAtEpochMillis = currentTimeMillisProvider()
+        recordDelivery(type = type, success = true, summary = type.name)
     }
 
     /**
      * 记录一次投递失败，失败数同样按单个联系人粒度累计。
      */
     fun recordFailure(type: PushStatisticType) = synchronized(this) {
+        recordDelivery(type = type, success = false, summary = type.name)
+    }
+
+    /**
+     * 记录一次完整的推送结果，同时更新首页统计和最近记录列表。
+     */
+    fun recordDelivery(
+        type: PushStatisticType,
+        success: Boolean,
+        summary: String,
+        target: String? = null,
+    ) = synchronized(this) {
         ensureCurrentDate()
-        failureCount += 1
+        when (type) {
+            PushStatisticType.DYNAMIC -> if (success) dynamicSuccessCount += 1 else failureCount += 1
+            PushStatisticType.LIVE -> if (success) liveSuccessCount += 1 else failureCount += 1
+            PushStatisticType.LIVE_CLOSE -> if (success) liveCloseSuccessCount += 1 else failureCount += 1
+        }
+        if (success) {
+            lastSuccessAtEpochMillis = currentTimeMillisProvider()
+        }
+        pushRecentRecord(
+            PushDeliveryRecordSnapshot(
+                timestampEpochMillis = currentTimeMillisProvider(),
+                type = type.name,
+                success = success,
+                summary = summary,
+                target = target,
+            ),
+        )
     }
 
     /**
@@ -90,6 +130,7 @@ internal class DailyPushStatsCounter(
             liveClose = liveCloseSuccessCount,
             failed = failureCount,
             lastSuccessAtEpochMillis = lastSuccessAtEpochMillis,
+            recentRecords = recentRecords.toList(),
         )
     }
 
@@ -107,6 +148,17 @@ internal class DailyPushStatsCounter(
         liveCloseSuccessCount = 0
         failureCount = 0
         lastSuccessAtEpochMillis = null
+        recentRecords.clear()
+    }
+
+    /**
+     * 最近记录采用头插加限长策略，保证首页取出的总是最新几条而不会无限增长。
+     */
+    private fun pushRecentRecord(record: PushDeliveryRecordSnapshot) {
+        recentRecords.addFirst(record)
+        while (recentRecords.size > MAX_RECENT_RECORDS) {
+            recentRecords.removeLast()
+        }
     }
 }
 
@@ -128,6 +180,18 @@ object PushStatistics {
      */
     fun recordFailure(type: PushStatisticType) {
         counter.recordFailure(type)
+    }
+
+    /**
+     * 记录带摘要的完整推送结果，供首页最近推送记录直接展示。
+     */
+    fun recordDelivery(
+        type: PushStatisticType,
+        success: Boolean,
+        summary: String,
+        target: String? = null,
+    ) {
+        counter.recordDelivery(type = type, success = success, summary = summary, target = target)
     }
 
     /**

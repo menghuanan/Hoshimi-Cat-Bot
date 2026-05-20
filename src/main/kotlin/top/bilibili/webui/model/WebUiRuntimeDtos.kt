@@ -3,7 +3,7 @@ package top.bilibili.webui.model
 import kotlinx.serialization.Serializable
 
 /**
- * 运行态摘要 DTO 只暴露不可变快照值，避免把运行中对象直接泄露给 WebUI。
+ * 运行态摘要 DTO 只暴露不可变快照值，避免把运行中对象直接泄露给 WebUI；最近推送记录和今日统计一起构成首页概览。
  */
 @Serializable
 data class WebUiRuntimeSummaryDto(
@@ -20,6 +20,7 @@ data class WebUiRuntimeSummaryDto(
     val account: WebUiBiliAccountStatusDto,
     val webSocket: WebUiWebSocketStatusDto,
     val todayPushStats: WebUiTodayPushStatsDto,
+    val recentPushRecords: List<WebUiRecentPushRecordDto>,
     val host: WebUiHostRuntimeStatusDto,
 )
 
@@ -57,6 +58,20 @@ data class WebUiTodayPushStatsDto(
     val liveClose: Int,
     val failed: Int,
     val lastSuccessAtEpochMillis: Long?,
+)
+
+/**
+ * 最近推送记录直接面向首页展示，保留类型、状态和摘要即可，不把任务内部对象带到前端。
+ */
+@Serializable
+data class WebUiRecentPushRecordDto(
+    val timestampEpochMillis: Long,
+    val type: String,
+    val typeLabel: String,
+    val success: Boolean,
+    val statusLabel: String,
+    val summary: String,
+    val target: String?,
 )
 
 /**

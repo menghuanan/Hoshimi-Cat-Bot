@@ -95,11 +95,22 @@ object SendTasker : BiliTasker("SendTasker") {
                     sourceMessage = queuedMessage.sourceMessage,
                 )
 
+                // 先把送达结论写入最近推送历史，再继续输出日志，确保首页和控制台看到同一份状态。
                 if (success) {
-                    PushStatistics.recordSuccess(queuedMessage.pushStatisticType)
+                    PushStatistics.recordDelivery(
+                        type = queuedMessage.pushStatisticType,
+                        success = true,
+                        summary = buildPushRecordSummary(queuedMessage.sourceMessage),
+                        target = queuedMessage.contact.toSubject(),
+                    )
                     BiliBiliBot.logger.info("消息已发送到 {}", queuedMessage.contact.toSubject())
                 } else {
-                    PushStatistics.recordFailure(queuedMessage.pushStatisticType)
+                    PushStatistics.recordDelivery(
+                        type = queuedMessage.pushStatisticType,
+                        success = false,
+                        summary = buildPushRecordSummary(queuedMessage.sourceMessage),
+                        target = queuedMessage.contact.toSubject(),
+                    )
                     BiliBiliBot.logger.warn("消息发送失败: {}", queuedMessage.contact.toSubject())
                 }
 
@@ -116,6 +127,13 @@ object SendTasker : BiliTasker("SendTasker") {
                     BiliBiliBot.logger.info("停机期间丢弃队列消息: ${e.message}")
                     return
                 }
+                // 异常也要记为失败，避免首页遗漏掉发送链路中的意外中断。
+                PushStatistics.recordDelivery(
+                    type = queuedMessage.pushStatisticType,
+                    success = false,
+                    summary = buildPushRecordSummary(queuedMessage.sourceMessage),
+                    target = queuedMessage.contact.toSubject(),
+                )
                 BiliBiliBot.logger.error("发送消息时出错: ${e.message}", e)
             }
         }
@@ -225,7 +243,7 @@ object SendTasker : BiliTasker("SendTasker") {
                         segments = atAllDecision.segments,
                         pushStatisticType = PushStatisticType.from(message),
                         cooldownSubject = specificContact.takeIf { atAllDecision.injected },
-                        sourceMessage = message.takeIf { atAllDecision.injected },
+                        sourceMessage = message,
                     ),
                 )
             } finally {
@@ -265,7 +283,7 @@ object SendTasker : BiliTasker("SendTasker") {
                             segments = atAllDecision.segments,
                             pushStatisticType = PushStatisticType.from(message),
                             cooldownSubject = contactStr.takeIf { atAllDecision.injected },
-                            sourceMessage = message.takeIf { atAllDecision.injected },
+                            sourceMessage = message,
                         ),
                     )
                     BiliBiliBot.logger.info("消息已加入发送队列: {}", contact.toSubject())
@@ -612,6 +630,17 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
+     * 最近推送记录只保留 operator 扫一眼就能读懂的摘要，不把完整消息内容塞进首页卡片。
+     */
+    private fun buildPushRecordSummary(message: BiliMessage): String {
+        return when (message) {
+            is DynamicMessage -> "${message.name} 发布了新动态"
+            is LiveMessage -> "${message.name} 正在直播：${message.title}"
+            is LiveCloseMessage -> "${message.name} 已下播：${message.title}"
+        }
+    }
+
+    /**
      * 为单条消息构造稳定的批次标识。
      * 该标识用于同分组同批次复用随机模板，并在批次结束后清理临时缓存。
      */
@@ -624,14 +653,14 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 队列里显式保留 @全体 自动注入的上下文，保证成功记账只绑定业务层追加的增强分支。
+     * 队列里显式保留原始消息，保证发送结果记账和 @全体 冷却都能复用同一份业务上下文。
      */
     private data class QueuedMessage(
         val contact: PlatformContact,
         val segments: List<OutgoingPart>,
         val pushStatisticType: PushStatisticType,
         val cooldownSubject: String? = null,
-        val sourceMessage: BiliMessage? = null,
+        val sourceMessage: BiliMessage,
     )
 
     /**

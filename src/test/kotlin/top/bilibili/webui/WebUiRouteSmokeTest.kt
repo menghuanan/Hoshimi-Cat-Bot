@@ -44,7 +44,8 @@ import top.bilibili.webui.model.WebUiResourceUsageDto
 import top.bilibili.webui.model.WebUiRuntimeSummaryDto
 import top.bilibili.webui.model.WebUiSessionDto
 import top.bilibili.webui.model.WebUiChangePasswordRequestDto
-import top.bilibili.webui.model.WebUiTodayPushStatsDto
+import top.bilibili.tasker.DailyPushStatsSnapshot
+import top.bilibili.tasker.PushDeliveryRecordSnapshot
 import top.bilibili.webui.server.installWebUiModule
 import top.bilibili.webui.service.WebUiActionFacade
 import top.bilibili.webui.service.WebUiAuditService
@@ -179,6 +180,10 @@ class WebUiRouteSmokeTest {
         assertEquals(50.0, runtimeBody.host.memory.usagePercent)
         assertEquals(25.0, runtimeBody.host.storage.usagePercent)
         assertEquals(true, runtimeBody.host.docker.detected)
+        assertEquals(2, runtimeBody.recentPushRecords.size)
+        assertEquals("直播", runtimeBody.recentPushRecords.first().typeLabel)
+        assertEquals("已发送", runtimeBody.recentPushRecords.first().statusLabel)
+        assertEquals("米哈游Official 正在直播：4.7版本前瞻特别节目", runtimeBody.recentPushRecords.first().summary)
         assertEquals("bot.yml", configResponse.body<WebUiConfigFileDto>().sourceFile)
     }
 
@@ -545,8 +550,8 @@ class WebUiRouteSmokeTest {
                     ),
                 )
             },
-            todayPushStatsProvider = {
-                WebUiTodayPushStatsDto(
+            pushStatisticsProvider = {
+                DailyPushStatsSnapshot(
                     date = "2026-05-20",
                     total = 6,
                     dynamic = 4,
@@ -554,6 +559,22 @@ class WebUiRouteSmokeTest {
                     liveClose = 1,
                     failed = 0,
                     lastSuccessAtEpochMillis = null,
+                    recentRecords = listOf(
+                        PushDeliveryRecordSnapshot(
+                            timestampEpochMillis = 1779254700000L,
+                            type = "LIVE",
+                            success = true,
+                            summary = "米哈游Official 正在直播：4.7版本前瞻特别节目",
+                            target = "onebot11:group:10001",
+                        ),
+                        PushDeliveryRecordSnapshot(
+                            timestampEpochMillis = 1779254600000L,
+                            type = "DYNAMIC",
+                            success = true,
+                            summary = "LexBurner 发布了新动态",
+                            target = "onebot11:group:10002",
+                        ),
+                    ),
                 )
             },
             hostStatusProvider = {

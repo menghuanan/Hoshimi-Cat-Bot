@@ -6,10 +6,12 @@ import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.tasker.DailyPushStatsSnapshot
+import top.bilibili.tasker.PushDeliveryRecordSnapshot
 import top.bilibili.tasker.PushStatistics
 import top.bilibili.webui.model.WebUiBiliAccountStatusDto
 import top.bilibili.webui.model.WebUiDockerRuntimeStatusDto
 import top.bilibili.webui.model.WebUiHostRuntimeStatusDto
+import top.bilibili.webui.model.WebUiRecentPushRecordDto
 import top.bilibili.webui.model.WebUiResourceUsageDto
 import top.bilibili.webui.model.WebUiRuntimeSummaryDto
 import top.bilibili.webui.model.WebUiTodayPushStatsDto
@@ -43,7 +45,7 @@ class WebUiRuntimeFacade(
         runCatching { BiliBiliBot.requireConnectorManager().runtimeObservability() }
             .getOrDefault(PlatformObservabilitySnapshot.empty("platform adapter is not initialized"))
     },
-    private val todayPushStatsProvider: () -> WebUiTodayPushStatsDto = { PushStatistics.snapshot().toWebUiDto() },
+    private val pushStatisticsProvider: () -> DailyPushStatsSnapshot = { PushStatistics.snapshot() },
     private val hostStatusProvider: () -> WebUiHostRuntimeStatusDto = { readHostRuntimeStatus() },
 ) {
     /**
@@ -54,6 +56,7 @@ class WebUiRuntimeFacade(
         val platformAdapterInitialized = platformAdapterInitializedProvider()
         val platformRuntimeStatus = platformRuntimeStatusProvider()
         val platformObservability = platformObservabilityProvider()
+        val pushSnapshot = pushStatisticsProvider()
         return WebUiRuntimeSummaryDto(
             lifecycleState = lifecycleState,
             uptimeSeconds = uptimeSecondsProvider(),
@@ -67,7 +70,8 @@ class WebUiRuntimeFacade(
             groupCount = groupCountProvider(),
             account = accountStatusProvider(),
             webSocket = buildWebSocketStatus(platformRuntimeStatus, platformObservability),
-            todayPushStats = todayPushStatsProvider(),
+            todayPushStats = pushSnapshot.toWebUiDto(),
+            recentPushRecords = pushSnapshot.recentRecords.map { record -> record.toWebUiDto() },
             host = hostStatusProvider(),
         )
     }
@@ -130,6 +134,26 @@ private fun DailyPushStatsSnapshot.toWebUiDto(): WebUiTodayPushStatsDto {
         liveClose = liveClose,
         failed = failed,
         lastSuccessAtEpochMillis = lastSuccessAtEpochMillis,
+    )
+}
+
+/**
+ * 最近推送记录的 WebUI 视图把原始类型名翻译成 operator 直接可读的标签。
+ */
+private fun PushDeliveryRecordSnapshot.toWebUiDto(): WebUiRecentPushRecordDto {
+    return WebUiRecentPushRecordDto(
+        timestampEpochMillis = timestampEpochMillis,
+        type = type,
+        typeLabel = when (type) {
+            "DYNAMIC" -> "动态"
+            "LIVE" -> "直播"
+            "LIVE_CLOSE" -> "下播"
+            else -> type
+        },
+        success = success,
+        statusLabel = if (success) "已发送" else "发送失败",
+        summary = summary,
+        target = target,
     )
 }
 

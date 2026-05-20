@@ -34,4 +34,32 @@ class PushStatisticsTest {
         assertEquals(1, secondSnapshot.liveClose)
         assertEquals(0, secondSnapshot.failed)
     }
+
+    @Test
+    fun `recent push deliveries should keep newest records and trim history to five entries`() {
+        var timestamp = 1_000L
+        val counter = DailyPushStatsCounter(
+            todayProvider = { LocalDate.of(2026, 5, 20) },
+            currentTimeMillisProvider = { timestamp },
+        )
+
+        repeat(6) { index ->
+            timestamp = 1_000L + index
+            counter.recordDelivery(
+                type = PushStatisticType.DYNAMIC,
+                success = index % 2 == 0,
+                summary = "record-$index",
+                target = "onebot11:group:${index + 1}",
+            )
+        }
+
+        val snapshot = counter.snapshot()
+
+        assertEquals(5, snapshot.recentRecords.size)
+        assertEquals("record-5", snapshot.recentRecords.first().summary)
+        assertEquals(false, snapshot.recentRecords.first().success)
+        assertEquals("onebot11:group:6", snapshot.recentRecords.first().target)
+        assertEquals("record-1", snapshot.recentRecords.last().summary)
+        assertEquals("onebot11:group:2", snapshot.recentRecords.last().target)
+    }
 }

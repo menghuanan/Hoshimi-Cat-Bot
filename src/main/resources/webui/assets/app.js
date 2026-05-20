@@ -20,6 +20,9 @@ const runtimeFields = new Map(
 const runtimeProgressBars = new Map(
     Array.from(document.querySelectorAll("[data-runtime-progress]"), (bar) => [bar.dataset.runtimeProgress, bar]),
 );
+const runtimeLists = new Map(
+    Array.from(document.querySelectorAll("[data-runtime-list]"), (list) => [list.dataset.runtimeList, list]),
+);
 const runtimeRefreshIntervalMs = 30_000;
 
 /**
@@ -53,6 +56,16 @@ function setRuntimeProgress(name, value) {
         return;
     }
     bar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+}
+
+/**
+ * 列表区域统一通过整段 HTML 重绘，避免局部更新后残留旧行导致首页状态不一致。
+ */
+function setRuntimeList(name, html) {
+    const list = runtimeLists.get(name);
+    if (list) {
+        list.innerHTML = html;
+    }
 }
 
 /**
@@ -101,6 +114,38 @@ function formatDateTime(epochMillis) {
         minute: "2-digit",
         second: "2-digit",
         hour12: false,
+    });
+}
+
+/**
+ * 最近推送记录只显示时分秒，和首页卡片里的短时间格式保持一致。
+ */
+function formatTimeOnly(epochMillis) {
+    const value = Number(epochMillis);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "--";
+    }
+    return new Date(value).toLocaleTimeString("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    });
+}
+
+/**
+ * 首页列表内容来自后端摘要，渲染前先做 HTML 转义，避免消息文本破坏静态壳结构。
+ */
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => {
+        const map = {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+        };
+        return map[char] || char;
     });
 }
 
@@ -163,6 +208,50 @@ function formatSystemLoad(value) {
 }
 
 /**
+ * 将任务层推送类型映射到首页卡片颜色，确保直播、动态和下播一眼可分。
+ */
+function getPushRecordTypeClass(type) {
+    const classes = {
+        LIVE: "feed-pill--green",
+        DYNAMIC: "feed-pill--purple",
+        LIVE_CLOSE: "feed-pill--dark",
+    };
+    return classes[type] || "feed-pill--dark";
+}
+
+/**
+ * 首页最近推送记录按后端快照直接渲染，保留类型、状态和摘要，便于快速扫读。
+ */
+function renderRecentPushRecords(records) {
+    const items = Array.isArray(records) ? records : [];
+    if (items.length === 0) {
+        setRuntimeList(
+            "recentPushRecords",
+            '<div class="feed-row feed-row--empty"><span class="feed-empty">暂无最近推送记录</span></div>',
+        );
+        return;
+    }
+
+    const rows = items.map((record) => {
+        const typeLabel = escapeHtml(record.typeLabel || record.type || "--");
+        const statusLabel = escapeHtml(record.statusLabel || (record.success ? "已发送" : "发送失败"));
+        const summary = escapeHtml(record.summary || "--");
+        const timeLabel = escapeHtml(formatTimeOnly(record.timestampEpochMillis));
+        return `
+            <div class="feed-row">
+                <div class="feed-tags">
+                    <span class="feed-pill ${getPushRecordTypeClass(record.type)}">${typeLabel}</span>
+                    <span class="feed-pill ${record.success ? "feed-pill--green" : "feed-pill--red"}">${statusLabel}</span>
+                </div>
+                <span class="feed-text">${summary}</span>
+                <time>${timeLabel}</time>
+            </div>
+        `;
+    });
+    setRuntimeList("recentPushRecords", rows.join(""));
+}
+
+/**
  * 根据后端 host 快照更新运行信息面板。
  */
 function renderHostRuntimeStatus(host, uptimeSeconds) {
@@ -212,6 +301,7 @@ function renderRuntimeSummary(summary) {
         "todayPushBreakdown",
         `直播：${pushStats.live ?? 0}　动态：${pushStats.dynamic ?? 0}　下播：${pushStats.liveClose ?? 0}`,
     );
+    renderRecentPushRecords(summary.recentPushRecords);
     renderHostRuntimeStatus(summary.host, summary.uptimeSeconds);
 }
 

@@ -53,6 +53,8 @@ class WebUiRuleClosureVerificationTest {
         assertTrue(shellPage.contains("class=\"feature-grid\""))
         assertTrue(shellPage.contains("class=\"subscription-grid\""))
         assertTrue(shellPage.contains("class=\"log-list\""))
+        assertTrue(shellPage.contains("""data-runtime-list="recentPushRecords""""))
+        assertFalse(shellPage.contains("查看全部"))
         assertTrue(shellPage.contains("data-runtime-field=\"startedAt\""))
         assertTrue(shellPage.contains("data-runtime-field=\"runtimeDuration\""))
         assertTrue(shellPage.contains("data-runtime-field=\"systemTime\""))
@@ -66,6 +68,7 @@ class WebUiRuleClosureVerificationTest {
         assertTrue(shellScript.contains("/api/runtime/summary"))
         assertTrue(shellScript.contains("data-runtime-field"))
         assertTrue(shellScript.contains("renderHostRuntimeStatus"))
+        assertTrue(shellScript.contains("renderRecentPushRecords"))
     }
 
     /**
@@ -83,6 +86,7 @@ class WebUiRuleClosureVerificationTest {
         assertTrue(actionDtos.contains("RESTART_REQUESTED_MANUAL_FALLBACK"))
         assertTrue(runtimeDtos.contains("restartRequestMode"))
         assertTrue(runtimeDtos.contains("todayPushStats"))
+        assertTrue(runtimeDtos.contains("recentPushRecords"))
         assertTrue(runtimeDtos.contains("webSocket"))
         assertTrue(runtimeDtos.contains("WebUiHostRuntimeStatusDto"))
         assertTrue(runtimeDtos.contains("WebUiDockerRuntimeStatusDto"))
