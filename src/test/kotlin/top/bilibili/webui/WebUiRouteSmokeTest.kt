@@ -31,15 +31,20 @@ import top.bilibili.webui.model.WebUiActionConfirmationRequestDto
 import top.bilibili.webui.model.WebUiActionResultDto
 import top.bilibili.webui.service.WebUiAuditRecord
 import top.bilibili.webui.model.WebUiAuthResponseDto
+import top.bilibili.webui.model.WebUiBiliAccountStatusDto
+import top.bilibili.webui.model.WebUiDockerRuntimeStatusDto
+import top.bilibili.webui.model.WebUiHostRuntimeStatusDto
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiConfigFileDto
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
 import top.bilibili.webui.model.WebUiLogSourceListDto
 import top.bilibili.webui.model.WebUiLogWindowDto
 import top.bilibili.webui.model.WebUiLoginRequestDto
+import top.bilibili.webui.model.WebUiResourceUsageDto
 import top.bilibili.webui.model.WebUiRuntimeSummaryDto
 import top.bilibili.webui.model.WebUiSessionDto
 import top.bilibili.webui.model.WebUiChangePasswordRequestDto
+import top.bilibili.webui.model.WebUiTodayPushStatsDto
 import top.bilibili.webui.server.installWebUiModule
 import top.bilibili.webui.service.WebUiActionFacade
 import top.bilibili.webui.service.WebUiAuditService
@@ -47,6 +52,9 @@ import top.bilibili.webui.service.WebUiConfigFacade
 import top.bilibili.webui.service.WebUiConfigWriteFacade
 import top.bilibili.webui.service.WebUiLogFacade
 import top.bilibili.webui.service.WebUiRuntimeFacade
+import top.bilibili.connector.PlatformHttpClientSnapshot
+import top.bilibili.connector.PlatformObservabilitySnapshot
+import top.bilibili.connector.PlatformRuntimeStatus
 
 class WebUiRouteSmokeTest {
     private val tempRoot = Files.createTempDirectory("webui-route-smoke")
@@ -154,9 +162,23 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.OK, rootResponse.status)
         assertEquals(false, sessionProbe.mustChangePassword)
         assertEquals(true, sessionProbe.authenticated)
-        assertEquals("RUNNING", runtimeResponse.body<WebUiRuntimeSummaryDto>().lifecycleState)
-        assertEquals(true, runtimeResponse.body<WebUiRuntimeSummaryDto>().platformReady)
-        assertEquals("MANUAL_RESTART_REQUIRED", runtimeResponse.body<WebUiRuntimeSummaryDto>().restartRequestMode)
+        val runtimeBody = runtimeResponse.body<WebUiRuntimeSummaryDto>()
+        assertEquals("RUNNING", runtimeBody.lifecycleState)
+        assertEquals(true, runtimeBody.platformReady)
+        assertEquals("MANUAL_RESTART_REQUIRED", runtimeBody.restartRequestMode)
+        assertEquals(5, runtimeBody.subscriptionCount)
+        assertEquals(4, runtimeBody.dynamicSubscriptionCount)
+        assertEquals(1, runtimeBody.bangumiSubscriptionCount)
+        assertEquals(true, runtimeBody.account.loggedIn)
+        assertEquals(2233L, runtimeBody.account.uid)
+        assertEquals(true, runtimeBody.webSocket.connected)
+        assertEquals(6, runtimeBody.todayPushStats.total)
+        assertEquals(1779250800000L, runtimeBody.host.startedAtEpochMillis)
+        assertEquals(1779254400000L, runtimeBody.host.systemTimeEpochMillis)
+        assertEquals(55.0, runtimeBody.host.cpuUsagePercent)
+        assertEquals(50.0, runtimeBody.host.memory.usagePercent)
+        assertEquals(25.0, runtimeBody.host.storage.usagePercent)
+        assertEquals(true, runtimeBody.host.docker.detected)
         assertEquals("bot.yml", configResponse.body<WebUiConfigFileDto>().sourceFile)
     }
 
@@ -496,7 +518,66 @@ class WebUiRouteSmokeTest {
             platformAdapterInitializedProvider = { true },
             webUiEnabledProvider = { true },
             subscriptionCountProvider = { 5 },
+            dynamicSubscriptionCountProvider = { 4 },
+            bangumiSubscriptionCountProvider = { 1 },
             groupCountProvider = { 2 },
+            accountStatusProvider = {
+                WebUiBiliAccountStatusDto(
+                    loggedIn = true,
+                    uid = 2233L,
+                    cookieConfigured = true,
+                )
+            },
+            platformRuntimeStatusProvider = {
+                PlatformRuntimeStatus(
+                    connected = true,
+                    reconnectAttempts = 2,
+                )
+            },
+            platformObservabilityProvider = {
+                PlatformObservabilitySnapshot(
+                    clients = listOf(
+                        PlatformHttpClientSnapshot(
+                            adapterName = "onebot11",
+                            transportName = "napcat",
+                            webSocketSessionActive = true,
+                        ),
+                    ),
+                )
+            },
+            todayPushStatsProvider = {
+                WebUiTodayPushStatsDto(
+                    date = "2026-05-20",
+                    total = 6,
+                    dynamic = 4,
+                    live = 1,
+                    liveClose = 1,
+                    failed = 0,
+                    lastSuccessAtEpochMillis = null,
+                )
+            },
+            hostStatusProvider = {
+                WebUiHostRuntimeStatusDto(
+                    startedAtEpochMillis = 1779250800000L,
+                    systemTimeEpochMillis = 1779254400000L,
+                    systemLoadAverage = 0.66,
+                    cpuUsagePercent = 55.0,
+                    memory = WebUiResourceUsageDto(
+                        usedBytes = 512L,
+                        totalBytes = 1024L,
+                        usagePercent = 50.0,
+                    ),
+                    storage = WebUiResourceUsageDto(
+                        usedBytes = 256L,
+                        totalBytes = 1024L,
+                        usagePercent = 25.0,
+                    ),
+                    docker = WebUiDockerRuntimeStatusDto(
+                        detected = true,
+                        evidence = ".dockerenv",
+                    ),
+                )
+            },
         )
     }
 

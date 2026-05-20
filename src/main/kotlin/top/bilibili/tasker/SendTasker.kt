@@ -96,8 +96,10 @@ object SendTasker : BiliTasker("SendTasker") {
                 )
 
                 if (success) {
+                    PushStatistics.recordSuccess(queuedMessage.pushStatisticType)
                     BiliBiliBot.logger.info("消息已发送到 {}", queuedMessage.contact.toSubject())
                 } else {
+                    PushStatistics.recordFailure(queuedMessage.pushStatisticType)
                     BiliBiliBot.logger.warn("消息发送失败: {}", queuedMessage.contact.toSubject())
                 }
 
@@ -221,6 +223,7 @@ object SendTasker : BiliTasker("SendTasker") {
                     QueuedMessage(
                         contact = contact,
                         segments = atAllDecision.segments,
+                        pushStatisticType = PushStatisticType.from(message),
                         cooldownSubject = specificContact.takeIf { atAllDecision.injected },
                         sourceMessage = message.takeIf { atAllDecision.injected },
                     ),
@@ -260,6 +263,7 @@ object SendTasker : BiliTasker("SendTasker") {
                         QueuedMessage(
                             contact = contact,
                             segments = atAllDecision.segments,
+                            pushStatisticType = PushStatisticType.from(message),
                             cooldownSubject = contactStr.takeIf { atAllDecision.injected },
                             sourceMessage = message.takeIf { atAllDecision.injected },
                         ),
@@ -625,6 +629,7 @@ object SendTasker : BiliTasker("SendTasker") {
     private data class QueuedMessage(
         val contact: PlatformContact,
         val segments: List<OutgoingPart>,
+        val pushStatisticType: PushStatisticType,
         val cooldownSubject: String? = null,
         val sourceMessage: BiliMessage? = null,
     )

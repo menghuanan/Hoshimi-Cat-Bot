@@ -412,6 +412,17 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /**
+     * 返回当前进程启动时间戳；未运行时返回 0，避免 WebUI 展示过期启动时间。
+     */
+    fun getStartTimeEpochMillis(): Long {
+        return if (isRunning.get()) {
+            startTime
+        } else {
+            0L
+        }
+    }
+
+    /**
      * 为仍在迁移中的 OneBot11 调用方保留数字群消息发送入口。
      */
     @Deprecated(

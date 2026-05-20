@@ -53,9 +53,19 @@ class WebUiRuleClosureVerificationTest {
         assertTrue(shellPage.contains("class=\"feature-grid\""))
         assertTrue(shellPage.contains("class=\"subscription-grid\""))
         assertTrue(shellPage.contains("class=\"log-list\""))
+        assertTrue(shellPage.contains("data-runtime-field=\"startedAt\""))
+        assertTrue(shellPage.contains("data-runtime-field=\"runtimeDuration\""))
+        assertTrue(shellPage.contains("data-runtime-field=\"systemTime\""))
+        assertTrue(shellPage.contains("data-runtime-field=\"systemLoad\""))
+        assertTrue(shellPage.contains("data-runtime-field=\"cpuUsage\""))
+        assertTrue(shellPage.contains("data-runtime-field=\"memoryUsage\""))
+        assertTrue(shellPage.contains("data-runtime-field=\"storageUsage\""))
+        assertTrue(shellPage.contains("data-runtime-field=\"dockerStatus\""))
         assertTrue(shellScript.contains("activateView("))
         assertTrue(shellScript.contains("views.has(viewName)"))
-        assertFalse(shellScript.contains("/api/"))
+        assertTrue(shellScript.contains("/api/runtime/summary"))
+        assertTrue(shellScript.contains("data-runtime-field"))
+        assertTrue(shellScript.contains("renderHostRuntimeStatus"))
     }
 
     /**
@@ -72,5 +82,9 @@ class WebUiRuleClosureVerificationTest {
         assertTrue(configWriteFacade.contains("REJECTED_CONFLICT"))
         assertTrue(actionDtos.contains("RESTART_REQUESTED_MANUAL_FALLBACK"))
         assertTrue(runtimeDtos.contains("restartRequestMode"))
+        assertTrue(runtimeDtos.contains("todayPushStats"))
+        assertTrue(runtimeDtos.contains("webSocket"))
+        assertTrue(runtimeDtos.contains("WebUiHostRuntimeStatusDto"))
+        assertTrue(runtimeDtos.contains("WebUiDockerRuntimeStatusDto"))
     }
 }

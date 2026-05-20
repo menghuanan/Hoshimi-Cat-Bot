@@ -14,9 +14,235 @@ const viewTitles = {
 };
 
 const defaultView = "home";
+const runtimeFields = new Map(
+    Array.from(document.querySelectorAll("[data-runtime-field]"), (field) => [field.dataset.runtimeField, field]),
+);
+const runtimeProgressBars = new Map(
+    Array.from(document.querySelectorAll("[data-runtime-progress]"), (bar) => [bar.dataset.runtimeProgress, bar]),
+);
+const runtimeRefreshIntervalMs = 30_000;
 
 /**
- * 静态壳只负责在可见页面之间切换，不触碰任何 API 或业务状态。
+ * 读取当前 WebUI token；没有 sessionStorage 时仍允许同源 cookie 完成认证。
+ */
+function getWebUiToken() {
+    return sessionStorage.getItem("webuiToken") || "";
+}
+
+/**
+ * 首页状态字段统一写入，避免某个 DOM 节点缺失时中断整次刷新。
+ */
+function setRuntimeField(name, value) {
+    const field = runtimeFields.get(name);
+    if (field) {
+        field.textContent = value;
+    }
+}
+
+/**
+ * 首页进度条只接受 0-100 的安全百分比，避免异常后端值撑坏布局。
+ */
+function setRuntimeProgress(name, value) {
+    const bar = runtimeProgressBars.get(name);
+    if (!bar) {
+        return;
+    }
+    const percent = Number(value);
+    if (!Number.isFinite(percent)) {
+        bar.style.width = "0%";
+        return;
+    }
+    bar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+}
+
+/**
+ * 将后端生命周期枚举转换为 operator 可直接扫读的中文状态。
+ */
+function formatLifecycleState(state) {
+    const states = {
+        STARTING: "启动中",
+        RUNNING: "运行中",
+        STOPPING: "停止中",
+        STOPPED: "已停止",
+    };
+    return states[state] || "未知";
+}
+
+/**
+ * 将秒级运行时长压缩为首页状态卡可容纳的短文案。
+ */
+function formatUptime(seconds) {
+    const safeSeconds = Math.max(0, Number(seconds) || 0);
+    const days = Math.floor(safeSeconds / 86400);
+    const hours = Math.floor((safeSeconds % 86400) / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    if (days > 0) {
+        return `已运行 ${days} 天 ${hours} 小时 ${minutes} 分钟`;
+    }
+    if (hours > 0) {
+        return `已运行 ${hours} 小时 ${minutes} 分钟`;
+    }
+    return `已运行 ${minutes} 分钟`;
+}
+
+/**
+ * 将后端毫秒时间戳格式化为首页紧凑时间；缺失时保留占位符。
+ */
+function formatDateTime(epochMillis) {
+    const value = Number(epochMillis);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "--";
+    }
+    return new Date(value).toLocaleString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    });
+}
+
+/**
+ * 字节值按二进制单位展示，方便内存和磁盘容量共用同一套文案。
+ */
+function formatBytes(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "--";
+    }
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let scaled = value;
+    let unitIndex = 0;
+    while (scaled >= 1024 && unitIndex < units.length - 1) {
+        scaled /= 1024;
+        unitIndex += 1;
+    }
+    const digits = scaled >= 10 || unitIndex === 0 ? 0 : 1;
+    return `${scaled.toFixed(digits)}${units[unitIndex]}`;
+}
+
+/**
+ * 百分比文案统一保留一位以内的小数，避免卡片宽度随长小数抖动。
+ */
+function formatPercent(value) {
+    const percent = Number(value);
+    if (!Number.isFinite(percent)) {
+        return "--";
+    }
+    const clamped = Math.min(100, Math.max(0, percent));
+    return `${clamped % 1 === 0 ? clamped.toFixed(0) : clamped.toFixed(1)}%`;
+}
+
+/**
+ * 资源使用率展示百分比和 used/total，缺少 total 时降级为仅展示百分比。
+ */
+function formatUsage(usage) {
+    if (!usage) {
+        return "--";
+    }
+    const percentText = formatPercent(usage.usagePercent);
+    const usedText = formatBytes(usage.usedBytes);
+    const totalText = formatBytes(usage.totalBytes);
+    if (usedText === "--" || totalText === "--") {
+        return percentText;
+    }
+    return `${percentText} (${usedText} / ${totalText})`;
+}
+
+/**
+ * 系统负载在不支持的平台显示为不可用，避免把负数或 null 当成真实指标。
+ */
+function formatSystemLoad(value) {
+    const load = Number(value);
+    if (!Number.isFinite(load)) {
+        return "不可用";
+    }
+    return load.toFixed(2);
+}
+
+/**
+ * 根据后端 host 快照更新运行信息面板。
+ */
+function renderHostRuntimeStatus(host, uptimeSeconds) {
+    const memory = host?.memory || {};
+    const storage = host?.storage || {};
+    const docker = host?.docker || {};
+
+    setRuntimeField("startedAt", formatDateTime(host?.startedAtEpochMillis));
+    setRuntimeField("runtimeDuration", formatUptime(uptimeSeconds).replace(/^已运行\s*/, ""));
+    setRuntimeField("systemTime", formatDateTime(host?.systemTimeEpochMillis));
+    setRuntimeField("systemLoad", formatSystemLoad(host?.systemLoadAverage));
+    setRuntimeField("cpuUsage", formatPercent(host?.cpuUsagePercent));
+    setRuntimeField("memoryUsage", formatUsage(memory));
+    setRuntimeField("storageUsage", formatUsage(storage));
+    setRuntimeField("dockerStatus", docker.detected ? "Docker 运行" : "非 Docker");
+    setRuntimeProgress("cpuUsage", host?.cpuUsagePercent);
+    setRuntimeProgress("memoryUsage", memory.usagePercent);
+    setRuntimeProgress("storageUsage", storage.usagePercent);
+}
+
+/**
+ * 根据 runtime summary 更新首页五张状态卡。
+ */
+function renderRuntimeSummary(summary) {
+    const botStatus = formatLifecycleState(summary.lifecycleState);
+    const account = summary.account || {};
+    const socket = summary.webSocket || {};
+    const pushStats = summary.todayPushStats || {};
+
+    setRuntimeField("sidebarStatus", botStatus);
+    setRuntimeField("botStatus", botStatus);
+    setRuntimeField("botUptime", formatUptime(summary.uptimeSeconds));
+    setRuntimeField("subscriptionTotal", String(summary.subscriptionCount ?? 0));
+    setRuntimeField(
+        "subscriptionBreakdown",
+        `UP主：${summary.dynamicSubscriptionCount ?? 0}　番剧：${summary.bangumiSubscriptionCount ?? 0}`,
+    );
+    setRuntimeField("biliAccountStatus", account.loggedIn ? "已登录" : (account.cookieConfigured ? "待确认" : "未登录"));
+    setRuntimeField("biliAccountUid", account.uid ? `UID: ${account.uid}` : "UID: --");
+    setRuntimeField("webSocketStatus", socket.connected ? "已连接" : "未连接");
+    setRuntimeField(
+        "webSocketDetail",
+        `重连次数：${socket.reconnectAttempts ?? 0}　会话：${socket.activeSessionCount ?? 0}`,
+    );
+    setRuntimeField("todayPushTotal", `${pushStats.total ?? 0} 条`);
+    setRuntimeField(
+        "todayPushBreakdown",
+        `直播：${pushStats.live ?? 0}　动态：${pushStats.dynamic ?? 0}　下播：${pushStats.liveClose ?? 0}`,
+    );
+    renderHostRuntimeStatus(summary.host, summary.uptimeSeconds);
+}
+
+/**
+ * 调用受认证保护的运行态接口；认证失效时回到登录页完成重新登录。
+ */
+async function refreshRuntimeSummary() {
+    const headers = {};
+    const token = getWebUiToken();
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    try {
+        const response = await fetch("/api/runtime/summary", {headers});
+        if (response.status === 401 || response.status === 403) {
+            location.href = "/login";
+            return;
+        }
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        renderRuntimeSummary(await response.json());
+    } catch (error) {
+        setRuntimeField("botStatus", "状态刷新失败");
+        setRuntimeField("botUptime", error.message || "请稍后重试");
+    }
+}
+
+/**
+ * 页面壳负责在可见页面之间切换，运行态数据刷新由独立函数处理。
  */
 function activateView(viewName, replaceHash = false) {
     const targetName = views.has(viewName) ? viewName : defaultView;
@@ -56,6 +282,8 @@ navItems.forEach((item) => {
 
 const initialView = location.hash.replace(/^#/, "");
 activateView(initialView, !initialView || !views.has(initialView));
+refreshRuntimeSummary();
+setInterval(refreshRuntimeSummary, runtimeRefreshIntervalMs);
 
 window.addEventListener("hashchange", () => {
     activateView(location.hash.replace(/^#/, ""));

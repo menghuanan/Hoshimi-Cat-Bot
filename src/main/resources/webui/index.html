@@ -175,7 +175,7 @@
             </div>
             <div class="version-row">
                 <span>版本 v1.0.0</span>
-                <span class="status-chip"><span class="status-dot"></span>运行中</span>
+                <span class="status-chip"><span class="status-dot"></span><span data-runtime-field="sidebarStatus">加载中</span></span>
             </div>
         </div>
     </aside>
@@ -220,8 +220,8 @@
                             </svg>
                         </div>
                         <div class="metric-label">Bot 运行状态</div>
-                        <div class="metric-value metric-value--status">运行中</div>
-                        <div class="metric-sub">已运行 2 天 14 小时 32 分钟</div>
+                        <div class="metric-value metric-value--status" data-runtime-field="botStatus">加载中</div>
+                        <div class="metric-sub" data-runtime-field="botUptime">正在读取运行时长</div>
                     </article>
                     <article class="metric-card metric-card--blue">
                         <div class="metric-head">
@@ -235,8 +235,8 @@
                             </svg>
                         </div>
                         <div class="metric-label">当前订阅数量</div>
-                        <div class="metric-value metric-value--number">56</div>
-                        <div class="metric-sub">直播：18　动态：38</div>
+                        <div class="metric-value metric-value--number" data-runtime-field="subscriptionTotal">--</div>
+                        <div class="metric-sub" data-runtime-field="subscriptionBreakdown">UP主：--　番剧：--</div>
                     </article>
                     <article class="metric-card metric-card--pink">
                         <div class="metric-head">
@@ -250,8 +250,8 @@
                             </svg>
                         </div>
                         <div class="metric-label">B站账号信息</div>
-                        <div class="metric-value metric-value--status">已登录</div>
-                        <div class="metric-sub">UID: 12345678</div>
+                        <div class="metric-value metric-value--status" data-runtime-field="biliAccountStatus">加载中</div>
+                        <div class="metric-sub" data-runtime-field="biliAccountUid">UID: --</div>
                     </article>
                     <article class="metric-card metric-card--purple">
                         <div class="metric-head">
@@ -265,8 +265,8 @@
                             </svg>
                         </div>
                         <div class="metric-label">WebSocket 状态</div>
-                        <div class="metric-value metric-value--status metric-value--accent-purple">已连接</div>
-                        <div class="metric-sub">延迟：38ms</div>
+                        <div class="metric-value metric-value--status metric-value--accent-purple" data-runtime-field="webSocketStatus">加载中</div>
+                        <div class="metric-sub" data-runtime-field="webSocketDetail">重连次数：--</div>
                     </article>
                     <article class="metric-card metric-card--orange">
                         <div class="metric-head">
@@ -280,8 +280,8 @@
                             </svg>
                         </div>
                         <div class="metric-label">今日推送统计</div>
-                        <div class="metric-value metric-value--number">128 条</div>
-                        <div class="metric-sub">直播：68　动态：60</div>
+                        <div class="metric-value metric-value--number" data-runtime-field="todayPushTotal">-- 条</div>
+                        <div class="metric-sub" data-runtime-field="todayPushBreakdown">直播：--　动态：--</div>
                     </article>
                 </div>
 
@@ -294,46 +294,46 @@
                             <div class="runtime-table">
                                 <div class="runtime-row">
                                     <span>启动时间</span>
-                                    <strong>2024-05-20 14:30:15</strong>
+                                    <strong data-runtime-field="startedAt">--</strong>
                                 </div>
                                 <div class="runtime-row">
                                     <span>运行时长</span>
-                                    <strong>2 天 14 小时 32 分钟</strong>
+                                    <strong data-runtime-field="runtimeDuration">--</strong>
                                 </div>
                                 <div class="runtime-row">
                                     <span>系统时间</span>
-                                    <strong>2024-05-22 16:45:10</strong>
+                                    <strong data-runtime-field="systemTime">--</strong>
                                 </div>
                                 <div class="runtime-row">
                                     <span>系统负载</span>
-                                    <strong>0.35 / 0.42 / 0.38</strong>
+                                    <strong data-runtime-field="systemLoad">--</strong>
                                 </div>
                             </div>
                             <div class="runtime-stats">
                                 <div class="runtime-stat">
                                     <div class="runtime-stat-head">
                                         <span>CPU 使用率</span>
-                                        <strong>23%</strong>
+                                        <strong data-runtime-field="cpuUsage">--</strong>
                                     </div>
-                                    <div class="progress-track"><span style="width: 23%"></span></div>
+                                    <div class="progress-track"><span data-runtime-progress="cpuUsage" style="width: 0%"></span></div>
                                 </div>
                                 <div class="runtime-stat">
                                     <div class="runtime-stat-head">
                                         <span>内存使用率</span>
-                                        <strong>45% (3.6GB / 8GB)</strong>
+                                        <strong data-runtime-field="memoryUsage">--</strong>
                                     </div>
-                                    <div class="progress-track"><span style="width: 45%"></span></div>
+                                    <div class="progress-track"><span data-runtime-progress="memoryUsage" style="width: 0%"></span></div>
                                 </div>
                                 <div class="runtime-stat">
                                     <div class="runtime-stat-head">
                                         <span>存储使用率</span>
-                                        <strong>38% (72GB / 190GB)</strong>
+                                        <strong data-runtime-field="storageUsage">--</strong>
                                     </div>
-                                    <div class="progress-track"><span style="width: 38%"></span></div>
+                                    <div class="progress-track"><span data-runtime-progress="storageUsage" style="width: 0%"></span></div>
                                 </div>
                                 <div class="runtime-stat runtime-stat--inline">
                                     <span>Docker 状态</span>
-                                    <strong class="state-ok">运行中</strong>
+                                    <strong class="state-ok" data-runtime-field="dockerStatus">--</strong>
                                 </div>
                             </div>
                         </div>
