@@ -4,10 +4,12 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
+import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import top.bilibili.webui.auth.WebUiAuthService
 import top.bilibili.webui.auth.WebUiAuthenticatedSession
 import top.bilibili.webui.model.WebUiAuthResponseDto
+import top.bilibili.webui.service.WebUiAuditService
 
 internal const val WebUiTokenCookieName = "dynamic_bot_webui_token"
 
@@ -16,14 +18,25 @@ internal const val WebUiTokenCookieName = "dynamic_bot_webui_token"
  */
 suspend fun ApplicationCall.requireWebUiSession(
     authService: WebUiAuthService,
+    auditService: WebUiAuditService? = null,
     allowMustChangePassword: Boolean = false,
 ): WebUiAuthenticatedSession? {
     val session = authService.resolveSession(extractWebUiToken())
     if (session == null) {
+        auditService?.recordDeniedAccess(
+            target = request.path(),
+            outcome = "UNAUTHORIZED",
+            detailSummary = "missing or invalid session",
+        )
         respond(HttpStatusCode.Unauthorized, WebUiAuthResponseDto(success = false, message = "unauthorized"))
         return null
     }
     if (!allowMustChangePassword && session.mustChangePassword) {
+        auditService?.recordDeniedAccess(
+            target = request.path(),
+            outcome = "PASSWORD_CHANGE_REQUIRED",
+            detailSummary = "session requires password change before accessing protected route",
+        )
         respond(
             HttpStatusCode.Forbidden,
             WebUiAuthResponseDto(
@@ -56,9 +69,15 @@ suspend fun ApplicationCall.requireHighRiskConfirmation(
     authService: WebUiAuthService,
     session: WebUiAuthenticatedSession,
     confirmationPassword: String,
+    auditService: WebUiAuditService? = null,
 ): Boolean {
     val result = authService.confirmHighRiskOperation(session, confirmationPassword)
     if (!result.confirmed) {
+        auditService?.recordDeniedAccess(
+            target = "high-risk-confirmation",
+            outcome = "FORBIDDEN",
+            detailSummary = "path=${request.path()} reason=${result.message}",
+        )
         respond(
             HttpStatusCode.Forbidden,
             WebUiAuthResponseDto(

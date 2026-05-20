@@ -10,6 +10,7 @@ enum class WebUiSaveEffectLevel {
     APPLIED_IMMEDIATELY,
     RELOAD_REQUIRED,
     RESTART_REQUIRED,
+    REJECTED_PERSISTENCE,
     REJECTED_VALIDATION,
     REJECTED_CONFLICT,
 }
@@ -20,6 +21,7 @@ enum class WebUiSaveEffectLevel {
 @Serializable
 enum class WebUiRecommendedAction {
     NONE,
+    RETRY_SAVE,
     FIX_VALIDATION_ERRORS,
     REFRESH_AND_RETRY,
     RELOAD_CONFIG,

@@ -30,6 +30,45 @@ class WebUiAuditService(
     },
 ) {
     /**
+     * 登录、改密等认证事件统一记录成功或失败结果，方便排查本地管理面认证链路。
+     */
+    fun recordAuthEvent(
+        target: String,
+        success: Boolean,
+        outcome: String,
+        detailSummary: String,
+    ) {
+        sink(
+            WebUiAuditRecord(
+                eventType = "auth",
+                target = target,
+                success = success,
+                outcome = outcome,
+                detailSummary = sanitizeDetailSummary(detailSummary),
+            ),
+        )
+    }
+
+    /**
+     * 受保护路由的拒绝路径也要落审计，避免只看成功事件时丢失权限或确认失败线索。
+     */
+    fun recordDeniedAccess(
+        target: String,
+        outcome: String,
+        detailSummary: String,
+    ) {
+        sink(
+            WebUiAuditRecord(
+                eventType = "access-denied",
+                target = target,
+                success = false,
+                outcome = outcome,
+                detailSummary = sanitizeDetailSummary(detailSummary),
+            ),
+        )
+    }
+
+    /**
      * 配置保存审计统一记录结果语义和脱敏后的上下文，避免原始 token/cookie/password 进入日志。
      */
     fun recordConfigSave(

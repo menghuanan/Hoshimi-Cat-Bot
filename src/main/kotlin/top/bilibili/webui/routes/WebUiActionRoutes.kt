@@ -19,9 +19,9 @@ fun Route.registerWebUiActionRoutes(
     auditService: WebUiAuditService,
 ) {
     post("/api/actions/reload-config") {
-        val session = call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val confirmation = call.receive<WebUiActionConfirmationRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword, auditService)) {
             return@post
         }
         val result = actionFacade.reloadConfig(WebUiActionRequestDto("reload-config"), confirmation)
@@ -30,9 +30,9 @@ fun Route.registerWebUiActionRoutes(
     }
 
     post("/api/actions/shutdown") {
-        val session = call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val confirmation = call.receive<WebUiActionConfirmationRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword, auditService)) {
             return@post
         }
         val result = actionFacade.shutdown(WebUiActionRequestDto("shutdown"), confirmation)
@@ -41,9 +41,9 @@ fun Route.registerWebUiActionRoutes(
     }
 
     post("/api/actions/request-restart") {
-        val session = call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val confirmation = call.receive<WebUiActionConfirmationRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, confirmation.confirmationPassword, auditService)) {
             return@post
         }
         val result = actionFacade.requestRestart(WebUiActionRequestDto("request-restart"), confirmation)

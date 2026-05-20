@@ -49,22 +49,26 @@ object ConfigManager {
     }
 
     /**
-     * 将当前运行期配置规范化后保存到磁盘。
+     * 将当前运行期配置规范化后保存到磁盘，并返回真实落盘结果。
      */
-    fun saveConfig() {
-        saveConfig(botConfig)
+    fun saveConfig(): Boolean {
+        return saveConfig(botConfig)
     }
 
     /**
      * 将指定运行期配置规范化后保存到磁盘，供外部 owner 入口统一写回 `bot.yml`。
+     * 只有磁盘写入成功后才替换运行态快照，避免出现“内存已更新、文件未提交”的半提交状态。
      */
-    fun saveConfig(configToSave: BotConfig) {
-        try {
-            botConfig = configToSave.normalizedBotConfig()
-            store.save(botConfig)
+    fun saveConfig(configToSave: BotConfig): Boolean {
+        return try {
+            val normalizedConfig = configToSave.normalizedBotConfig()
+            store.save(normalizedConfig)
+            botConfig = normalizedConfig
             logger.info("配置已保存到: ${File(configDir, "bot.yml").absolutePath}")
+            true
         } catch (e: Exception) {
             logger.error("保存配置失败: ${e.message}", e)
+            false
         }
     }
 

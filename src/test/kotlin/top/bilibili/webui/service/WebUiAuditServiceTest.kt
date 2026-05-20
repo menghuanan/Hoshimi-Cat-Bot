@@ -12,6 +12,47 @@ import kotlin.test.assertTrue
 
 class WebUiAuditServiceTest {
     @Test
+    fun `auth events should emit sanitized audit records`() {
+        val records = mutableListOf<WebUiAuditRecord>()
+        val auditService = WebUiAuditService(
+            sink = { record -> records += record },
+        )
+
+        auditService.recordAuthEvent(
+            target = "login",
+            success = false,
+            outcome = "LOGIN_FAILED",
+            detailSummary = "password=Better123!@ message=invalid credentials",
+        )
+
+        assertEquals(1, records.size)
+        assertEquals("auth", records.first().eventType)
+        assertEquals("login", records.first().target)
+        assertFalse(records.first().detailSummary.contains("Better123!@"))
+        assertTrue(records.first().detailSummary.contains("password=<redacted>"))
+    }
+
+    @Test
+    fun `denied access should emit failure audit records`() {
+        val records = mutableListOf<WebUiAuditRecord>()
+        val auditService = WebUiAuditService(
+            sink = { record -> records += record },
+        )
+
+        auditService.recordDeniedAccess(
+            target = "high-risk-confirmation",
+            outcome = "FORBIDDEN",
+            detailSummary = "path=/api/config/bili-config reason=invalid confirmation password",
+        )
+
+        assertEquals(1, records.size)
+        assertEquals("access-denied", records.first().eventType)
+        assertEquals("high-risk-confirmation", records.first().target)
+        assertFalse(records.first().success)
+        assertEquals("FORBIDDEN", records.first().outcome)
+    }
+
+    @Test
     fun `config save attempts should emit audit records without raw secrets`() {
         val records = mutableListOf<WebUiAuditRecord>()
         val auditService = WebUiAuditService(

@@ -3,7 +3,6 @@ package top.bilibili.webui.service
 import top.bilibili.BiliAccountConfig
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
-import top.bilibili.BiliData
 import top.bilibili.TranslateConfig
 import top.bilibili.config.BotConfig
 import top.bilibili.config.ConfigManager
@@ -25,12 +24,11 @@ class WebUiConfigWriteFacade(
     private val configFacade: WebUiConfigFacade = WebUiConfigFacade(),
     private val biliConfigProvider: () -> BiliConfig = { runCatching { BiliConfigManager.config }.getOrDefault(BiliConfig()) },
     private val botConfigProvider: () -> BotConfig = { runCatching { top.bilibili.config.ConfigManager.botConfig }.getOrDefault(BotConfig()) },
-    private val saveBiliConfigAction: (BiliConfig) -> Unit = { configToSave -> BiliConfigManager.saveConfig(configToSave) },
+    private val saveBiliConfigAction: (BiliConfig) -> Boolean = { configToSave -> BiliConfigManager.saveConfig(configToSave) },
     private val saveBiliDataAction: (Set<String>) -> Boolean = { contacts ->
-        BiliData.linkParseBlacklistContacts = contacts.toMutableSet()
-        BiliConfigManager.saveData(BiliData)
+        BiliConfigManager.saveLinkParseBlacklistContacts(contacts)
     },
-    private val saveBotConfigAction: (BotConfig) -> Unit = { configToSave ->
+    private val saveBotConfigAction: (BotConfig) -> Boolean = { configToSave ->
         ConfigManager.saveConfig(configToSave)
     },
 ) {
@@ -61,7 +59,13 @@ class WebUiConfigWriteFacade(
         )
 
         return runCatching {
-            saveBiliConfigAction(updatedConfig)
+            val saved = saveBiliConfigAction(updatedConfig)
+            if (!saved) {
+                return@runCatching persistenceResult(
+                    snapshotToken = currentDto.snapshotToken,
+                    message = "BiliConfig save failed",
+                )
+            }
             successResult(
                 snapshotToken = snapshotTokenForBiliConfig(updatedConfig),
                 effectiveLevel = WebUiSaveEffectLevel.RELOAD_REQUIRED,
@@ -69,9 +73,9 @@ class WebUiConfigWriteFacade(
                 message = "BiliConfig saved",
             )
         }.getOrElse { error ->
-            validationResult(
-                errors = listOf(error.message ?: "save failed"),
+            persistenceResult(
                 snapshotToken = currentDto.snapshotToken,
+                message = error.message ?: "BiliConfig save failed",
             )
         }
     }
@@ -90,22 +94,32 @@ class WebUiConfigWriteFacade(
             .filter { it.isNotBlank() }
             .map { normalizeContactSubject(it) ?: it }
             .toSet()
-        val persisted = saveBiliDataAction(normalizedContacts)
+        val persisted = runCatching {
+            saveBiliDataAction(normalizedContacts)
+        }.getOrElse { error ->
+            return persistenceResult(
+                snapshotToken = currentDto.snapshotToken,
+                message = error.message ?: "BiliData save failed",
+            )
+        }
+        if (!persisted) {
+            return persistenceResult(
+                snapshotToken = currentDto.snapshotToken,
+                message = "BiliData save failed",
+            )
+        }
+
         val nextToken = snapshotTokenForBiliData(
             dataVersion = currentDto.fields.first { it.key == "dataVersion" }.value,
             dynamicCount = currentDto.fields.first { it.key == "dynamic.count" }.value,
             groupCount = currentDto.fields.first { it.key == "group.count" }.value,
             blacklistContacts = normalizedContacts,
         )
-        return WebUiConfigSaveResultDto(
-            success = persisted,
-            persisted = persisted,
-            conflictDetected = false,
-            validationErrors = emptyList(),
-            effectiveLevel = if (persisted) WebUiSaveEffectLevel.APPLIED_IMMEDIATELY else WebUiSaveEffectLevel.REJECTED_VALIDATION,
-            recommendedAction = if (persisted) WebUiRecommendedAction.NONE else WebUiRecommendedAction.FIX_VALIDATION_ERRORS,
+        return successResult(
             snapshotToken = nextToken,
-            message = if (persisted) "BiliData saved" else "BiliData save failed",
+            effectiveLevel = WebUiSaveEffectLevel.APPLIED_IMMEDIATELY,
+            recommendedAction = WebUiRecommendedAction.NONE,
+            message = "BiliData saved",
         )
     }
 
@@ -138,7 +152,13 @@ class WebUiConfigWriteFacade(
         )
 
         return runCatching {
-            saveBotConfigAction(updatedConfig)
+            val saved = saveBotConfigAction(updatedConfig)
+            if (!saved) {
+                return@runCatching persistenceResult(
+                    snapshotToken = currentDto.snapshotToken,
+                    message = "bot.yml save failed",
+                )
+            }
             successResult(
                 snapshotToken = snapshotTokenForBotConfig(updatedConfig),
                 effectiveLevel = WebUiSaveEffectLevel.RESTART_REQUIRED,
@@ -146,9 +166,9 @@ class WebUiConfigWriteFacade(
                 message = "bot.yml saved",
             )
         }.getOrElse { error ->
-            validationResult(
-                errors = listOf(error.message ?: "save failed"),
+            persistenceResult(
                 snapshotToken = currentDto.snapshotToken,
+                message = error.message ?: "bot.yml save failed",
             )
         }
     }
@@ -214,6 +234,25 @@ class WebUiConfigWriteFacade(
             recommendedAction = WebUiRecommendedAction.FIX_VALIDATION_ERRORS,
             snapshotToken = snapshotToken,
             message = errors.joinToString("; "),
+        )
+    }
+
+    /**
+     * 落盘失败统一保持原快照 token，并明确提示前端这是可重试的持久化失败而不是输入校验问题。
+     */
+    private fun persistenceResult(
+        snapshotToken: String,
+        message: String,
+    ): WebUiConfigSaveResultDto {
+        return WebUiConfigSaveResultDto(
+            success = false,
+            persisted = false,
+            conflictDetected = false,
+            validationErrors = emptyList(),
+            effectiveLevel = WebUiSaveEffectLevel.REJECTED_PERSISTENCE,
+            recommendedAction = WebUiRecommendedAction.RETRY_SAVE,
+            snapshotToken = snapshotToken,
+            message = message,
         )
     }
 

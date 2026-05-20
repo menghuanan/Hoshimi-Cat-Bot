@@ -29,6 +29,7 @@ import top.bilibili.webui.auth.WebUiTokenService
 import top.bilibili.webui.config.WebUiConfig
 import top.bilibili.webui.model.WebUiActionConfirmationRequestDto
 import top.bilibili.webui.model.WebUiActionResultDto
+import top.bilibili.webui.service.WebUiAuditRecord
 import top.bilibili.webui.model.WebUiAuthResponseDto
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiConfigFileDto
@@ -65,6 +66,7 @@ class WebUiRouteSmokeTest {
 
     @Test
     fun `unauthenticated protected apis should be rejected and login route should be reachable`() = testApplication {
+        val records = mutableListOf<WebUiAuditRecord>()
         application {
             installWebUiModule(
                 settings = WebUiConfig(enabled = true).toSettings(tempRoot.toFile()),
@@ -74,7 +76,7 @@ class WebUiRouteSmokeTest {
                 configWriteFacade = buildConfigWriteFacade(),
                 logFacade = buildLogFacade(),
                 actionFacade = buildActionFacade(),
-                auditService = WebUiAuditService(sink = {}),
+                auditService = WebUiAuditService(sink = { record -> records += record }),
             )
         }
 
@@ -86,6 +88,7 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.Unauthorized, protectedResponse.status)
         assertEquals(HttpStatusCode.OK, loginPage.status)
         assertEquals(HttpStatusCode.Found, root.status)
+        assertTrue(records.any { it.target == "/api/runtime/summary" && !it.success })
     }
 
     @Test
@@ -157,6 +160,90 @@ class WebUiRouteSmokeTest {
         assertEquals("bot.yml", configResponse.body<WebUiConfigFileDto>().sourceFile)
     }
 
+    /**
+     * 认证失败、改密失败和高风险确认拒绝都应落审计，便于本地排查权限链路。
+     */
+    @Test
+    fun `auth and confirmation denial paths should emit audit records`() = testApplication {
+        val records = mutableListOf<WebUiAuditRecord>()
+        val authService = buildAuthService()
+        val bootstrapPassword = authService.bootstrapCredentials().initialPassword!!
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(sink = { record -> records += record }),
+            )
+        }
+
+        val client = createWebUiClient()
+        val failedLogin = client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(WebUiLoginRequestDto(password = "wrong-password"))
+        }
+        val firstLogin = client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(WebUiLoginRequestDto(password = bootstrapPassword))
+        }.body<WebUiAuthResponseDto>()
+        val failedChange = client.post("/api/auth/change-password") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer ${firstLogin.token!!}")
+            setBody(
+                WebUiChangePasswordRequestDto(
+                    currentPassword = "wrong-password",
+                    newPassword = "Better123!@",
+                ),
+            )
+        }
+        val changed = client.post("/api/auth/change-password") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer ${firstLogin.token!!}")
+            setBody(
+                WebUiChangePasswordRequestDto(
+                    currentPassword = bootstrapPassword,
+                    newPassword = "Better123!@",
+                ),
+            )
+        }
+        val relogin = client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(WebUiLoginRequestDto(password = "Better123!@"))
+        }.body<WebUiAuthResponseDto>()
+        val biliConfigSnapshot = client.get("/api/config/bili-config") {
+            header(HttpHeaders.Authorization, "Bearer ${relogin.token!!}")
+        }.body<WebUiConfigFileDto>()
+        val deniedSave = client.post("/api/config/bili-config") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer ${relogin.token!!}")
+            setBody(
+                WebUiBiliConfigWriteRequestDto(
+                    snapshotToken = biliConfigSnapshot.snapshotToken,
+                    adminContact = "onebot11:private:2",
+                    cookie = "",
+                    baiduAppId = "new-app-id",
+                    baiduSecurityKey = "",
+                    debugMode = true,
+                    confirmationPassword = "",
+                ),
+            )
+        }
+
+        assertEquals(HttpStatusCode.Unauthorized, failedLogin.status)
+        assertEquals(HttpStatusCode.BadRequest, failedChange.status)
+        assertEquals(HttpStatusCode.OK, changed.status)
+        assertEquals(HttpStatusCode.Forbidden, deniedSave.status)
+        assertTrue(records.isNotEmpty())
+        assertTrue(records.any { it.target == "login" })
+        assertTrue(records.any { it.target == "change-password" })
+        assertTrue(records.any { it.target == "high-risk-confirmation" })
+    }
+
     @Test
     fun `config save routes should stay file scoped reject stale snapshots and require stronger confirmation`() = testApplication {
         val authService = buildAuthService()
@@ -193,6 +280,7 @@ class WebUiRouteSmokeTest {
             saveBiliConfigAction = { updated ->
                 savedConfig = updated
                 currentBiliConfig = updated
+                true
             },
             saveBiliDataAction = { contacts ->
                 savedBlacklist = contacts
@@ -202,6 +290,7 @@ class WebUiRouteSmokeTest {
             saveBotConfigAction = { updated ->
                 savedBotConfig = updated
                 currentBotConfig = updated
+                true
             },
         )
 

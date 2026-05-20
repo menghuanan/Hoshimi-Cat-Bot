@@ -534,14 +534,16 @@ object BiliConfigManager {
     }
 
     /**
-     * 将当前配置写回配置文件。
+     * 将当前配置写回配置文件，并把真实落盘结果返回给调用方。
      */
-    fun saveConfig(configToSave: BiliConfig = config) {
-        try {
+    fun saveConfig(configToSave: BiliConfig = config): Boolean {
+        return try {
             configFile.writeText(yaml.encodeToString(configToSave))
             logger.debug("配置已保存")
+            true
         } catch (e: Exception) {
             logger.error("保存配置文件失败", e)
+            false
         }
     }
 
@@ -549,12 +551,45 @@ object BiliConfigManager {
      * 将当前业务数据写回数据文件，并对空写入结果做保护检查。
      */
     fun saveData(dataToSave: BiliData = BiliData): Boolean {
+        val wrapper = BiliDataWrapper.from(
+            biliData = dataToSave,
+            templatePolicies = TemplateRuntimeCoordinator.snapshotPolicies(),
+        )
+        return saveDataWrapper(wrapper)
+    }
+
+    /**
+     * 只更新链接解析黑名单联系人集合，并确保成功落盘后才切换全局运行态。
+     * 这样 WebUI 在保存失败时不会出现“磁盘未提交、内存已变更”的半提交状态。
+     */
+    fun saveLinkParseBlacklistContacts(contacts: Set<String>): Boolean {
+        val wrapperToSave = BiliDataWrapper.from(
+            biliData = BiliData,
+            templatePolicies = TemplateRuntimeCoordinator.snapshotPolicies(),
+        ).copy(
+            linkParseBlacklistContacts = contacts.toMutableSet(),
+        )
+        val saved = saveDataWrapper(wrapperToSave)
+        if (saved) {
+            BiliData.linkParseBlacklistContacts = contacts.toMutableSet()
+        }
+        return saved
+    }
+
+    /**
+     * 同时保存配置与业务数据。
+     */
+    fun saveAll() {
+        saveConfig()
+        saveData()
+    }
+
+    /**
+     * 数据文件统一通过同一条落盘路径写入，避免不同调用方各自实现空文件保护和错误日志。
+     */
+    private fun saveDataWrapper(wrapperToSave: BiliDataWrapper): Boolean {
         return try {
-            val wrapper = BiliDataWrapper.from(
-                biliData = dataToSave,
-                templatePolicies = TemplateRuntimeCoordinator.snapshotPolicies(),
-            )
-            val yamlContent = yaml.encodeToString(wrapper)
+            val yamlContent = yaml.encodeToString(wrapperToSave)
             dataFile.writeText(yamlContent)
 
             val savedContent = dataFile.readText()
@@ -569,14 +604,6 @@ object BiliConfigManager {
             logger.error("保存数据文件失败", e)
             false
         }
-    }
-
-    /**
-     * 同时保存配置与业务数据。
-     */
-    fun saveAll() {
-        saveConfig()
-        saveData()
     }
 
     /**

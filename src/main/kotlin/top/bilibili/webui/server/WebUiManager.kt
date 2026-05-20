@@ -113,9 +113,9 @@ fun Application.installWebUiModule(
     }
     routing {
         registerWebUiStaticRoutes(settings, authService)
-        registerWebUiAuthRoutes(authService)
+        registerWebUiAuthRoutes(authService, auditService)
         registerWebUiApiRoutes(authService, runtimeFacade, configFacade, configWriteFacade, auditService)
-        registerWebUiLogRoutes(authService, logFacade)
+        registerWebUiLogRoutes(authService, logFacade, auditService)
         registerWebUiActionRoutes(authService, actionFacade, auditService)
     }
 }

@@ -58,6 +58,7 @@ class WebUiConfigWriteFacadeTest {
             botConfigProvider = { BotConfig() },
             saveBiliConfigAction = { configToSave ->
                 savedBiliConfig = configToSave
+                true
             },
             saveBiliDataAction = {
                 savedBiliDataCalls += 1
@@ -65,6 +66,7 @@ class WebUiConfigWriteFacadeTest {
             },
             saveBotConfigAction = {
                 savedBotConfigCalls += 1
+                true
             },
         )
 
@@ -106,6 +108,7 @@ class WebUiConfigWriteFacadeTest {
             botConfigProvider = { BotConfig() },
             saveBiliConfigAction = {
                 savedBiliConfigCalls += 1
+                true
             },
             saveBiliDataAction = { contacts ->
                 savedBlacklist = contacts
@@ -113,6 +116,7 @@ class WebUiConfigWriteFacadeTest {
             },
             saveBotConfigAction = {
                 savedBotConfigCalls += 1
+                true
             },
         )
 
@@ -131,6 +135,43 @@ class WebUiConfigWriteFacadeTest {
         assertEquals(setOf("onebot11:private:2", "onebot11:group:3"), savedBlacklist)
         assertEquals(0, savedBiliConfigCalls)
         assertEquals(0, savedBotConfigCalls)
+    }
+
+    /**
+     * BiliData 写入失败时，WebUI 不应先污染全局单例内存态，再返回失败结果。
+     */
+    @Test
+    fun `bili data writes should not mutate global state when persistence fails`() {
+        var attemptedBlacklist: Set<String>? = null
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(setOf("onebot11:private:1")) },
+                botConfigProvider = { BotConfig() },
+            ),
+            saveBiliDataAction = { contacts ->
+                attemptedBlacklist = contacts
+                false
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(
+            biliDataProvider = { configuredBiliData(setOf("onebot11:private:1")) },
+        ).readBiliData().snapshotToken
+        val expectedBlacklistBeforeSave = BiliData.linkParseBlacklistContacts.toMutableSet()
+        val result = facade.saveBiliData(
+            WebUiBiliDataWriteRequestDto(
+                snapshotToken = snapshotToken,
+                linkParseBlacklistContacts = listOf("onebot11:private:2", "onebot11:group:3"),
+            ),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.validationErrors.isEmpty())
+        assertEquals("REJECTED_PERSISTENCE", result.effectiveLevel.name)
+        assertEquals("RETRY_SAVE", result.recommendedAction.name)
+        assertEquals(expectedBlacklistBeforeSave, BiliData.linkParseBlacklistContacts)
+        assertEquals(setOf("onebot11:private:2", "onebot11:group:3"), attemptedBlacklist)
     }
 
     /**
@@ -194,6 +235,7 @@ class WebUiConfigWriteFacadeTest {
             botConfigProvider = { currentBotConfig },
             saveBiliConfigAction = {
                 savedBiliConfigCalls += 1
+                true
             },
             saveBiliDataAction = {
                 savedBiliDataCalls += 1
@@ -201,6 +243,7 @@ class WebUiConfigWriteFacadeTest {
             },
             saveBotConfigAction = { botConfig ->
                 savedBotConfig = botConfig
+                true
             },
         )
 
@@ -224,6 +267,119 @@ class WebUiConfigWriteFacadeTest {
         assertEquals("raw-token", savedBotConfig?.selectedOneBot11Config()?.token)
         assertEquals(0, savedBiliConfigCalls)
         assertEquals(0, savedBiliDataCalls)
+    }
+
+    /**
+     * bot.yml 持久化失败时必须向上返回失败，而不是把写盘异常误标成校验失败。
+     */
+    @Test
+    fun `bot config writes should report persistence failure separately from validation`() {
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = {
+                    BotConfig(
+                        platform = PlatformConfig(
+                            type = PlatformType.ONEBOT11,
+                            adapter = "onebot11",
+                            onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001, token = "raw-token"),
+                        ),
+                    )
+                },
+            ),
+            botConfigProvider = {
+                BotConfig(
+                    platform = PlatformConfig(
+                        type = PlatformType.ONEBOT11,
+                        adapter = "onebot11",
+                        onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001, token = "raw-token"),
+                    ),
+                )
+            },
+            saveBotConfigAction = {
+                throw IllegalStateException("disk write failed")
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(
+            botConfigProvider = {
+                BotConfig(
+                    platform = PlatformConfig(
+                        type = PlatformType.ONEBOT11,
+                        adapter = "onebot11",
+                        onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001, token = "raw-token"),
+                    ),
+                )
+            },
+        ).readBotConfig().snapshotToken
+        val result = facade.saveBotConfig(
+            WebUiBotConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                platformType = "ONEBOT11",
+                adapter = "onebot11",
+                oneBot11Host = "10.0.0.2",
+                oneBot11Port = 3100,
+                oneBot11Token = "",
+            ),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.validationErrors.isEmpty())
+        assertEquals("REJECTED_PERSISTENCE", result.effectiveLevel.name)
+        assertEquals("RETRY_SAVE", result.recommendedAction.name)
+    }
+
+    /**
+     * BiliConfig 持久化失败时也必须返回持久化失败语义，而不是校验失败语义。
+     */
+    @Test
+    fun `bili config writes should report persistence failure separately from validation`() {
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = {
+                    BiliConfig(
+                        adminContact = "onebot11:private:1",
+                        accountConfig = BiliAccountConfig(cookie = "raw-cookie"),
+                    )
+                },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { BotConfig() },
+            ),
+            biliConfigProvider = {
+                BiliConfig(
+                    adminContact = "onebot11:private:1",
+                    accountConfig = BiliAccountConfig(cookie = "raw-cookie"),
+                )
+            },
+            saveBiliConfigAction = {
+                throw IllegalStateException("disk write failed")
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(
+            biliConfigProvider = {
+                BiliConfig(
+                    adminContact = "onebot11:private:1",
+                    accountConfig = BiliAccountConfig(cookie = "raw-cookie"),
+                )
+            },
+        ).readBiliConfig().snapshotToken
+        val result = facade.saveBiliConfig(
+            WebUiBiliConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                adminContact = "onebot11:private:2",
+                cookie = "",
+                baiduAppId = "new-app-id",
+                baiduSecurityKey = "",
+                debugMode = true,
+            ),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.validationErrors.isEmpty())
+        assertEquals("REJECTED_PERSISTENCE", result.effectiveLevel.name)
+        assertEquals("RETRY_SAVE", result.recommendedAction.name)
     }
 
     /**
@@ -257,6 +413,7 @@ class WebUiConfigWriteFacadeTest {
             },
             saveBotConfigAction = {
                 saveCalls += 1
+                true
             },
         )
 
@@ -303,6 +460,7 @@ class WebUiConfigWriteFacadeTest {
             botConfigProvider = { BotConfig() },
             saveBiliConfigAction = {
                 savedBiliConfigCalls += 1
+                true
             },
         )
 

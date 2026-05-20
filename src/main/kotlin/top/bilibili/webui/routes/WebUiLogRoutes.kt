@@ -4,6 +4,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import top.bilibili.webui.auth.WebUiAuthService
+import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiLogFacade
 
 /**
@@ -12,14 +13,15 @@ import top.bilibili.webui.service.WebUiLogFacade
 fun Route.registerWebUiLogRoutes(
     authService: WebUiAuthService,
     logFacade: WebUiLogFacade,
+    auditService: WebUiAuditService,
 ) {
     get("/api/logs/sources") {
-        call.requireWebUiSession(authService) ?: return@get
+        call.requireWebUiSession(authService, auditService) ?: return@get
         call.respond(logFacade.listSources())
     }
 
     get("/api/logs/{sourceId}") {
-        call.requireWebUiSession(authService) ?: return@get
+        call.requireWebUiSession(authService, auditService) ?: return@get
         val sourceId = call.parameters["sourceId"].orEmpty()
         val tailLines = call.request.queryParameters["tail"]?.toIntOrNull() ?: 200
         val window = logFacade.readLogWindow(sourceId, tailLines)

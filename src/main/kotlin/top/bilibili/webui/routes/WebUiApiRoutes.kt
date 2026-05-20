@@ -39,29 +39,29 @@ fun Route.registerWebUiApiRoutes(
     }
 
     get("/api/runtime/summary") {
-        call.requireWebUiSession(authService) ?: return@get
+        call.requireWebUiSession(authService, auditService) ?: return@get
         call.respond(runtimeFacade.readSummary())
     }
 
     get("/api/config/bili-config") {
-        call.requireWebUiSession(authService) ?: return@get
+        call.requireWebUiSession(authService, auditService) ?: return@get
         call.respond(configFacade.readBiliConfig())
     }
 
     get("/api/config/bili-data") {
-        call.requireWebUiSession(authService) ?: return@get
+        call.requireWebUiSession(authService, auditService) ?: return@get
         call.respond(configFacade.readBiliData())
     }
 
     get("/api/config/bot") {
-        call.requireWebUiSession(authService) ?: return@get
+        call.requireWebUiSession(authService, auditService) ?: return@get
         call.respond(configFacade.readBotConfig())
     }
 
     post("/api/config/bili-config") {
-        val session = call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val request = call.receive<WebUiBiliConfigWriteRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
             return@post
         }
         val result = configWriteFacade.saveBiliConfig(request)
@@ -70,9 +70,9 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/config/bili-data") {
-        val session = call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val request = call.receive<WebUiBiliDataWriteRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
             return@post
         }
         val result = configWriteFacade.saveBiliData(request)
@@ -81,9 +81,9 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/config/bot") {
-        val session = call.requireWebUiSession(authService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val request = call.receive<WebUiBotConfigWriteRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword)) {
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
             return@post
         }
         val result = configWriteFacade.saveBotConfig(request)
@@ -110,6 +110,7 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondSaveResult
 ) {
     val status = when (result.effectiveLevel) {
         WebUiSaveEffectLevel.REJECTED_CONFLICT -> HttpStatusCode.Conflict
+        WebUiSaveEffectLevel.REJECTED_PERSISTENCE -> HttpStatusCode.InternalServerError
         WebUiSaveEffectLevel.REJECTED_VALIDATION -> HttpStatusCode.BadRequest
         else -> HttpStatusCode.OK
     }
