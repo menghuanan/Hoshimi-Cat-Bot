@@ -242,10 +242,7 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             chcp 65001 >nul
             cd /d "%~dp0.."
 
-            rem Windows 不使用 Linux LD_PRELOAD allocator 注入；当前发行包未携带 Windows jemalloc/tcmalloc runtime。
-            rem Windows 裸机继续依赖 JVM 与 Skiko 参数约束 native memory 行为。
             set JAVA_OPTS=-Xms64m -Xmx160m
-            rem 长时间静默场景显式启用 G1 周期回收与更积极的 heap 收缩，避免偶发绘图后长期保留高位 committed heap。
             set JAVA_OPTS=%JAVA_OPTS% -XX:MinHeapFreeRatio=10
             set JAVA_OPTS=%JAVA_OPTS% -XX:MaxHeapFreeRatio=20
             set JAVA_OPTS=%JAVA_OPTS% -XX:G1PeriodicGCInterval=60000
@@ -256,7 +253,6 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             set JAVA_OPTS=%JAVA_OPTS% -Dskiko.hardwareAcceleration=false
             set "JAVA_BIN=runtime\bin\java.exe"
 
-            rem 优先使用发行包内置运行时，确保用户无需额外安装 Java。
             if not exist "%JAVA_BIN%" (
                 echo ERROR: bundled runtime not found at "%JAVA_BIN%".
                 echo Please re-download the release package or rebuild with jlink enabled.
@@ -274,7 +270,6 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             #!/bin/bash
             cd "${'$'}(dirname "${'$'}0")/.."
 
-            # Linux 裸机必须在 JVM 启动前注入 jemalloc，否则 Anonymous/RSS 漂移会回到 glibc malloc 行为。
             if [ "${'$'}(uname -s)" = "Linux" ]; then
                 EXISTING_LD_PRELOAD="${'$'}{LD_PRELOAD:-}"
                 JEMALLOC_LIB=""
@@ -283,7 +278,6 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
                     *libjemalloc.so.2*)
                         ;;
                     *)
-                        # 统一封装 jemalloc 探测路径，安装前后都复用同一组系统路径与 ldconfig 缓存。
                         find_jemalloc_lib() {
                             for candidate in \
                                 /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
@@ -306,14 +300,12 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
 
                         if [ -z "${'$'}JEMALLOC_LIB" ] || [ ! -r "${'$'}JEMALLOC_LIB" ]; then
                             echo "libjemalloc.so.2 was not found."
-                            # 只在交互式终端中询问安装，CI/服务进程等非交互环境必须显式失败并提示人工处理。
                             if [ -t 0 ] && [ -t 1 ]; then
                                 printf "Install jemalloc via the system package manager now? [y/N] "
                                 read -r install_jemalloc_reply
 
                                 case "${'$'}install_jemalloc_reply" in
                                     [yY]|[yY][eE][sS])
-                                        # 自动安装仅调用发行版官方包管理器，不内置第三方二进制下载路径。
                                         if command -v apt-get >/dev/null 2>&1; then
                                             sudo apt-get update && sudo apt-get install -y libjemalloc2
                                         elif command -v dnf >/dev/null 2>&1; then
@@ -335,7 +327,6 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
                                 exit 1
                             fi
 
-                            # 安装后重新探测并校验可读性，避免包管理器失败或安装到不可见路径后继续启动。
                             JEMALLOC_LIB="${'$'}(find_jemalloc_lib)"
                             if [ -z "${'$'}JEMALLOC_LIB" ] || [ ! -r "${'$'}JEMALLOC_LIB" ]; then
                                 echo "ERROR: libjemalloc.so.2 is still unavailable after installation. Install jemalloc manually and retry." >&2
@@ -350,13 +341,11 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
                         ;;
                 esac
 
-                # 与 Dockerfile 保持一致的 jemalloc decay 策略，允许部署侧通过 MALLOC_CONF 显式覆盖。
                 MALLOC_CONF="${'$'}{MALLOC_CONF:-background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000,narenas:1,tcache:false}"
                 export MALLOC_CONF
             fi
 
             JAVA_OPTS="-Xms64m -Xmx160m"
-            # 长时间静默场景显式启用 G1 周期回收与更积极的 heap 收缩，避免偶发绘图后长期保留高位 committed heap。
             JAVA_OPTS="${'$'}JAVA_OPTS -XX:MinHeapFreeRatio=10"
             JAVA_OPTS="${'$'}JAVA_OPTS -XX:MaxHeapFreeRatio=20"
             JAVA_OPTS="${'$'}JAVA_OPTS -XX:G1PeriodicGCInterval=60000"
@@ -367,7 +356,6 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.hardwareAcceleration=false"
             JAVA_BIN="./runtime/bin/java"
 
-            # 优先使用发行包内置运行时，确保用户无需额外安装 Java。
             if [ ! -x "${'$'}JAVA_BIN" ]; then
                 echo "ERROR: bundled runtime not found at ${'$'}JAVA_BIN."
                 echo "Please re-download the release package or rebuild with jlink enabled." >&2
