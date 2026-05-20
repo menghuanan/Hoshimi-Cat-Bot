@@ -6,6 +6,7 @@ import top.bilibili.BiliData
 import top.bilibili.config.BotConfig
 import top.bilibili.config.ConfigManager
 import top.bilibili.webui.model.WebUiConfigFileDto
+import top.bilibili.webui.model.WebUiSubscriptionListDto
 
 /**
  * WebUI 配置 facade 负责把各配置文件的当前只读视图映射为独立 DTO，避免跨文件泄露边界。
@@ -41,6 +42,13 @@ class WebUiConfigFacade(
             fields = snapshot.fields,
             rawSnapshot = snapshot.rawSnapshot,
         )
+    }
+
+    /**
+     * 订阅管理页读取卡片级聚合视图，避免浏览器端从完整字段树里推导业务关系。
+     */
+    fun readSubscriptions(): WebUiSubscriptionListDto {
+        return buildSubscriptionOverview(biliDataProvider())
     }
 
     /**

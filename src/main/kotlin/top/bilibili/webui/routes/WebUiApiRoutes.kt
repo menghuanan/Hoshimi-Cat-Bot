@@ -53,6 +53,11 @@ fun Route.registerWebUiApiRoutes(
         call.respond(configFacade.readBiliData())
     }
 
+    get("/api/subscriptions") {
+        call.requireWebUiSession(authService, auditService) ?: return@get
+        call.respond(configFacade.readSubscriptions())
+    }
+
     get("/api/config/bot") {
         call.requireWebUiSession(authService, auditService) ?: return@get
         call.respond(configFacade.readBotConfig())

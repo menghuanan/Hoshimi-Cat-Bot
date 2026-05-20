@@ -13,6 +13,14 @@ class WebUiFoundationSourceRegressionTest {
      */
     private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
 
+    /**
+     * 样式块断言只检查目标选择器，避免全局同名属性让布局回归测试误判。
+     */
+    private fun cssBlock(source: String, selector: String): String {
+        val pattern = Regex("""(?s)${Regex.escape(selector)}\s*\{(.*?)\}""")
+        return pattern.find(source)?.groupValues?.get(1).orEmpty()
+    }
+
     @Test
     fun `webui config should stay disabled by default and remain part of bot runtime config`() {
         val configSource = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
@@ -35,6 +43,7 @@ class WebUiFoundationSourceRegressionTest {
 
         assertTrue(apiRoutes.contains("/api/runtime/summary"))
         assertTrue(apiRoutes.contains("/api/config/bili-config"))
+        assertTrue(apiRoutes.contains("/api/subscriptions"))
         assertTrue(runtimeDtos.contains("""val appVersion: String"""))
         assertTrue(runtimeFacade.contains("""appVersion = appVersionProvider()"""))
         assertTrue(authRoutes.contains("/api/auth/login"))
@@ -126,8 +135,8 @@ class WebUiFoundationSourceRegressionTest {
     fun `frontend shell should version account control assets`() {
         val shellPage = read("src/main/resources/webui/index.html")
 
-        assertTrue(shellPage.contains("""/assets/app.css?v=account-controls-layer"""))
-        assertTrue(shellPage.contains("""/assets/app.js?v=account-controls-layer"""))
+        assertTrue(shellPage.contains("""/assets/app.css?v=subscriptions-card-flow-v4"""))
+        assertTrue(shellPage.contains("""/assets/app.js?v=subscriptions-card-flow-v4"""))
     }
 
     /**
@@ -140,6 +149,20 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellStyle.contains(".topbar {"))
         assertTrue(shellStyle.contains("position: relative;"))
         assertTrue(shellStyle.contains("z-index: 60;"))
+    }
+
+    /**
+     * 侧边栏宽度需要比早期窄版扩大约三分之一，避免用户侧导航和主题区显得过挤。
+     */
+    @Test
+    fun `frontend shell should keep the wider sidebar layout`() {
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+
+        assertTrue(shellStyle.contains("""--sidebar-width: 235px;"""))
+        assertTrue(shellStyle.contains("""    .sidebar {
+        width: 213px;
+    }"""))
+        assertFalse(shellStyle.contains("""--sidebar-width: 176px;"""))
     }
 
     /**
@@ -184,14 +207,61 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellPage.contains("""id="log-clear-button""""))
         assertTrue(shellPage.contains("""id="log-export-button""""))
         assertTrue(shellPage.contains("""data-log-list"""))
+        assertTrue(shellStyle.contains(".page-logs"))
+        assertTrue(shellStyle.contains("height: 100%"))
+        assertTrue(shellStyle.contains("flex-direction: column"))
+        assertTrue(shellStyle.contains(".log-panel"))
+        assertTrue(shellStyle.contains("flex: 1"))
+        assertTrue(shellStyle.contains("min-height: 0"))
         assertTrue(shellStyle.contains(".log-list"))
-        assertTrue(shellStyle.contains("max-height: 548px"))
+        assertFalse(shellStyle.contains("max-height: 548px"))
         assertTrue(shellStyle.contains("overflow: auto"))
+        assertTrue(shellStyle.contains("align-items: flex-end"))
+        assertTrue(shellStyle.contains("align-self: end"))
         assertTrue(shellScript.contains("views.has(viewName)"))
         assertTrue(shellScript.contains("/api/logs/sources"))
         assertTrue(shellScript.contains("/api/logs/"))
         assertTrue(shellScript.contains("renderLogRows"))
         assertTrue(shellScript.contains("clearCurrentLog"))
         assertTrue(shellScript.contains("exportCurrentLog"))
+    }
+
+    /**
+     * 订阅管理页必须从真实接口渲染，并让标签筛选和搜索框成为可交互控件。
+     */
+    @Test
+    fun `subscription management should use interactive filters search and rendered cards`() {
+        val shellPage = read("src/main/resources/webui/index.html")
+        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val subscriptionGridBlock = cssBlock(shellStyle, ".subscription-grid")
+
+        assertTrue(shellPage.contains("""data-subscription-filter="all""""))
+        assertTrue(shellPage.contains("""data-subscription-filter="dynamic""""))
+        assertTrue(shellPage.contains("""data-subscription-filter="bangumi""""))
+        assertTrue(shellPage.contains("""id="subscription-search-input""""))
+        assertTrue(shellPage.contains("""data-subscription-list"""))
+        assertTrue(shellScript.contains("/api/subscriptions"))
+        assertTrue(shellScript.contains("renderSubscriptions"))
+        assertTrue(shellScript.contains("filteredSubscriptions"))
+        assertTrue(shellScript.contains("formatSubscriptionSubject"))
+        assertTrue(shellScript.contains("item.targetSectionTitle"))
+        assertTrue(shellScript.contains("filterCount"))
+        assertTrue(shellScript.contains("templateCount"))
+        assertTrue(shellScript.contains("themeColorCount"))
+        assertTrue(shellStyle.contains("grid-template-columns: repeat(4, 320px)"))
+        assertTrue(subscriptionGridBlock.contains("align-content: start;"))
+        assertTrue(subscriptionGridBlock.contains("align-items: start;"))
+        assertTrue(shellStyle.contains("width: 320px"))
+        assertTrue(shellStyle.contains(".subscription-info-grid"))
+        assertTrue(shellStyle.contains(".page-subscriptions"))
+        assertTrue(shellStyle.contains("min-height: calc(100vh - 96px);"))
+        assertTrue(shellStyle.contains("flex: 1;"))
+        assertTrue(shellStyle.contains("min-height: calc(100vh - 168px);"))
+        assertTrue(shellStyle.contains("place-content: center;"))
+        assertFalse(shellStyle.contains("aspect-ratio: 1 / 1;"))
+        assertFalse(shellStyle.contains("justify-self: center;"))
+        assertFalse(shellPage.contains("全部 (56)"))
+        assertFalse(shellPage.contains("icon-more-vertical\"></use></svg>\n                        </div>\n                        <div class=\"subscription-meta-title\">推送目标</div>"))
     }
 }

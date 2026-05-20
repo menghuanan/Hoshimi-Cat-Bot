@@ -38,7 +38,7 @@
     --radius-lg: 18px;
     --radius-md: 14px;
     --radius-sm: 12px;
-    --sidebar-width: 176px;
+    --sidebar-width: 235px;
     font-family: "Microsoft YaHei UI", "PingFang SC", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
 }
 
@@ -1266,7 +1266,13 @@ input:focus {
     line-height: 1.4;
 }
 
-/* 订阅管理页保留顶部筛选、搜索和卡片列表，但不接入任何真实行为。 */
+/* 订阅管理页现在由接口数据驱动，筛选、搜索和卡片信息块都在前端运行态渲染。 */
+.page-subscriptions {
+    min-height: calc(100vh - 96px);
+    display: flex;
+    flex-direction: column;
+}
+
 .subscription-toolbar {
     display: flex;
     align-items: center;
@@ -1282,18 +1288,52 @@ input:focus {
     min-width: 0;
 }
 
+.tabs-row .tab {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.subscription-search-field {
+    position: relative;
+    flex: 1 1 320px;
+    min-width: 280px;
+}
+
+.subscription-search-field .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    width: 15px;
+    height: 15px;
+    color: var(--muted);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.subscription-search-field input {
+    min-height: 36px;
+    padding: 0 12px 0 34px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+}
+
 .subscription-grid {
+    flex: 1;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(4, 320px);
+    gap: 14px;
+    align-content: start;
+    align-items: start;
 }
 
 .subscription-card {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-height: 166px;
-    padding: 14px 14px 13px;
+    width: 320px;
+    min-height: 325px;
+    padding: 16px;
     border: 1px solid var(--line);
     border-radius: 18px;
     background: var(--surface);
@@ -1342,9 +1382,13 @@ input:focus {
 }
 
 .subscription-name-row h3 {
+    max-width: 214px;
     color: var(--text-strong);
-    font-size: 0.96rem;
+    font-size: 0.86rem;
     font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .pill {
@@ -1432,10 +1476,77 @@ input:focus {
     font-size: 0.72rem;
 }
 
-/* 日志页保持筛选条与滚动日志区，视觉上和截图里的桌面日志面板一致。 */
-.log-toolbar {
+.subscription-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.subscription-info-block {
+    min-height: 56px;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    overflow: hidden;
+}
+
+.subscription-info-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.subscription-info-value {
     display: flex;
     align-items: center;
+    gap: 5px;
+    min-width: 0;
+    color: var(--text-strong);
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.subscription-info-value span:not(.color-swatch) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.color-swatch {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.42);
+    background: var(--surface-muted);
+}
+
+.subscription-edit {
+    min-height: 28px;
+    padding: 0 10px;
+}
+
+.subscription-empty {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: calc(100vh - 168px);
+    display: grid;
+    place-items: center;
+    place-content: center;
+    color: var(--muted);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+/* 日志页工具条底部对齐控件行，避免带标题筛选器把搜索和按钮挤到视觉中线。 */
+.log-toolbar {
+    display: flex;
+    align-items: flex-end;
     gap: 10px;
     flex-wrap: wrap;
     margin-bottom: 12px;
@@ -1444,6 +1555,13 @@ input:focus {
 .fake-select--compact {
     min-width: 102px;
     max-width: 160px;
+}
+
+.page-logs {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .log-control {
@@ -1480,6 +1598,13 @@ input:focus {
     min-width: 220px;
 }
 
+.log-search-field,
+.log-check,
+.log-toolbar .btn-small,
+.log-status {
+    align-self: end;
+}
+
 .log-search-field .search-icon {
     position: absolute;
     left: 12px;
@@ -1514,10 +1639,19 @@ input:focus {
 }
 
 .log-status {
-    flex: 1 1 180px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+    min-height: 34px;
+    margin-left: auto;
     color: var(--muted);
     font-size: 0.76rem;
     text-align: right;
+}
+
+.log-toolbar .btn-small {
+    min-height: 34px;
 }
 
 .fake-check {
@@ -1559,13 +1693,18 @@ input:focus {
 }
 
 .log-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     padding: 14px 16px;
 }
 
 .log-list {
+    flex: 1;
     display: grid;
     gap: 2px;
-    max-height: 548px;
+    min-height: 0;
     overflow: auto;
 }
 
@@ -1649,7 +1788,7 @@ input:focus {
     }
 
     .subscription-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(4, 320px);
     }
 }
 
@@ -1663,7 +1802,7 @@ input:focus {
     }
 
     .sidebar {
-        width: 160px;
+        width: 213px;
     }
 
     .metric-grid,
@@ -1689,6 +1828,10 @@ input:focus {
 
     .log-status {
         text-align: left;
+    }
+
+    .subscription-card {
+        width: 100%;
     }
 
     .log-row {

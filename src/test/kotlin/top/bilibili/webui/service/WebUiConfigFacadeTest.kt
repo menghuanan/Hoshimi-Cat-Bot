@@ -529,4 +529,113 @@ class WebUiConfigFacadeTest {
         assertTrue(botConfigFields.containsKey("admins.0.userContacts.0"))
         assertTrue(botConfigFields.containsKey("firstRunFlag"))
     }
+
+    /**
+     * 订阅管理卡片需要消费 BiliData 的聚合视图，避免前端从字段树里反向拼装业务对象。
+     */
+    @Test
+    fun `subscription overview should expose card ready dynamic and bangumi rows`() {
+        BiliData.apply {
+            dataVersion = 4
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    last = 111L,
+                    lastLive = 222L,
+                    contacts = mutableSetOf("onebot11:group:1", "onebot11:group:2"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:1", "groupRef:team-a"),
+                ),
+                789L to SubData(
+                    name = "Bob",
+                    last = 333L,
+                    lastLive = 0L,
+                    contacts = mutableSetOf("onebot11:group:2"),
+                    sourceRefs = mutableSetOf("groupRef:team-a"),
+                ),
+            )
+            filter = mutableMapOf(
+                "onebot11:group:1" to mutableMapOf(
+                    123L to DynamicFilter(
+                        typeSelect = TypeFilter(
+                            mode = FilterMode.BLACK_LIST,
+                            list = mutableListOf(DynamicFilterType.FORWARD),
+                        ),
+                        regularSelect = RegularFilter(
+                            mode = FilterMode.WHITE_LIST,
+                            list = mutableListOf("hello"),
+                        ),
+                    ),
+                ),
+                "onebot11:group:2" to mutableMapOf(
+                    123L to DynamicFilter(),
+                ),
+            )
+            dynamicTemplatePolicyByScope = mutableMapOf(
+                "groupRef:team-a" to mutableMapOf(
+                    123L to TemplatePolicy(templates = mutableListOf("DyOneMsg", "DyTwoMsg")),
+                ),
+            )
+            liveTemplatePolicyByScope = mutableMapOf(
+                "groupRef:team-a" to mutableMapOf(
+                    123L to TemplatePolicy(templates = mutableListOf("LiveOneMsg")),
+                ),
+            )
+            liveCloseTemplatePolicyByScope = mutableMapOf()
+            dynamicColorByUid = mutableMapOf(
+                "onebot11:group:1" to mutableMapOf(123L to "#112233"),
+                "onebot11:group:2" to mutableMapOf(123L to "#223344"),
+            )
+            atAll = mutableMapOf(
+                "onebot11:group:1" to mutableMapOf(123L to mutableSetOf(AtAllType.LIVE)),
+            )
+            group = mutableMapOf(
+                "team-a" to Group(
+                    name = "team-a",
+                    creator = 1L,
+                    contacts = mutableSetOf("onebot11:group:1072150397", "onebot11:group:12344555"),
+                ),
+            )
+            bangumi = mutableMapOf(
+                456L to Bangumi(
+                    title = "Bangumi A",
+                    seasonId = 456L,
+                    mediaId = 789L,
+                    type = "bangumi",
+                    color = "#334455",
+                    contacts = mutableSetOf("onebot11:group:3"),
+                ),
+            )
+        }
+        val facade = WebUiConfigFacade(
+            biliConfigProvider = { BiliConfig() },
+            biliDataProvider = { BiliData },
+            botConfigProvider = { BotConfig() },
+        )
+
+        val overview = facade.readSubscriptions()
+        val dynamicCard = overview.items.first { it.id == "dynamic:123" }
+        val bangumiCard = overview.items.first { it.id == "bangumi:456" }
+        val groupCard = overview.items.first { it.id == "group:team-a" }
+
+        assertEquals(4, overview.items.size)
+        assertEquals(2, overview.dynamicCount)
+        assertEquals(1, overview.bangumiCount)
+        assertEquals(1, overview.groupCount)
+        assertEquals(listOf("直播", "动态"), dynamicCard.tags)
+        assertEquals(222L, dynamicCard.lastUpdatedEpochMillis)
+        assertEquals(listOf("onebot11:group:1", "onebot11:group:2"), dynamicCard.targets)
+        assertTrue(dynamicCard.filterInfo.contains("group:1"))
+        assertTrue(dynamicCard.templateNames.contains("DyOneMsg"))
+        assertTrue(dynamicCard.templateNames.contains("LiveOneMsg"))
+        assertEquals(2, dynamicCard.filterCount)
+        assertEquals(3, dynamicCard.templateCount)
+        assertEquals(2, dynamicCard.themeColorCount)
+        assertEquals("直播", dynamicCard.atAllInfo)
+        assertEquals("#112233", dynamicCard.themeColor)
+        assertEquals(listOf("番剧"), bangumiCard.tags)
+        assertEquals("#334455", bangumiCard.themeColor)
+        assertEquals("订阅UID", groupCard.targetSectionTitle)
+        assertEquals(listOf("123", "789"), groupCard.targets)
+        assertEquals("分组: team-a", groupCard.identifierLabel)
+    }
 }

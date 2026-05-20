@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>dynamic-bot WebUI Shell</title>
     <script src="/assets/theme.js"></script>
-    <link rel="stylesheet" href="/assets/app.css?v=account-controls-layer">
+    <link rel="stylesheet" href="/assets/app.css?v=subscriptions-card-flow-v4">
 </head>
 <body class="dashboard-page">
 <svg aria-hidden="true" focusable="false" class="svg-sprite">
@@ -533,175 +533,24 @@
             <section class="page page-subscriptions" data-view="subscriptions" hidden>
                 <div class="subscription-toolbar">
                     <div class="tabs-row tabs-row--plain">
-                        <span class="tab is-active">全部 (56)</span>
-                        <span class="tab">直播 (18)</span>
-                        <span class="tab">动态 (38)</span>
+                        <button class="tab is-active" type="button" data-subscription-filter="all" aria-pressed="true">全部</button>
+                        <button class="tab" type="button" data-subscription-filter="dynamic" aria-pressed="false">直播与动态</button>
+                        <button class="tab" type="button" data-subscription-filter="bangumi" aria-pressed="false">番剧</button>
                     </div>
                     <div class="subscription-controls">
-                        <div class="fake-search">
+                        <label class="subscription-search-field">
                             <svg viewBox="0 0 24 24" class="search-icon"><use href="#icon-search"></use></svg>
-                            <span>搜索 UP 主名称或 UID</span>
-                        </div>
-                        <span class="btn btn-primary btn-add">
+                            <input id="subscription-search-input" type="search" autocomplete="off" placeholder="搜索名称、UID 或推送目标" aria-label="搜索订阅">
+                        </label>
+                        <button class="btn btn-primary btn-add" type="button">
                             <svg viewBox="0 0 24 24" class="btn-icon"><use href="#icon-plus"></use></svg>
                             添加订阅
-                        </span>
+                        </button>
                     </div>
                 </div>
 
-                <div class="subscription-grid">
-                    <article class="subscription-card">
-                        <div class="subscription-head">
-                            <div class="subscription-profile">
-                                <span class="subscription-avatar avatar-a">米</span>
-                                <div>
-                                    <div class="subscription-name-row">
-                                        <h3>米哈游Official</h3>
-                                        <span class="pill pill-gold">直播</span>
-                                        <span class="pill pill-green">动态</span>
-                                    </div>
-                                    <div class="subscription-uid">UID: 27534330</div>
-                                </div>
-                            </div>
-                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
-                        </div>
-                        <div class="subscription-meta-title">推送目标</div>
-                        <div class="chip-row">
-                            <span class="mini-chip">123456789</span>
-                            <span class="mini-chip">987654321</span>
-                            <span class="mini-chip mini-chip--muted">+2</span>
-                        </div>
-                        <div class="subscription-footer">
-                            <span class="subscription-time">最后更新：2024-05-22 16:44:21</span>
-                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                        </div>
-                    </article>
-
-                    <article class="subscription-card">
-                        <div class="subscription-head">
-                            <div class="subscription-profile">
-                                <span class="subscription-avatar avatar-b">老</span>
-                                <div>
-                                    <div class="subscription-name-row">
-                                        <h3>老番茄</h3>
-                                        <span class="pill pill-gold">直播</span>
-                                        <span class="pill pill-blue">游戏</span>
-                                    </div>
-                                    <div class="subscription-uid">UID: 546195</div>
-                                </div>
-                            </div>
-                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
-                        </div>
-                        <div class="subscription-meta-title">推送目标</div>
-                        <div class="chip-row">
-                            <span class="mini-chip">123456789</span>
-                        </div>
-                        <div class="subscription-footer">
-                            <span class="subscription-time">最后更新：2024-05-22 16:35:48</span>
-                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                        </div>
-                    </article>
-
-                    <article class="subscription-card">
-                        <div class="subscription-head">
-                            <div class="subscription-profile">
-                                <span class="subscription-avatar avatar-c">L</span>
-                                <div>
-                                    <div class="subscription-name-row">
-                                        <h3>LexBurner</h3>
-                                        <span class="pill pill-purple">动态</span>
-                                        <span class="pill pill-green">直播</span>
-                                    </div>
-                                    <div class="subscription-uid">UID: 672238094</div>
-                                </div>
-                            </div>
-                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
-                        </div>
-                        <div class="subscription-meta-title">推送目标</div>
-                        <div class="chip-row">
-                            <span class="mini-chip">125467890</span>
-                        </div>
-                        <div class="subscription-footer">
-                            <span class="subscription-time">最后更新：2024-05-22 16:40:12</span>
-                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                        </div>
-                    </article>
-
-                    <article class="subscription-card">
-                        <div class="subscription-head">
-                            <div class="subscription-profile">
-                                <span class="subscription-avatar avatar-d">何</span>
-                                <div>
-                                    <div class="subscription-name-row">
-                                        <h3>老师好我叫何同学</h3>
-                                        <span class="pill pill-purple">动态</span>
-                                        <span class="pill pill-blue">科技</span>
-                                    </div>
-                                    <div class="subscription-uid">UID: 381767228</div>
-                                </div>
-                            </div>
-                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
-                        </div>
-                        <div class="subscription-meta-title">推送目标</div>
-                        <div class="chip-row">
-                            <span class="mini-chip">987654321</span>
-                        </div>
-                        <div class="subscription-footer">
-                            <span class="subscription-time">最后更新：2024-05-22 16:30:05</span>
-                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                        </div>
-                    </article>
-
-                    <article class="subscription-card">
-                        <div class="subscription-head">
-                            <div class="subscription-profile">
-                                <span class="subscription-avatar avatar-e">绘</span>
-                                <div>
-                                    <div class="subscription-name-row">
-                                        <h3>绘梨Kuma</h3>
-                                        <span class="pill pill-green">直播</span>
-                                        <span class="pill pill-purple">动态</span>
-                                    </div>
-                                    <div class="subscription-uid">UID: 3546541</div>
-                                </div>
-                            </div>
-                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
-                        </div>
-                        <div class="subscription-meta-title">推送目标</div>
-                        <div class="chip-row">
-                            <span class="mini-chip">123456789</span>
-                            <span class="mini-chip">987654321</span>
-                        </div>
-                        <div class="subscription-footer">
-                            <span class="subscription-time">最后更新：2024-05-22 16:28:11</span>
-                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                        </div>
-                    </article>
-
-                    <article class="subscription-card">
-                        <div class="subscription-head">
-                            <div class="subscription-profile">
-                                <span class="subscription-avatar avatar-f">中</span>
-                                <div>
-                                    <div class="subscription-name-row">
-                                        <h3>中国BOY超级大猩猩</h3>
-                                        <span class="pill pill-green">直播</span>
-                                        <span class="pill pill-purple">动态</span>
-                                    </div>
-                                    <div class="subscription-uid">UID: 333356</div>
-                                </div>
-                            </div>
-                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
-                        </div>
-                        <div class="subscription-meta-title">推送目标</div>
-                        <div class="chip-row">
-                            <span class="mini-chip">125467890</span>
-                        </div>
-                        <div class="subscription-footer">
-                            <span class="subscription-time">最后更新：2024-05-22 16:20:33</span>
-                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                        </div>
-                    </article>
+                <div class="subscription-grid" data-subscription-list aria-live="polite">
+                    <div class="subscription-empty">订阅加载中</div>
                 </div>
             </section>
 
@@ -781,6 +630,6 @@
         </form>
     </section>
 </div>
-<script src="/assets/app.js?v=account-controls-layer"></script>
+<script src="/assets/app.js?v=subscriptions-card-flow-v4"></script>
 </body>
 </html>

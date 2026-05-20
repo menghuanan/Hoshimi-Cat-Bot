@@ -46,6 +46,9 @@ const logClearButton = document.getElementById("log-clear-button");
 const logExportButton = document.getElementById("log-export-button");
 const logStatus = document.getElementById("log-status");
 const logList = document.querySelector("[data-log-list]");
+const subscriptionFilterButtons = Array.from(document.querySelectorAll("[data-subscription-filter]"));
+const subscriptionSearchInput = document.getElementById("subscription-search-input");
+const subscriptionList = document.querySelector("[data-subscription-list]");
 const themePreferenceCookieName = window.WebUiTheme?.cookieName || "dynamic_bot_webui_theme";
 const runtimeRefreshIntervalMs = 30_000;
 const logRefreshIntervalMs = 5_000;
@@ -57,6 +60,12 @@ const logState = {
     rows: [],
     modules: [],
     renderedRows: [],
+};
+const subscriptionState = {
+    filter: "all",
+    search: "",
+    items: [],
+    loaded: false,
 };
 let logRefreshTimer = null;
 let logRequestSequence = 0;
@@ -243,6 +252,247 @@ function escapeHtml(value) {
         };
         return map[char] || char;
     });
+}
+
+/**
+ * 订阅头像从名称首字符生成，缺少名称时使用默认占位，避免接口不返回头像也能稳定排版。
+ */
+function subscriptionAvatarText(item) {
+    const title = String(item?.title || "").trim();
+    return (title ? Array.from(title)[0] : "?").toUpperCase();
+}
+
+/**
+ * 订阅头像色按卡片位置循环使用既有渐变类，保持和原静态页面一致的视觉节奏。
+ */
+function subscriptionAvatarClass(index) {
+    const classes = ["avatar-a", "avatar-b", "avatar-c", "avatar-d", "avatar-e", "avatar-f"];
+    return classes[index % classes.length];
+}
+
+/**
+ * 订阅标签复用现有 pill 色板，直播、动态、番剧分别落到固定颜色。
+ */
+function subscriptionTagClass(tag) {
+    const normalizedTag = String(tag || "");
+    if (normalizedTag === "直播") {
+        return "pill-gold";
+    }
+    if (normalizedTag === "动态") {
+        return "pill-green";
+    }
+    if (normalizedTag === "番剧") {
+        return "pill-purple";
+    }
+    return "pill-blue";
+}
+
+/**
+ * 平台 subject 在卡片中转换为中文语义，避免直接暴露 group/private 等内部段名。
+ */
+function formatSubscriptionSubject(target) {
+    const parts = String(target || "").split(":").filter(Boolean);
+    if (parts.length >= 2 && parts[parts.length - 2] === "group") {
+        return {type: "群聊", value: parts[parts.length - 1], raw: target};
+    }
+    if (parts.length >= 2 && parts[parts.length - 2] === "private") {
+        return {type: "私聊", value: parts[parts.length - 1], raw: target};
+    }
+    return {type: "", value: target || "--", raw: target};
+}
+
+/**
+ * 推送目标按联系人类型合并展示；分组卡片的订阅 UID 则直接展示 UID 列表。
+ */
+function renderSubscriptionTargets(item) {
+    const targets = item?.targets;
+    const items = Array.isArray(targets) ? targets : [];
+    if (items.length === 0) {
+        return '<span class="mini-chip mini-chip--muted">暂无目标</span>';
+    }
+    if (item?.targetSectionTitle === "订阅UID") {
+        const text = items.join("、");
+        return `<span class="mini-chip" title="${escapeHtml(text)}">${escapeHtml(text)}</span>`;
+    }
+    const grouped = new Map();
+    items.forEach((target) => {
+        const formatted = formatSubscriptionSubject(target);
+        const key = formatted.type || "目标";
+        const bucket = grouped.get(key) || [];
+        bucket.push(formatted.value);
+        grouped.set(key, bucket);
+    });
+    return Array.from(grouped.entries()).map(([type, values]) => {
+        const text = type === "目标" ? values.join("、") : `${type}：${values.join("、")}`;
+        return `<span class="mini-chip" title="${escapeHtml(text)}">${escapeHtml(text)}</span>`;
+    }).join("");
+}
+
+/**
+ * 信息块值限制为短文本；空模板和空主题色统一降级为默认文案。
+ */
+function subscriptionInfoText(value, fallback = "未设置") {
+    if (Array.isArray(value)) {
+        return value.length > 0 ? value.join("、") : fallback;
+    }
+    const text = String(value || "").trim();
+    return text || fallback;
+}
+
+/**
+ * 数量摘要统一带单位，避免信息块里混用原始配置片段和统计值。
+ */
+function formatSubscriptionCount(value, unit) {
+    const count = Number(value);
+    return `${Number.isFinite(count) && count > 0 ? count : 0} 个${unit}`;
+}
+
+/**
+ * 最后更新时间使用后端聚合出的最近内容更新时间，缺失时显示暂无更新。
+ */
+function formatSubscriptionUpdatedTime(epochMillis) {
+    const value = Number(epochMillis);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "最后更新：暂无更新";
+    }
+    return `最后更新：${formatDateTime(value)}`;
+}
+
+/**
+ * 当前筛选同时应用标签按钮和搜索框，搜索范围覆盖名称、UID、目标和信息块文本。
+ */
+function filteredSubscriptions() {
+    const keyword = subscriptionState.search.trim().toLowerCase();
+    return subscriptionState.items.filter((item) => {
+        const matchesFilter = subscriptionState.filter === "all" || item.kind === subscriptionState.filter;
+        const searchable = [
+            item.title,
+            item.identifierLabel,
+            item.sourceId,
+            ...(item.tags || []),
+            ...(item.targets || []),
+            item.filterInfo,
+            item.filterCount,
+            ...(item.templateNames || []),
+            item.templateCount,
+            item.atAllInfo,
+            item.themeColor,
+            item.themeColorCount,
+            item.targetSectionTitle,
+        ].join(" ").toLowerCase();
+        return matchesFilter && (!keyword || searchable.includes(keyword));
+    });
+}
+
+/**
+ * 顶部标签按钮只表达当前筛选态，文案保持需求中的三个固定分类。
+ */
+function syncSubscriptionFilters() {
+    const labels = {
+        all: "全部",
+        dynamic: "直播与动态",
+        bangumi: "番剧",
+    };
+    subscriptionFilterButtons.forEach((button) => {
+        const filter = button.dataset.subscriptionFilter || "all";
+        const active = filter === subscriptionState.filter;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+        button.textContent = labels[filter] || labels.all;
+    });
+}
+
+/**
+ * 订阅卡片整段重绘，确保筛选、搜索和接口刷新不会残留旧卡片状态。
+ */
+function renderSubscriptions(summary = null) {
+    if (!subscriptionList) {
+        return;
+    }
+    syncSubscriptionFilters();
+    const rows = filteredSubscriptions();
+    if (rows.length === 0) {
+        subscriptionList.innerHTML = '<div class="subscription-empty">没有匹配的订阅</div>';
+        return;
+    }
+    subscriptionList.innerHTML = rows.map((item, index) => {
+        const tags = (item.tags || []).map((tag) => {
+            return `<span class="pill ${subscriptionTagClass(tag)}">${escapeHtml(tag)}</span>`;
+        }).join("");
+        return `
+            <article class="subscription-card">
+                <div class="subscription-head">
+                    <div class="subscription-profile">
+                        <span class="subscription-avatar ${subscriptionAvatarClass(index)}">${escapeHtml(subscriptionAvatarText(item))}</span>
+                        <div>
+                            <div class="subscription-name-row">
+                                <h3 title="${escapeHtml(item.title)}">${escapeHtml(item.title || "--")}</h3>
+                                ${tags}
+                            </div>
+                            <div class="subscription-uid">${escapeHtml(item.identifierLabel || `UID: ${item.sourceId ?? "--"}`)}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="subscription-meta-title">${escapeHtml(item.targetSectionTitle || "推送目标")}</div>
+                <div class="chip-row">${renderSubscriptionTargets(item)}</div>
+                <div class="subscription-info-grid">
+                    <div class="subscription-info-block">
+                        <span class="subscription-info-label">过滤器信息</span>
+                        <span class="subscription-info-value" title="${escapeHtml(item.filterInfo)}"><span>${escapeHtml(formatSubscriptionCount(item.filterCount, "过滤器"))}</span></span>
+                    </div>
+                    <div class="subscription-info-block">
+                        <span class="subscription-info-label">模板信息</span>
+                        <span class="subscription-info-value" title="${escapeHtml(subscriptionInfoText(item.templateNames))}"><span>${escapeHtml(formatSubscriptionCount(item.templateCount, "模板"))}</span></span>
+                    </div>
+                    <div class="subscription-info-block">
+                        <span class="subscription-info-label">at全体</span>
+                        <span class="subscription-info-value" title="${escapeHtml(item.atAllInfo)}"><span>${escapeHtml(subscriptionInfoText(item.atAllInfo, "未开启"))}</span></span>
+                    </div>
+                    <div class="subscription-info-block">
+                        <span class="subscription-info-label">主题色</span>
+                        <span class="subscription-info-value" title="${escapeHtml(subscriptionInfoText(item.themeColor, "默认"))}"><span>${escapeHtml(formatSubscriptionCount(item.themeColorCount, "主题色"))}</span></span>
+                    </div>
+                </div>
+                <div class="subscription-footer">
+                    <span class="subscription-time">${escapeHtml(formatSubscriptionUpdatedTime(item.lastUpdatedEpochMillis))}</span>
+                    <button class="btn btn-secondary btn-small subscription-edit" type="button">编辑</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+/**
+ * 订阅管理进入可见状态时刷新一次后端快照，保证最后更新时间来自最近加载的数据。
+ */
+async function refreshSubscriptions() {
+    if (!subscriptionList) {
+        return;
+    }
+    if (!subscriptionState.loaded) {
+        subscriptionList.innerHTML = '<div class="subscription-empty">订阅加载中</div>';
+    }
+    const response = await fetch("/api/subscriptions", {headers: buildAuthHeaders()});
+    if (response.status === 401 || response.status === 403) {
+        location.href = "/login";
+        return;
+    }
+    if (!response.ok) {
+        throw new Error(`订阅加载失败：HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    subscriptionState.items = Array.isArray(payload.items) ? payload.items : [];
+    subscriptionState.loaded = true;
+    renderSubscriptions(payload);
+}
+
+/**
+ * 订阅页加载失败时把错误落到列表区域，避免按钮可点但页面静默空白。
+ */
+function setSubscriptionError(message) {
+    if (subscriptionList) {
+        subscriptionList.innerHTML = `<div class="subscription-empty">${escapeHtml(message || "订阅加载失败")}</div>`;
+    }
 }
 
 /**
@@ -841,6 +1091,9 @@ function activateView(viewName, replaceHash = false) {
     }
     if (targetName === "logs") {
         handleLogViewActivated();
+    } else if (targetName === "subscriptions") {
+        stopLogAutoRefresh();
+        refreshSubscriptions().catch((error) => setSubscriptionError(error.message || "订阅加载失败"));
     } else {
         stopLogAutoRefresh();
     }
@@ -873,6 +1126,22 @@ if (logModuleFilter) {
 
 if (logSearchInput) {
     logSearchInput.addEventListener("input", renderLogRows);
+}
+
+// 订阅筛选按钮只更新前端筛选态，避免每次切换标签都重新请求后端。
+subscriptionFilterButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+        subscriptionState.filter = button.dataset.subscriptionFilter || "all";
+        renderSubscriptions();
+    });
+});
+
+if (subscriptionSearchInput) {
+    // 搜索框即时过滤当前快照，接口刷新时会保留用户输入的关键字。
+    subscriptionSearchInput.addEventListener("input", () => {
+        subscriptionState.search = subscriptionSearchInput.value || "";
+        renderSubscriptions();
+    });
 }
 
 if (logAutoRefresh) {
