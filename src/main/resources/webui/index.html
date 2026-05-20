@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>dynamic-bot WebUI Shell</title>
+    <script src="/assets/theme.js"></script>
     <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body class="dashboard-page">
@@ -169,13 +170,19 @@
                     <svg viewBox="0 0 24 24" class="theme-icon">
                         <use href="#icon-sun"></use>
                     </svg>
-                    <span>深色模式</span>
+                    <div class="theme-copy-text">
+                        <span>外观模式</span>
+                        <strong id="theme-mode-label" data-theme-label>跟随系统</strong>
+                    </div>
                 </div>
-                <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                <div class="theme-selector" id="theme-mode-selector" role="group" aria-label="外观模式">
+                    <button class="theme-option" type="button" data-theme-option="dark">深色</button>
+                    <button class="theme-option" type="button" data-theme-option="light">亮色</button>
+                    <button class="theme-option" type="button" data-theme-option="system">跟随系统</button>
+                </div>
             </div>
             <div class="version-row">
-                <span>版本 v1.0.0</span>
-                <span class="status-chip"><span class="status-dot"></span><span data-runtime-field="sidebarStatus">加载中</span></span>
+                <span class="version-text">版本 <strong data-runtime-field="sidebarVersion">--</strong></span>
             </div>
         </div>
     </aside>
@@ -186,17 +193,6 @@
                 <span id="page-title">首页</span>
             </div>
             <div class="topbar-actions" aria-label="顶部工具区">
-                <span class="topbar-icon-wrap">
-                    <svg viewBox="0 0 24 24" class="topbar-icon">
-                        <use href="#icon-bell"></use>
-                    </svg>
-                    <span class="badge">3</span>
-                </span>
-                <span class="topbar-icon-wrap">
-                    <svg viewBox="0 0 24 24" class="topbar-icon">
-                        <use href="#icon-sun"></use>
-                    </svg>
-                </span>
                 <span class="avatar" aria-hidden="true"></span>
                 <span class="admin-name">管理员</span>
                 <svg viewBox="0 0 24 24" class="topbar-chevron">

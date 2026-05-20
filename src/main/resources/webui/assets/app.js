@@ -23,6 +23,9 @@ const runtimeProgressBars = new Map(
 const runtimeLists = new Map(
     Array.from(document.querySelectorAll("[data-runtime-list]"), (list) => [list.dataset.runtimeList, list]),
 );
+const themePreferenceButtons = Array.from(document.querySelectorAll("[data-theme-option]"));
+const themePreferenceLabel = document.querySelector("[data-theme-label]");
+const themePreferenceCookieName = window.WebUiTheme?.cookieName || "dynamic_bot_webui_theme";
 const runtimeRefreshIntervalMs = 30_000;
 
 /**
@@ -65,6 +68,49 @@ function setRuntimeList(name, html) {
     const list = runtimeLists.get(name);
     if (list) {
         list.innerHTML = html;
+    }
+}
+
+/**
+ * 主题偏好只接受深色、亮色和跟随系统三种值，避免 cookie 污染后把页面切成未知状态。
+ */
+function resolveThemePreference(preference) {
+    if (preference === "dark" || preference === "light" || preference === "system") {
+        return preference;
+    }
+    return "system";
+}
+
+/**
+ * 主题按钮只负责写入全局主题助手，再把 footer 的选中态同步回来，避免局部状态漂移。
+ */
+function applyThemePreference(preference) {
+    const normalizedPreference = resolveThemePreference(preference);
+    if (window.WebUiTheme) {
+        window.WebUiTheme.setPreference(normalizedPreference);
+    }
+    syncThemePreferenceUI(normalizedPreference);
+    return normalizedPreference;
+}
+
+/**
+ * 左下角主题切换器和 cookie 保持同一个偏好值，刷新后无需重新点选。
+ */
+function syncThemePreferenceUI(preference) {
+    const normalizedPreference = resolveThemePreference(preference);
+    themePreferenceButtons.forEach((button) => {
+        const active = button.dataset.themeOption === normalizedPreference;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+    });
+    if (themePreferenceLabel && window.WebUiTheme?.getPreferenceLabel) {
+        themePreferenceLabel.textContent = window.WebUiTheme.getPreferenceLabel(normalizedPreference);
+    } else if (themePreferenceLabel) {
+        themePreferenceLabel.textContent = normalizedPreference === "dark"
+            ? "深色"
+            : normalizedPreference === "light"
+                ? "亮色"
+                : "跟随系统";
     }
 }
 
@@ -281,6 +327,7 @@ function renderRuntimeSummary(summary) {
     const socket = summary.webSocket || {};
     const pushStats = summary.todayPushStats || {};
 
+    setRuntimeField("sidebarVersion", summary.appVersion || "--");
     setRuntimeField("sidebarStatus", botStatus);
     setRuntimeField("botStatus", botStatus);
     setRuntimeField("botUptime", formatUptime(summary.uptimeSeconds));
@@ -370,7 +417,14 @@ navItems.forEach((item) => {
     });
 });
 
+themePreferenceButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+        applyThemePreference(button.dataset.themeOption || "system");
+    });
+});
+
 const initialView = location.hash.replace(/^#/, "");
+syncThemePreferenceUI(window.WebUiTheme?.getPreference?.() || "system");
 activateView(initialView, !initialView || !views.has(initialView));
 refreshRuntimeSummary();
 setInterval(refreshRuntimeSummary, runtimeRefreshIntervalMs);

@@ -2,6 +2,7 @@ package top.bilibili.webui.service
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.config.ConfigManager
+import top.bilibili.currentVersionLabel
 import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.core.BiliBiliBot
@@ -27,6 +28,8 @@ import com.sun.management.OperatingSystemMXBean as SunOperatingSystemMXBean
 class WebUiRuntimeFacade(
     private val lifecycleStateProvider: () -> String = { BiliBiliBot.currentLifecycleState().name },
     private val uptimeSecondsProvider: () -> Long = { BiliBiliBot.getUptimeSeconds() },
+    // 版本标签只读取启动期暴露的应用版本，不回看任何配置文件或运行中对象。
+    private val appVersionProvider: () -> String = { currentVersionLabel() },
     private val platformAdapterInitializedProvider: () -> Boolean = { BiliBiliBot.isPlatformAdapterInitialized() },
     private val webUiEnabledProvider: () -> Boolean = { runCatching { ConfigManager.botConfig.webui.enabled }.getOrDefault(false) },
     private val restartSupportedProvider: () -> Boolean = { false },
@@ -60,6 +63,7 @@ class WebUiRuntimeFacade(
         return WebUiRuntimeSummaryDto(
             lifecycleState = lifecycleState,
             uptimeSeconds = uptimeSecondsProvider(),
+            appVersion = appVersionProvider(),
             platformAdapterInitialized = platformAdapterInitialized,
             platformReady = platformAdapterInitialized && lifecycleState == "RUNNING",
             webUiEnabled = webUiEnabledProvider(),

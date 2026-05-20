@@ -165,6 +165,7 @@ class WebUiRouteSmokeTest {
         assertEquals(true, sessionProbe.authenticated)
         val runtimeBody = runtimeResponse.body<WebUiRuntimeSummaryDto>()
         assertEquals("RUNNING", runtimeBody.lifecycleState)
+        assertEquals("v-test", runtimeBody.appVersion)
         assertEquals(true, runtimeBody.platformReady)
         assertEquals("MANUAL_RESTART_REQUIRED", runtimeBody.restartRequestMode)
         assertEquals(5, runtimeBody.subscriptionCount)
@@ -522,6 +523,7 @@ class WebUiRouteSmokeTest {
             uptimeSecondsProvider = { 42L },
             platformAdapterInitializedProvider = { true },
             webUiEnabledProvider = { true },
+            appVersionProvider = { "v-test" },
             subscriptionCountProvider = { 5 },
             dynamicSubscriptionCountProvider = { 4 },
             bangumiSubscriptionCountProvider = { 1 },

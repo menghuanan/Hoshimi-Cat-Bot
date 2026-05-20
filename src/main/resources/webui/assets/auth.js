@@ -4,6 +4,19 @@ const authStatus = document.getElementById("auth-status");
 const loginPasswordInput = document.getElementById("login-password");
 const currentPasswordInput = document.getElementById("current-password");
 const newPasswordInput = document.getElementById("new-password");
+const themePreferenceCookieName = window.WebUiTheme?.cookieName || "dynamic_bot_webui_theme";
+
+/**
+ * 登录页直接复用主题 cookie，避免认证壳和主壳出现两套不同配色。
+ */
+function applyThemePreference(preference) {
+    if (window.WebUiTheme) {
+        return window.WebUiTheme.applyThemePreference(preference, false);
+    }
+    return null;
+}
+
+applyThemePreference(window.WebUiTheme?.getPreference?.() || "system");
 
 /**
  * 统一保存 token，供后续 `/api/*` 请求使用，同时让服务端 cookie 负责页面入口门禁。

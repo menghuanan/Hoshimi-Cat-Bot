@@ -27,6 +27,7 @@ class WebUiRuntimeFacadeTest {
             uptimeSecondsProvider = { uptimeSeconds },
             platformAdapterInitializedProvider = { true },
             webUiEnabledProvider = { true },
+            appVersionProvider = { "v-test" },
             restartSupportedProvider = { true },
             subscriptionCountProvider = { subscriptionCount },
             dynamicSubscriptionCountProvider = { 2 },
@@ -98,6 +99,7 @@ class WebUiRuntimeFacadeTest {
         groupCount = 66
 
         assertEquals("RUNNING", snapshot.lifecycleState)
+        assertEquals("v-test", snapshot.appVersion)
         assertEquals(120L, snapshot.uptimeSeconds)
         assertEquals(3, snapshot.subscriptionCount)
         assertEquals(2, snapshot.groupCount)
@@ -131,6 +133,7 @@ class WebUiRuntimeFacadeTest {
             uptimeSecondsProvider = { 42L },
             platformAdapterInitializedProvider = { true },
             webUiEnabledProvider = { true },
+            appVersionProvider = { "v-test" },
             subscriptionCountProvider = { 5 },
             dynamicSubscriptionCountProvider = { 4 },
             bangumiSubscriptionCountProvider = { 1 },
@@ -213,6 +216,7 @@ class WebUiRuntimeFacadeTest {
         val snapshot = facade.readSummary()
 
         assertEquals(2, snapshot.recentPushRecords.size)
+        assertEquals("v-test", snapshot.appVersion)
         assertEquals("LIVE", snapshot.recentPushRecords.first().type)
         assertEquals("直播", snapshot.recentPushRecords.first().typeLabel)
         assertEquals(false, snapshot.recentPushRecords.first().success)

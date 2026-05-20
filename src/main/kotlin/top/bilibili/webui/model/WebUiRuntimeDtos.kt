@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
 data class WebUiRuntimeSummaryDto(
     val lifecycleState: String,
     val uptimeSeconds: Long,
+    val appVersion: String,
     val platformAdapterInitialized: Boolean,
     val platformReady: Boolean,
     val webUiEnabled: Boolean,
