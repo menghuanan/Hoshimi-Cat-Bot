@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class WebUiRuleClosureVerificationTest {
@@ -42,18 +43,19 @@ class WebUiRuleClosureVerificationTest {
         val shellPage = read("src/main/resources/webui/index.html")
         val shellScript = read("src/main/resources/webui/assets/app.js")
 
-        assertTrue(shellPage.contains("id=\"runtime-summary\""))
-        assertTrue(shellPage.contains("id=\"bili-config-form\""))
-        assertTrue(shellPage.contains("id=\"bili-data-form\""))
-        assertTrue(shellPage.contains("id=\"bot-config-form\""))
-        assertTrue(shellPage.contains("id=\"log-source-select\""))
-        assertTrue(shellPage.contains("id=\"log-tail-select\""))
-        assertTrue(shellPage.contains("id=\"reload-config-action\""))
-        assertTrue(shellPage.contains("id=\"shutdown-action\""))
-        assertTrue(shellPage.contains("id=\"request-restart-action\""))
-        assertTrue(shellScript.contains("availableTailLines"))
-        assertTrue(shellScript.contains("operatorHint"))
-        assertTrue(shellScript.contains("restartRequestMode"))
+        assertTrue(shellPage.contains("data-nav-target=\"home\""))
+        assertTrue(shellPage.contains("data-nav-target=\"settings\""))
+        assertTrue(shellPage.contains("data-nav-target=\"features\""))
+        assertTrue(shellPage.contains("data-nav-target=\"subscriptions\""))
+        assertTrue(shellPage.contains("data-nav-target=\"logs\""))
+        assertTrue(shellPage.contains("class=\"metric-grid\""))
+        assertTrue(shellPage.contains("class=\"config-grid\""))
+        assertTrue(shellPage.contains("class=\"feature-grid\""))
+        assertTrue(shellPage.contains("class=\"subscription-grid\""))
+        assertTrue(shellPage.contains("class=\"log-list\""))
+        assertTrue(shellScript.contains("activateView("))
+        assertTrue(shellScript.contains("views.has(viewName)"))
+        assertFalse(shellScript.contains("/api/"))
     }
 
     /**

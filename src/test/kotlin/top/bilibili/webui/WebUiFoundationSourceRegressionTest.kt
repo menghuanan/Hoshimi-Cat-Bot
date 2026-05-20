@@ -51,57 +51,54 @@ class WebUiFoundationSourceRegressionTest {
     }
 
     @Test
-    fun `frontend shell should include management sections and remain api driven`() {
+    fun `frontend shell should expose the static dashboard sections`() {
         val loginPage = read("src/main/resources/webui/login.html")
         val shellPage = read("src/main/resources/webui/index.html")
         val shellScript = read("src/main/resources/webui/assets/app.js")
         val authScript = read("src/main/resources/webui/assets/auth.js")
 
         assertTrue(loginPage.contains("id=\"login-form\""))
-        assertTrue(shellPage.contains("id=\"runtime-summary\""))
-        assertTrue(shellPage.contains("id=\"bili-config-form\""))
-        assertTrue(shellPage.contains("id=\"bili-data-form\""))
-        assertTrue(shellPage.contains("id=\"bot-config-form\""))
-        assertTrue(shellPage.contains("id=\"log-source-select\""))
-        assertTrue(shellPage.contains("id=\"log-tail-select\""))
-        assertTrue(shellPage.contains("id=\"log-window-meta\""))
-        assertTrue(shellPage.contains("id=\"reload-config-action\""))
-        assertTrue(shellPage.contains("id=\"shutdown-action\""))
-        assertTrue(shellPage.contains("id=\"request-restart-action\""))
-        assertTrue(shellScript.contains("/api/auth/session"))
-        assertTrue(shellScript.contains("/api/runtime/summary"))
-        assertTrue(shellScript.contains("/api/config/bili-config"))
-        assertTrue(shellScript.contains("/api/config/bili-data"))
-        assertTrue(shellScript.contains("/api/config/bot"))
-        assertTrue(shellScript.contains("/api/logs/sources"))
-        assertTrue(shellScript.contains("/api/logs/"))
-        assertTrue(shellScript.contains("/api/actions/reload-config"))
-        assertTrue(shellScript.contains("/api/actions/shutdown"))
-        assertTrue(shellScript.contains("/api/actions/request-restart"))
-        assertTrue(shellScript.contains("availableTailLines"))
-        assertTrue(shellScript.contains("sourceMissing"))
-        assertTrue(shellScript.contains("operatorHint"))
-        assertFalse(shellScript.contains("/api/config/save-all"))
+        assertTrue(loginPage.contains("id=\"change-password-form\""))
+        assertTrue(shellPage.contains("data-nav-target=\"home\""))
+        assertTrue(shellPage.contains("data-nav-target=\"settings\""))
+        assertTrue(shellPage.contains("data-nav-target=\"features\""))
+        assertTrue(shellPage.contains("data-nav-target=\"subscriptions\""))
+        assertTrue(shellPage.contains("data-nav-target=\"logs\""))
+        assertTrue(shellPage.contains("class=\"metric-grid\""))
+        assertTrue(shellPage.contains("class=\"dashboard-grid\""))
+        assertTrue(shellPage.contains("class=\"config-grid\""))
+        assertTrue(shellPage.contains("class=\"feature-grid\""))
+        assertTrue(shellPage.contains("class=\"subscription-grid\""))
+        assertTrue(shellPage.contains("class=\"log-list\""))
+        assertTrue(shellPage.contains("Bot 运行状态"))
+        assertTrue(shellPage.contains("系统配置"))
+        assertTrue(shellPage.contains("功能开关"))
+        assertTrue(shellPage.contains("订阅管理"))
+        assertTrue(shellPage.contains("日志"))
+        assertTrue(shellScript.contains("activateView("))
+        assertTrue(shellScript.contains("hashchange"))
+        assertTrue(shellScript.contains("history.replaceState"))
+        assertFalse(shellScript.contains("/api/"))
         assertTrue(authScript.contains("/api/auth/login"))
         assertTrue(authScript.contains("/api/auth/change-password"))
-        assertTrue(shellScript.contains("restartRequestMode"))
     }
 
     /**
      * 日志窗口需要自动轮询并保持可滚动尾部视图，避免只靠手动刷新才能看到新日志。
      */
     @Test
-    fun `log viewer should refresh itself and keep a scrollable window`() {
+    fun `log list should stay scrollable within the static shell`() {
         val shellPage = read("src/main/resources/webui/index.html")
         val shellScript = read("src/main/resources/webui/assets/app.js")
         val shellStyle = read("src/main/resources/webui/assets/app.css")
 
-        assertTrue(shellPage.contains("id=\"bili-config-overview\""))
-        assertTrue(shellPage.contains("id=\"bili-data-overview\""))
-        assertTrue(shellPage.contains("id=\"bot-config-overview\""))
-        assertTrue(shellScript.contains("setInterval("))
-        assertTrue(shellScript.contains("logViewer.scrollTop = logViewer.scrollHeight"))
-        assertTrue(shellStyle.contains("#log-viewer"))
-        assertTrue(shellStyle.contains("overflow-y: auto"))
+        assertTrue(shellPage.contains("class=\"log-row\""))
+        assertTrue(shellPage.contains("class=\"log-level log-level-info\""))
+        assertTrue(shellPage.contains("class=\"log-level log-level-warn\""))
+        assertTrue(shellPage.contains("class=\"log-level log-level-error\""))
+        assertTrue(shellStyle.contains(".log-list"))
+        assertTrue(shellStyle.contains("max-height: 548px"))
+        assertTrue(shellStyle.contains("overflow: auto"))
+        assertTrue(shellScript.contains("views.has(viewName)"))
     }
 }

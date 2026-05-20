@@ -6,159 +6,819 @@
     <title>dynamic-bot WebUI Shell</title>
     <link rel="stylesheet" href="/assets/app.css">
 </head>
-<body>
-<main class="shell">
-    <section class="card">
-        <p class="eyebrow">dynamic-bot</p>
-        <h1>Authenticated WebUI management shell</h1>
-        <p class="lead">当前阶段提供运行态概览、文件级配置保存、固定日志查看和受控系统动作。所有交互都通过 `/api/*` 完成。</p>
-        <section class="panel hero-panel">
-            <h2>Runtime Summary</h2>
-            <p class="panel-copy">运行态摘要会同时显示平台就绪状态和重启请求模式，方便本地调试。</p>
-            <pre id="runtime-summary">Loading runtime summary...</pre>
-            <p id="runtime-status" class="status-note">Checking session...</p>
-        </section>
+<body class="dashboard-page">
+<svg aria-hidden="true" focusable="false" class="svg-sprite">
+    <symbol id="icon-logo-cat" viewBox="0 0 24 24">
+        <rect x="3.5" y="6.5" width="17" height="13" rx="6.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M7 6.5 5.1 4.7M17 6.5 18.9 4.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        <circle cx="9.3" cy="12" r="0.9" fill="currentColor"/>
+        <circle cx="14.7" cy="12" r="0.9" fill="currentColor"/>
+        <path d="M9.8 15c.8.6 1.6.9 2.2.9.7 0 1.4-.3 2.2-.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-home" viewBox="0 0 24 24">
+        <path d="M4 10.8 12 4l8 6.8V20a1 1 0 0 1-1 1h-5.2v-6.3H10.2V21H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3.3" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M12 3.8v2.1M12 18.1v2.1M3.8 12h2.1M18.1 12h2.1M6 6l1.5 1.5M16.5 16.5 18 18M18 6l-1.5 1.5M7.5 16.5 6 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-switch" viewBox="0 0 24 24">
+        <rect x="3.5" y="7.5" width="17" height="9" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <circle cx="9" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7"/>
+    </symbol>
+    <symbol id="icon-subscriptions" viewBox="0 0 24 24">
+        <rect x="4" y="5" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M8 9h8M8 12h6M8 15h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-log" viewBox="0 0 24 24">
+        <path d="M6 4.5h9l3 3V19.5H6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="M9 11h6M9 14h6M9 8h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-bell" viewBox="0 0 24 24">
+        <path d="M8 17h8M9 17a3 3 0 0 0 6 0M6.5 16.5c.8-1.2 1.3-2.4 1.3-4.5V10a4.2 4.2 0 1 1 8.4 0v2c0 2.1.5 3.3 1.3 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M12 3.5v2.1M12 18.4v2.1M3.5 12h2.1M18.4 12h2.1M6.1 6.1l1.5 1.5M16.4 16.4l1.5 1.5M17.9 6.1l-1.5 1.5M7.6 16.4l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24">
+        <path d="M9 6.8 14.2 12 9 17.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-more-vertical" viewBox="0 0 24 24">
+        <circle cx="12" cy="5.5" r="1.4" fill="currentColor"/>
+        <circle cx="12" cy="12" r="1.4" fill="currentColor"/>
+        <circle cx="12" cy="18.5" r="1.4" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-robot" viewBox="0 0 24 24">
+        <rect x="4.5" y="7.5" width="15" height="11" rx="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M12 4.5v2.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        <circle cx="9" cy="12" r="1" fill="currentColor"/>
+        <circle cx="15" cy="12" r="1" fill="currentColor"/>
+        <path d="M9 15c.8.6 1.7.9 3 .9s2.2-.3 3-.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-users" viewBox="0 0 24 24">
+        <circle cx="8" cy="9" r="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <circle cx="16" cy="10.5" r="2.1" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M4.8 18c.7-2.6 2.5-4 5.2-4s4.5 1.4 5.2 4M13 18c.4-1.7 1.6-2.7 3.5-2.7 1.4 0 2.4.5 3.1 1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-tv" viewBox="0 0 24 24">
+        <rect x="4.5" y="6.5" width="15" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M8 18.5h8M12 4.5l-2 2M12 4.5l2 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-wifi" viewBox="0 0 24 24">
+        <path d="M5 9.5c4.5-4.1 9.5-4.1 14 0M7.8 12.4c2.8-2.5 5.6-2.5 8.4 0M10.8 15.4c1.1-1 1.3-1 2.4 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        <circle cx="12" cy="18" r="1.1" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-chart" viewBox="0 0 24 24">
+        <path d="M4.5 19.5h15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        <rect x="6" y="12" width="2.8" height="7.5" rx="1" fill="currentColor"/>
+        <rect x="10.6" y="8.5" width="2.8" height="11" rx="1" fill="currentColor"/>
+        <rect x="15.2" y="5.5" width="2.8" height="14" rx="1" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M15 15l4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5.5v13M5.5 12h13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-heart" viewBox="0 0 24 24">
+        <path d="M12 19.3 6.2 13.6a4.1 4.1 0 0 1 5.8-5.8l.8.8.8-.8a4.1 4.1 0 1 1 5.8 5.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-chat" viewBox="0 0 24 24">
+        <path d="M5 6.5h14v8.2H11l-4.2 3v-3H5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="M8.2 10.5h7.6M8.2 8.2h3.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24">
+        <path d="M12 4.5 18 6.8V11c0 4.2-2.3 7.3-6 8.8-3.7-1.5-6-4.6-6-8.8V6.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="m9.3 12.2 1.7 1.7 3.8-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24">
+        <path d="M9.8 14.2 8 16a3.8 3.8 0 1 1-5.4-5.4l1.8-1.8M14.2 9.8 16 8a3.8 3.8 0 1 1 5.4 5.4l-1.8 1.8M8.5 15.5l7-7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-dots" viewBox="0 0 24 24">
+        <circle cx="6" cy="12" r="1.4" fill="currentColor"/>
+        <circle cx="12" cy="12" r="1.4" fill="currentColor"/>
+        <circle cx="18" cy="12" r="1.4" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-eye-off" viewBox="0 0 24 24">
+        <path d="M3.7 12s2.9-5.5 8.3-5.5S20.3 12 20.3 12s-2.9 5.5-8.3 5.5S3.7 12 3.7 12Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <circle cx="12" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="m5.5 5.5 13 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24">
+        <path d="M3.7 12s2.9-5.5 8.3-5.5S20.3 12 20.3 12s-2.9 5.5-8.3 5.5S3.7 12 3.7 12Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <circle cx="12" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+    </symbol>
+    <symbol id="icon-badge" viewBox="0 0 24 24">
+        <path d="M6 6h12v12H6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="M8.2 9h7.6M8.2 12h7.6M8.2 15h4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-bell-dot" viewBox="0 0 24 24">
+        <use href="#icon-bell"/>
+    </symbol>
+</svg>
 
-        <div class="panel-grid">
-            <section class="panel">
-                <h2>BiliConfig.yml</h2>
-                <p class="panel-copy">保存会按文件级快照提交，并在必要时提示 reload。</p>
-                <form id="bili-config-form" class="stack">
-                    <div class="field-group">
-                        <h3>Editable fields</h3>
-                        <label class="field">
-                            <span>Admin Contact</span>
-                            <input id="bili-config-admin-contact" type="text" autocomplete="off">
-                        </label>
-                        <label class="field">
-                            <span>Baidu APP_ID</span>
-                            <input id="bili-config-baidu-app-id" type="text" autocomplete="off">
-                        </label>
-                        <label class="field checkbox-field">
-                            <input id="bili-config-debug-mode" type="checkbox">
-                            <span>Debug Mode</span>
-                        </label>
-                    </div>
-                    <div class="field-group">
-                        <h3>Secrets</h3>
-                        <label class="field">
-                            <span>Cookie</span>
-                            <input id="bili-config-cookie" type="password" autocomplete="off" placeholder="留空表示保留现有值">
-                        </label>
-                        <label class="field">
-                            <span>Baidu SECURITY_KEY</span>
-                            <input id="bili-config-baidu-security-key" type="password" autocomplete="off" placeholder="留空表示保留现有值">
-                        </label>
-                    </div>
-                    <label class="field">
-                        <span>Confirmation Password</span>
-                        <input id="bili-config-confirmation" type="password" autocomplete="current-password">
-                    </label>
-                    <button type="submit">Save BiliConfig.yml</button>
-                </form>
-                <div id="bili-config-overview" class="config-overview" aria-label="BiliConfig overview"></div>
-                <p id="bili-config-status" class="status-note">Loading config snapshot...</p>
-            </section>
-
-            <section class="panel">
-                <h2>BiliData.yml</h2>
-                <p class="panel-copy">当前只开放黑名单联系人集合，保存后立即生效。</p>
-                <form id="bili-data-form" class="stack">
-                    <div class="field-group">
-                        <h3>Policy window</h3>
-                        <label class="field">
-                            <span>Link Parse Blacklist Contacts</span>
-                            <textarea id="bili-data-blacklist" rows="8" placeholder="每行一个联系人 subject"></textarea>
-                        </label>
-                    </div>
-                    <label class="field">
-                        <span>Confirmation Password</span>
-                        <input id="bili-data-confirmation" type="password" autocomplete="current-password">
-                    </label>
-                    <button type="submit">Save BiliData.yml</button>
-                </form>
-                <div id="bili-data-overview" class="config-overview" aria-label="BiliData overview"></div>
-                <p id="bili-data-status" class="status-note">Loading data snapshot...</p>
-            </section>
-
-            <section class="panel">
-                <h2>bot.yml</h2>
-                <p class="panel-copy">平台配置修改后会提示重启语义，并保留当前 token 的空值回填行为。</p>
-                <form id="bot-config-form" class="stack">
-                    <div class="field-group">
-                        <h3>Platform</h3>
-                        <label class="field">
-                            <span>Platform Type</span>
-                            <input id="bot-config-platform-type" type="text" autocomplete="off">
-                        </label>
-                        <label class="field">
-                            <span>Adapter</span>
-                            <input id="bot-config-adapter" type="text" autocomplete="off">
-                        </label>
-                    </div>
-                    <div class="field-group">
-                        <h3>Connection</h3>
-                        <label class="field">
-                            <span>OneBot11 Host</span>
-                            <input id="bot-config-host" type="text" autocomplete="off">
-                        </label>
-                        <label class="field">
-                            <span>OneBot11 Port</span>
-                            <input id="bot-config-port" type="number" min="1" max="65535">
-                        </label>
-                        <label class="field">
-                            <span>OneBot11 Token</span>
-                            <input id="bot-config-token" type="password" autocomplete="off" placeholder="留空表示保留现有值">
-                        </label>
-                    </div>
-                    <label class="field">
-                        <span>Confirmation Password</span>
-                        <input id="bot-config-confirmation" type="password" autocomplete="current-password">
-                    </label>
-                    <button type="submit">Save bot.yml</button>
-                </form>
-                <div id="bot-config-overview" class="config-overview" aria-label="bot.yml overview"></div>
-                <p id="bot-config-status" class="status-note">Loading bot snapshot...</p>
-            </section>
-
-            <section class="panel">
-                <h2>Log Viewer</h2>
-                <p class="panel-copy">固定 source 白名单配合尾长切换，适合本地排查最近日志。</p>
-                <div class="stack compact-stack">
-                    <label class="field">
-                        <span>Source</span>
-                        <select id="log-source-select"></select>
-                    </label>
-                    <label class="field">
-                        <span>Tail Window</span>
-                        <select id="log-tail-select"></select>
-                    </label>
-                    <button id="refresh-log-viewer" type="button">Refresh Log</button>
-                </div>
-                <pre id="log-viewer">Loading log sources...</pre>
-                <p id="log-window-meta" class="status-note">Tail window options will appear after the source loads.</p>
-                <p id="log-status" class="status-note">Awaiting source selection...</p>
-            </section>
-
-            <section class="panel">
-                <h2>System Actions</h2>
-                <p class="panel-copy">动作结果会明确区分 reload、graceful shutdown 和 restart request。</p>
-                <div class="stack">
-                    <label class="field">
-                        <span>Confirmation Password</span>
-                        <input id="action-confirmation" type="password" autocomplete="current-password">
-                    </label>
-                    <div class="button-row">
-                        <button id="reload-config-action" type="button">Reload Config</button>
-                        <button id="shutdown-action" type="button" class="danger-button">Graceful Shutdown</button>
-                        <button id="request-restart-action" type="button" class="warning-button">Request Restart</button>
-                    </div>
-                </div>
-                <p id="action-status" class="status-note">No action requested yet.</p>
-            </section>
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" class="brand-icon">
+                    <use href="#icon-logo-cat"></use>
+                </svg>
+            </span>
+            <span class="brand-name">dynamic-bot</span>
         </div>
-    </section>
-</main>
+
+        <nav class="sidebar-nav" aria-label="主导航">
+            <button class="nav-item is-active" type="button" data-nav-target="home" aria-pressed="true">
+                <svg viewBox="0 0 24 24" class="nav-icon">
+                    <use href="#icon-home"></use>
+                </svg>
+                <span>首页</span>
+            </button>
+            <button class="nav-item" type="button" data-nav-target="settings" aria-pressed="false">
+                <svg viewBox="0 0 24 24" class="nav-icon">
+                    <use href="#icon-settings"></use>
+                </svg>
+                <span>系统配置</span>
+            </button>
+            <button class="nav-item" type="button" data-nav-target="features" aria-pressed="false">
+                <svg viewBox="0 0 24 24" class="nav-icon">
+                    <use href="#icon-switch"></use>
+                </svg>
+                <span>功能开关</span>
+            </button>
+            <button class="nav-item" type="button" data-nav-target="subscriptions" aria-pressed="false">
+                <svg viewBox="0 0 24 24" class="nav-icon">
+                    <use href="#icon-subscriptions"></use>
+                </svg>
+                <span>订阅管理</span>
+            </button>
+            <button class="nav-item" type="button" data-nav-target="logs" aria-pressed="false">
+                <svg viewBox="0 0 24 24" class="nav-icon">
+                    <use href="#icon-log"></use>
+                </svg>
+                <span>日志</span>
+            </button>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="theme-card">
+                <div class="theme-copy">
+                    <svg viewBox="0 0 24 24" class="theme-icon">
+                        <use href="#icon-sun"></use>
+                    </svg>
+                    <span>深色模式</span>
+                </div>
+                <span class="switch switch-on" aria-hidden="true"><span></span></span>
+            </div>
+            <div class="version-row">
+                <span>版本 v1.0.0</span>
+                <span class="status-chip"><span class="status-dot"></span>运行中</span>
+            </div>
+        </div>
+    </aside>
+
+    <div class="workspace">
+        <header class="topbar">
+            <div class="topbar-title">
+                <span id="page-title">首页</span>
+            </div>
+            <div class="topbar-actions" aria-label="顶部工具区">
+                <span class="topbar-icon-wrap">
+                    <svg viewBox="0 0 24 24" class="topbar-icon">
+                        <use href="#icon-bell"></use>
+                    </svg>
+                    <span class="badge">3</span>
+                </span>
+                <span class="topbar-icon-wrap">
+                    <svg viewBox="0 0 24 24" class="topbar-icon">
+                        <use href="#icon-sun"></use>
+                    </svg>
+                </span>
+                <span class="avatar" aria-hidden="true"></span>
+                <span class="admin-name">管理员</span>
+                <svg viewBox="0 0 24 24" class="topbar-chevron">
+                    <use href="#icon-chevron"></use>
+                </svg>
+            </div>
+        </header>
+
+        <main class="content">
+            <section class="page page-home is-active" data-view="home">
+                <div class="metric-grid">
+                    <article class="metric-card metric-card--green">
+                        <div class="metric-head">
+                            <span class="metric-badge">
+                                <svg viewBox="0 0 24 24" class="metric-icon">
+                                    <use href="#icon-robot"></use>
+                                </svg>
+                            </span>
+                            <svg viewBox="0 0 24 24" class="metric-menu">
+                                <use href="#icon-more-vertical"></use>
+                            </svg>
+                        </div>
+                        <div class="metric-label">Bot 运行状态</div>
+                        <div class="metric-value metric-value--status">运行中</div>
+                        <div class="metric-sub">已运行 2 天 14 小时 32 分钟</div>
+                    </article>
+                    <article class="metric-card metric-card--blue">
+                        <div class="metric-head">
+                            <span class="metric-badge">
+                                <svg viewBox="0 0 24 24" class="metric-icon">
+                                    <use href="#icon-users"></use>
+                                </svg>
+                            </span>
+                            <svg viewBox="0 0 24 24" class="metric-menu">
+                                <use href="#icon-chevron"></use>
+                            </svg>
+                        </div>
+                        <div class="metric-label">当前订阅数量</div>
+                        <div class="metric-value metric-value--number">56</div>
+                        <div class="metric-sub">直播：18　动态：38</div>
+                    </article>
+                    <article class="metric-card metric-card--pink">
+                        <div class="metric-head">
+                            <span class="metric-badge">
+                                <svg viewBox="0 0 24 24" class="metric-icon">
+                                    <use href="#icon-tv"></use>
+                                </svg>
+                            </span>
+                            <svg viewBox="0 0 24 24" class="metric-menu">
+                                <use href="#icon-chevron"></use>
+                            </svg>
+                        </div>
+                        <div class="metric-label">B站账号信息</div>
+                        <div class="metric-value metric-value--status">已登录</div>
+                        <div class="metric-sub">UID: 12345678</div>
+                    </article>
+                    <article class="metric-card metric-card--purple">
+                        <div class="metric-head">
+                            <span class="metric-badge">
+                                <svg viewBox="0 0 24 24" class="metric-icon">
+                                    <use href="#icon-wifi"></use>
+                                </svg>
+                            </span>
+                            <svg viewBox="0 0 24 24" class="metric-menu">
+                                <use href="#icon-chevron"></use>
+                            </svg>
+                        </div>
+                        <div class="metric-label">WebSocket 状态</div>
+                        <div class="metric-value metric-value--status metric-value--accent-purple">已连接</div>
+                        <div class="metric-sub">延迟：38ms</div>
+                    </article>
+                    <article class="metric-card metric-card--orange">
+                        <div class="metric-head">
+                            <span class="metric-badge">
+                                <svg viewBox="0 0 24 24" class="metric-icon">
+                                    <use href="#icon-chart"></use>
+                                </svg>
+                            </span>
+                            <svg viewBox="0 0 24 24" class="metric-menu">
+                                <use href="#icon-chevron"></use>
+                            </svg>
+                        </div>
+                        <div class="metric-label">今日推送统计</div>
+                        <div class="metric-value metric-value--number">128 条</div>
+                        <div class="metric-sub">直播：68　动态：60</div>
+                    </article>
+                </div>
+
+                <div class="dashboard-grid">
+                    <section class="panel">
+                        <div class="panel-header">
+                            <h2>运行信息</h2>
+                        </div>
+                        <div class="runtime-split">
+                            <div class="runtime-table">
+                                <div class="runtime-row">
+                                    <span>启动时间</span>
+                                    <strong>2024-05-20 14:30:15</strong>
+                                </div>
+                                <div class="runtime-row">
+                                    <span>运行时长</span>
+                                    <strong>2 天 14 小时 32 分钟</strong>
+                                </div>
+                                <div class="runtime-row">
+                                    <span>系统时间</span>
+                                    <strong>2024-05-22 16:45:10</strong>
+                                </div>
+                                <div class="runtime-row">
+                                    <span>系统负载</span>
+                                    <strong>0.35 / 0.42 / 0.38</strong>
+                                </div>
+                            </div>
+                            <div class="runtime-stats">
+                                <div class="runtime-stat">
+                                    <div class="runtime-stat-head">
+                                        <span>CPU 使用率</span>
+                                        <strong>23%</strong>
+                                    </div>
+                                    <div class="progress-track"><span style="width: 23%"></span></div>
+                                </div>
+                                <div class="runtime-stat">
+                                    <div class="runtime-stat-head">
+                                        <span>内存使用率</span>
+                                        <strong>45% (3.6GB / 8GB)</strong>
+                                    </div>
+                                    <div class="progress-track"><span style="width: 45%"></span></div>
+                                </div>
+                                <div class="runtime-stat">
+                                    <div class="runtime-stat-head">
+                                        <span>存储使用率</span>
+                                        <strong>38% (72GB / 190GB)</strong>
+                                    </div>
+                                    <div class="progress-track"><span style="width: 38%"></span></div>
+                                </div>
+                                <div class="runtime-stat runtime-stat--inline">
+                                    <span>Docker 状态</span>
+                                    <strong class="state-ok">运行中</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-header panel-header--spaced">
+                            <h2>最近推送记录</h2>
+                            <span class="panel-link">查看全部
+                                <svg viewBox="0 0 24 24" class="panel-link-icon">
+                                    <use href="#icon-chevron"></use>
+                                </svg>
+                            </span>
+                        </div>
+                        <div class="feed-list">
+                            <div class="feed-row">
+                                <div class="feed-tags">
+                                    <span class="feed-pill feed-pill--green">直播</span>
+                                    <span class="feed-pill feed-pill--dark">直播中</span>
+                                </div>
+                                <span class="feed-text">米哈游Official 正在直播：4.7版本前瞻特别节目</span>
+                                <time>16:44:21</time>
+                            </div>
+                            <div class="feed-row">
+                                <div class="feed-tags">
+                                    <span class="feed-pill feed-pill--purple">动态</span>
+                                </div>
+                                <span class="feed-text">LexBurner 发布了新动态</span>
+                                <time>16:40:12</time>
+                            </div>
+                            <div class="feed-row">
+                                <div class="feed-tags">
+                                    <span class="feed-pill feed-pill--green">直播</span>
+                                </div>
+                                <span class="feed-text">老番茄 正在直播：深夜恐怖游戏</span>
+                                <time>16:35:48</time>
+                            </div>
+                            <div class="feed-row">
+                                <div class="feed-tags">
+                                    <span class="feed-pill feed-pill--purple">动态</span>
+                                </div>
+                                <span class="feed-text">老师好我叫何同学 发布了新动态</span>
+                                <time>16:30:05</time>
+                            </div>
+                            <div class="feed-row">
+                                <div class="feed-tags">
+                                    <span class="feed-pill feed-pill--green">直播</span>
+                                </div>
+                                <span class="feed-text">绘梨Kuma 正在直播：今天是快乐的 FPS</span>
+                                <time>16:28:11</time>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="page page-settings" data-view="settings" hidden>
+                <div class="tabs-row">
+                    <span class="tab is-active">QQ 配置</span>
+                    <span class="tab">WebSocket</span>
+                    <span class="tab">代理设置</span>
+                    <span class="tab">推送规则</span>
+                    <span class="tab">其他设置</span>
+                </div>
+
+                <div class="config-grid">
+                    <section class="panel config-panel">
+                        <div class="panel-header">
+                            <h2>QQ 配置</h2>
+                            <p>配置 QQ 机器人账号，用于登录和基础连接。</p>
+                        </div>
+                        <div class="config-fields config-fields--two">
+                            <div class="field-block">
+                                <span class="field-label">QQ 账号</span>
+                                <div class="fake-input">请输入 QQ 账号</div>
+                            </div>
+                            <div class="field-block">
+                                <span class="field-label">QQ 密码</span>
+                                <div class="fake-secret">
+                                    <span>••••••••••</span>
+                                    <svg viewBox="0 0 24 24" class="secret-icon"><use href="#icon-eye-off"></use></svg>
+                                </div>
+                            </div>
+                            <div class="field-block">
+                                <span class="field-label">登录设备</span>
+                                <div class="fake-select">
+                                    <span>Android Phone</span>
+                                    <svg viewBox="0 0 24 24"><use href="#icon-chevron"></use></svg>
+                                </div>
+                            </div>
+                            <div class="field-block">
+                                <span class="field-label">设备信息</span>
+                                <div class="fake-select">
+                                    <span>默认设备</span>
+                                    <svg viewBox="0 0 24 24"><use href="#icon-chevron"></use></svg>
+                                </div>
+                            </div>
+                            <div class="toggle-row">
+                                <div>
+                                    <span class="field-label">自动登录</span>
+                                    <span class="field-help">开启后，启动时自动登录 QQ</span>
+                                </div>
+                                <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                            </div>
+                            <div class="toggle-row">
+                                <div>
+                                    <span class="field-label">开启心跳</span>
+                                    <span class="field-help">保持 QQ 在线，避免掉线</span>
+                                </div>
+                                <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                            </div>
+                            <div class="field-block field-block--small">
+                                <span class="field-label">重试间隔</span>
+                                <div class="fake-input fake-number">5</div>
+                            </div>
+                            <div class="action-row action-row--left">
+                                <span class="btn btn-primary">保存配置</span>
+                                <span class="btn btn-secondary">测试连接</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel config-panel">
+                        <div class="panel-header">
+                            <h2>WebSocket 配置</h2>
+                            <p>配置 WebSocket 监听参数，用于外部管理面接入。</p>
+                        </div>
+                        <div class="config-fields">
+                            <div class="toggle-row">
+                                <div>
+                                    <span class="field-label">启用 WebSocket</span>
+                                    <span class="field-help">开启监听并接受管理请求</span>
+                                </div>
+                                <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                            </div>
+                            <div class="field-block">
+                                <span class="field-label">监听地址</span>
+                                <div class="fake-input">0.0.0.0</div>
+                            </div>
+                            <div class="field-block">
+                                <span class="field-label">监听端口</span>
+                                <div class="fake-input">8080</div>
+                            </div>
+                            <div class="field-block">
+                                <span class="field-label">访问路径</span>
+                                <div class="fake-input">/ws</div>
+                            </div>
+                            <div class="field-block">
+                                <span class="field-label">Token</span>
+                                <div class="fake-secret">
+                                    <span>••••••••••••••••</span>
+                                    <svg viewBox="0 0 24 24" class="secret-icon"><use href="#icon-eye-off"></use></svg>
+                                </div>
+                            </div>
+                            <div class="toggle-row">
+                                <div>
+                                    <span class="field-label">SSL/TLS</span>
+                                    <span class="field-help">开启加密连接</span>
+                                </div>
+                                <span class="switch" aria-hidden="true"><span></span></span>
+                            </div>
+                            <div class="action-row">
+                                <span class="btn btn-primary">保存配置</span>
+                                <span class="btn btn-secondary">重置</span>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="page page-features" data-view="features" hidden>
+                <div class="section-head">
+                    <div>
+                        <h2>功能开关</h2>
+                        <p>开启或关闭 bot 的各项功能</p>
+                    </div>
+                    <svg viewBox="0 0 24 24" class="section-arrow"><use href="#icon-chevron"></use></svg>
+                </div>
+
+                <div class="feature-grid">
+                    <article class="feature-card">
+                        <span class="feature-icon feature-icon--green"><svg viewBox="0 0 24 24"><use href="#icon-tv"></use></svg></span>
+                        <h3>直播推送</h3>
+                        <p>推送 UP 主直播提醒</p>
+                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-icon feature-icon--purple"><svg viewBox="0 0 24 24"><use href="#icon-chat"></use></svg></span>
+                        <h3>动态推送</h3>
+                        <p>推送 UP 主动态提醒</p>
+                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-icon feature-icon--orange"><svg viewBox="0 0 24 24"><use href="#icon-users"></use></svg></span>
+                        <h3>群消息回复</h3>
+                        <p>处理群聊中的回复消息</p>
+                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-icon feature-icon--blue"><svg viewBox="0 0 24 24"><use href="#icon-link"></use></svg></span>
+                        <h3>链接开关</h3>
+                        <p>自动解析链接并展开</p>
+                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-icon feature-icon--pink"><svg viewBox="0 0 24 24"><use href="#icon-heart"></use></svg></span>
+                        <h3>自动点赞</h3>
+                        <p>自动给内容点赞</p>
+                        <span class="switch" aria-hidden="true"><span></span></span>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-icon feature-icon--cyan"><svg viewBox="0 0 24 24"><use href="#icon-chat"></use></svg></span>
+                        <h3>命令处理</h3>
+                        <p>处理群内 bot 指令</p>
+                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-icon feature-icon--teal"><svg viewBox="0 0 24 24"><use href="#icon-shield"></use></svg></span>
+                        <h3>防撤回</h3>
+                        <p>保留消息撤回记录</p>
+                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                    </article>
+                    <article class="feature-card feature-card--more">
+                        <span class="feature-icon feature-icon--gray"><svg viewBox="0 0 24 24"><use href="#icon-dots"></use></svg></span>
+                        <h3>更多功能</h3>
+                        <p>更多扩展能力</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="page page-subscriptions" data-view="subscriptions" hidden>
+                <div class="subscription-toolbar">
+                    <div class="tabs-row tabs-row--plain">
+                        <span class="tab is-active">全部 (56)</span>
+                        <span class="tab">直播 (18)</span>
+                        <span class="tab">动态 (38)</span>
+                    </div>
+                    <div class="subscription-controls">
+                        <div class="fake-search">
+                            <svg viewBox="0 0 24 24" class="search-icon"><use href="#icon-search"></use></svg>
+                            <span>搜索 UP 主名称或 UID</span>
+                        </div>
+                        <span class="btn btn-primary btn-add">
+                            <svg viewBox="0 0 24 24" class="btn-icon"><use href="#icon-plus"></use></svg>
+                            添加订阅
+                        </span>
+                    </div>
+                </div>
+
+                <div class="subscription-grid">
+                    <article class="subscription-card">
+                        <div class="subscription-head">
+                            <div class="subscription-profile">
+                                <span class="subscription-avatar avatar-a">米</span>
+                                <div>
+                                    <div class="subscription-name-row">
+                                        <h3>米哈游Official</h3>
+                                        <span class="pill pill-gold">直播</span>
+                                        <span class="pill pill-green">动态</span>
+                                    </div>
+                                    <div class="subscription-uid">UID: 27534330</div>
+                                </div>
+                            </div>
+                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
+                        </div>
+                        <div class="subscription-meta-title">推送目标</div>
+                        <div class="chip-row">
+                            <span class="mini-chip">123456789</span>
+                            <span class="mini-chip">987654321</span>
+                            <span class="mini-chip mini-chip--muted">+2</span>
+                        </div>
+                        <div class="subscription-footer">
+                            <span class="subscription-time">最后更新：2024-05-22 16:44:21</span>
+                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                        </div>
+                    </article>
+
+                    <article class="subscription-card">
+                        <div class="subscription-head">
+                            <div class="subscription-profile">
+                                <span class="subscription-avatar avatar-b">老</span>
+                                <div>
+                                    <div class="subscription-name-row">
+                                        <h3>老番茄</h3>
+                                        <span class="pill pill-gold">直播</span>
+                                        <span class="pill pill-blue">游戏</span>
+                                    </div>
+                                    <div class="subscription-uid">UID: 546195</div>
+                                </div>
+                            </div>
+                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
+                        </div>
+                        <div class="subscription-meta-title">推送目标</div>
+                        <div class="chip-row">
+                            <span class="mini-chip">123456789</span>
+                        </div>
+                        <div class="subscription-footer">
+                            <span class="subscription-time">最后更新：2024-05-22 16:35:48</span>
+                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                        </div>
+                    </article>
+
+                    <article class="subscription-card">
+                        <div class="subscription-head">
+                            <div class="subscription-profile">
+                                <span class="subscription-avatar avatar-c">L</span>
+                                <div>
+                                    <div class="subscription-name-row">
+                                        <h3>LexBurner</h3>
+                                        <span class="pill pill-purple">动态</span>
+                                        <span class="pill pill-green">直播</span>
+                                    </div>
+                                    <div class="subscription-uid">UID: 672238094</div>
+                                </div>
+                            </div>
+                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
+                        </div>
+                        <div class="subscription-meta-title">推送目标</div>
+                        <div class="chip-row">
+                            <span class="mini-chip">125467890</span>
+                        </div>
+                        <div class="subscription-footer">
+                            <span class="subscription-time">最后更新：2024-05-22 16:40:12</span>
+                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                        </div>
+                    </article>
+
+                    <article class="subscription-card">
+                        <div class="subscription-head">
+                            <div class="subscription-profile">
+                                <span class="subscription-avatar avatar-d">何</span>
+                                <div>
+                                    <div class="subscription-name-row">
+                                        <h3>老师好我叫何同学</h3>
+                                        <span class="pill pill-purple">动态</span>
+                                        <span class="pill pill-blue">科技</span>
+                                    </div>
+                                    <div class="subscription-uid">UID: 381767228</div>
+                                </div>
+                            </div>
+                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
+                        </div>
+                        <div class="subscription-meta-title">推送目标</div>
+                        <div class="chip-row">
+                            <span class="mini-chip">987654321</span>
+                        </div>
+                        <div class="subscription-footer">
+                            <span class="subscription-time">最后更新：2024-05-22 16:30:05</span>
+                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                        </div>
+                    </article>
+
+                    <article class="subscription-card">
+                        <div class="subscription-head">
+                            <div class="subscription-profile">
+                                <span class="subscription-avatar avatar-e">绘</span>
+                                <div>
+                                    <div class="subscription-name-row">
+                                        <h3>绘梨Kuma</h3>
+                                        <span class="pill pill-green">直播</span>
+                                        <span class="pill pill-purple">动态</span>
+                                    </div>
+                                    <div class="subscription-uid">UID: 3546541</div>
+                                </div>
+                            </div>
+                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
+                        </div>
+                        <div class="subscription-meta-title">推送目标</div>
+                        <div class="chip-row">
+                            <span class="mini-chip">123456789</span>
+                            <span class="mini-chip">987654321</span>
+                        </div>
+                        <div class="subscription-footer">
+                            <span class="subscription-time">最后更新：2024-05-22 16:28:11</span>
+                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                        </div>
+                    </article>
+
+                    <article class="subscription-card">
+                        <div class="subscription-head">
+                            <div class="subscription-profile">
+                                <span class="subscription-avatar avatar-f">中</span>
+                                <div>
+                                    <div class="subscription-name-row">
+                                        <h3>中国BOY超级大猩猩</h3>
+                                        <span class="pill pill-green">直播</span>
+                                        <span class="pill pill-purple">动态</span>
+                                    </div>
+                                    <div class="subscription-uid">UID: 333356</div>
+                                </div>
+                            </div>
+                            <svg viewBox="0 0 24 24" class="more-icon"><use href="#icon-more-vertical"></use></svg>
+                        </div>
+                        <div class="subscription-meta-title">推送目标</div>
+                        <div class="chip-row">
+                            <span class="mini-chip">125467890</span>
+                        </div>
+                        <div class="subscription-footer">
+                            <span class="subscription-time">最后更新：2024-05-22 16:20:33</span>
+                            <span class="switch switch-on" aria-hidden="true"><span></span></span>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="page page-logs" data-view="logs" hidden>
+                <div class="log-toolbar">
+                    <div class="fake-select fake-select--compact">
+                        <span>全部等级</span>
+                        <svg viewBox="0 0 24 24"><use href="#icon-chevron"></use></svg>
+                    </div>
+                    <div class="fake-select fake-select--compact">
+                        <span>全部模块</span>
+                        <svg viewBox="0 0 24 24"><use href="#icon-chevron"></use></svg>
+                    </div>
+                    <div class="fake-search fake-search--wide">
+                        <svg viewBox="0 0 24 24" class="search-icon"><use href="#icon-search"></use></svg>
+                        <span>搜索日志内容</span>
+                    </div>
+                    <label class="fake-check fake-check--checked">
+                        <span class="fake-box"></span>
+                        <span>自动刷新</span>
+                    </label>
+                    <span class="btn btn-secondary btn-small">清空日志</span>
+                    <span class="btn btn-secondary btn-small">导出日志</span>
+                </div>
+
+                <section class="panel log-panel">
+                    <div class="log-list">
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:45:10</span>
+                            <span class="log-level log-level-info">INFO</span>
+                            <span class="log-message">[WebSocket] 客户端连接成功 127.0.0.1:54321</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:44:21</span>
+                            <span class="log-level log-level-info">INFO</span>
+                            <span class="log-message">[推送] 直播推送成功：米哈游Official</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:40:12</span>
+                            <span class="log-level log-level-info">INFO</span>
+                            <span class="log-message">[推送] 动态推送成功：LexBurner</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:35:48</span>
+                            <span class="log-level log-level-info">INFO</span>
+                            <span class="log-message">[推送] 直播推送成功：老番茄</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:30:05</span>
+                            <span class="log-level log-level-info">INFO</span>
+                            <span class="log-message">[推送] 动态推送成功：老师好我叫何同学</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:28:11</span>
+                            <span class="log-level log-level-info">INFO</span>
+                            <span class="log-message">[推送] 直播推送成功：绘梨Kuma</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:23:33</span>
+                            <span class="log-level log-level-warn">WARN</span>
+                            <span class="log-message">[QQ] 收到未知消息类型：GroupRecall</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:20:10</span>
+                            <span class="log-level log-level-error">ERROR</span>
+                            <span class="log-message">[配置] 推送失败：目标群 987654321 不存在</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:18:45</span>
+                            <span class="log-level log-level-warn">WARN</span>
+                            <span class="log-message">[WebSocket] 客户端重新断开 127.0.0.1:54321</span>
+                        </div>
+                        <div class="log-row">
+                            <span class="log-time">2024-05-22 16:16:22</span>
+                            <span class="log-level log-level-info">INFO</span>
+                            <span class="log-message">[系统] 定时任务执行完成，耗时 245ms</span>
+                        </div>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+</div>
 <script src="/assets/app.js"></script>
 </body>
 </html>
