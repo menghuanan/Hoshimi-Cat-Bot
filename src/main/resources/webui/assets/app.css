@@ -12,13 +12,12 @@
 body {
     margin: 0;
     min-height: 100vh;
-    display: grid;
-    place-items: center;
     padding: 24px;
 }
 
 .shell {
-    width: min(100%, 720px);
+    width: min(100%, 1180px);
+    margin: 0 auto;
 }
 
 .card {
@@ -80,6 +79,17 @@ dd {
     background: #f7f9ff;
 }
 
+.hero-panel {
+    margin-top: 0;
+}
+
+.panel-grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+}
+
 .panel h2 {
     margin: 0 0 12px;
     font-size: 1rem;
@@ -118,6 +128,21 @@ input {
     font: inherit;
 }
 
+textarea,
+select {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(49, 66, 95, 0.18);
+    background: #ffffff;
+    font: inherit;
+}
+
+textarea {
+    resize: vertical;
+    min-height: 140px;
+}
+
 button {
     border: none;
     border-radius: 12px;
@@ -127,6 +152,36 @@ button {
     font: inherit;
     font-weight: 700;
     cursor: pointer;
+}
+
+.button-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.danger-button {
+    background: #b91c1c;
+}
+
+.warning-button {
+    background: #b45309;
+}
+
+.compact-stack {
+    gap: 10px;
+}
+
+.checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.checkbox-field input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
 }
 
 .status-note {
@@ -139,7 +194,19 @@ button {
 }
 
 @media (max-width: 640px) {
+    body {
+        padding: 16px;
+    }
+
     .card {
         padding: 24px;
+    }
+
+    .panel-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .button-row {
+        flex-direction: column;
     }
 }

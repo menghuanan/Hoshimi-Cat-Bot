@@ -10,24 +10,124 @@
 <main class="shell">
     <section class="card">
         <p class="eyebrow">dynamic-bot</p>
-        <h1>Authenticated WebUI shell</h1>
-        <p class="lead">当前阶段提供只读运行态和配置视图，编辑、日志与运行控制仍未开放。</p>
-        <section class="panel">
+        <h1>Authenticated WebUI management shell</h1>
+        <p class="lead">当前阶段提供运行态概览、文件级配置保存、固定日志查看和受控系统动作。所有交互都通过 `/api/*` 完成。</p>
+        <section class="panel hero-panel">
             <h2>Runtime Summary</h2>
             <pre id="runtime-summary">Loading runtime summary...</pre>
+            <p id="runtime-status" class="status-note">Checking session...</p>
         </section>
-        <section class="panel">
-            <h2>BiliConfig.yml</h2>
-            <pre id="bili-config">Loading config snapshot...</pre>
-        </section>
-        <section class="panel">
-            <h2>BiliData.yml</h2>
-            <pre id="bili-data">Loading data snapshot...</pre>
-        </section>
-        <section class="panel">
-            <h2>bot.yml</h2>
-            <pre id="bot-config">Loading bot snapshot...</pre>
-        </section>
+
+        <div class="panel-grid">
+            <section class="panel">
+                <h2>BiliConfig.yml</h2>
+                <form id="bili-config-form" class="stack">
+                    <label class="field">
+                        <span>Admin Contact</span>
+                        <input id="bili-config-admin-contact" type="text" autocomplete="off">
+                    </label>
+                    <label class="field">
+                        <span>Cookie</span>
+                        <input id="bili-config-cookie" type="password" autocomplete="off" placeholder="留空表示保留现有值">
+                    </label>
+                    <label class="field">
+                        <span>Baidu APP_ID</span>
+                        <input id="bili-config-baidu-app-id" type="text" autocomplete="off">
+                    </label>
+                    <label class="field">
+                        <span>Baidu SECURITY_KEY</span>
+                        <input id="bili-config-baidu-security-key" type="password" autocomplete="off" placeholder="留空表示保留现有值">
+                    </label>
+                    <label class="field checkbox-field">
+                        <input id="bili-config-debug-mode" type="checkbox">
+                        <span>Debug Mode</span>
+                    </label>
+                    <label class="field">
+                        <span>Confirmation Password</span>
+                        <input id="bili-config-confirmation" type="password" autocomplete="current-password">
+                    </label>
+                    <button type="submit">Save BiliConfig.yml</button>
+                </form>
+                <p id="bili-config-status" class="status-note">Loading config snapshot...</p>
+            </section>
+
+            <section class="panel">
+                <h2>BiliData.yml</h2>
+                <form id="bili-data-form" class="stack">
+                    <label class="field">
+                        <span>Link Parse Blacklist Contacts</span>
+                        <textarea id="bili-data-blacklist" rows="8" placeholder="每行一个联系人 subject"></textarea>
+                    </label>
+                    <label class="field">
+                        <span>Confirmation Password</span>
+                        <input id="bili-data-confirmation" type="password" autocomplete="current-password">
+                    </label>
+                    <button type="submit">Save BiliData.yml</button>
+                </form>
+                <p id="bili-data-status" class="status-note">Loading data snapshot...</p>
+            </section>
+
+            <section class="panel">
+                <h2>bot.yml</h2>
+                <form id="bot-config-form" class="stack">
+                    <label class="field">
+                        <span>Platform Type</span>
+                        <input id="bot-config-platform-type" type="text" autocomplete="off">
+                    </label>
+                    <label class="field">
+                        <span>Adapter</span>
+                        <input id="bot-config-adapter" type="text" autocomplete="off">
+                    </label>
+                    <label class="field">
+                        <span>OneBot11 Host</span>
+                        <input id="bot-config-host" type="text" autocomplete="off">
+                    </label>
+                    <label class="field">
+                        <span>OneBot11 Port</span>
+                        <input id="bot-config-port" type="number" min="1" max="65535">
+                    </label>
+                    <label class="field">
+                        <span>OneBot11 Token</span>
+                        <input id="bot-config-token" type="password" autocomplete="off" placeholder="留空表示保留现有值">
+                    </label>
+                    <label class="field">
+                        <span>Confirmation Password</span>
+                        <input id="bot-config-confirmation" type="password" autocomplete="current-password">
+                    </label>
+                    <button type="submit">Save bot.yml</button>
+                </form>
+                <p id="bot-config-status" class="status-note">Loading bot snapshot...</p>
+            </section>
+
+            <section class="panel">
+                <h2>Log Viewer</h2>
+                <div class="stack compact-stack">
+                    <label class="field">
+                        <span>Source</span>
+                        <select id="log-source-select"></select>
+                    </label>
+                    <button id="refresh-log-viewer" type="button">Refresh Log</button>
+                </div>
+                <pre id="log-viewer">Loading log sources...</pre>
+                <p id="log-status" class="status-note">Awaiting source selection...</p>
+            </section>
+
+            <section class="panel">
+                <h2>System Actions</h2>
+                <div class="stack">
+                    <label class="field">
+                        <span>Confirmation Password</span>
+                        <input id="action-confirmation" type="password" autocomplete="current-password">
+                    </label>
+                    <div class="button-row">
+                        <button id="reload-config-action" type="button">Reload Config</button>
+                        <button id="shutdown-action" type="button" class="danger-button">Graceful Shutdown</button>
+                        <button id="request-restart-action" type="button" class="warning-button">Request Restart</button>
+                    </div>
+                </div>
+                <p id="action-status" class="status-note">No action requested yet.</p>
+            </section>
+        </div>
     </section>
 </main>
 <script src="/assets/app.js"></script>

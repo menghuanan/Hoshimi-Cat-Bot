@@ -120,6 +120,17 @@ object BiliBiliBot : CoroutineScope {
     fun currentLifecycleState(): BotLifecycleState = lifecycleState.get()
 
     /**
+     * 统一重载 manager-owned 配置快照，并同步刷新 core 缓存过的 bot 配置与图片主题配置。
+     */
+    fun reloadManagedConfiguration() {
+        BiliConfigManager.reloadAll()
+        ConfigManager.reload()
+        config = ConfigManager.botConfig
+        top.bilibili.data.BiliImageTheme.reload()
+        top.bilibili.data.BiliImageQuality.reload()
+    }
+
+    /**
      * 返回已初始化的运行期配置，不存在时抛出异常。
      */
     fun requireConfig(): top.bilibili.config.BotConfig {

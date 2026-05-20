@@ -78,6 +78,18 @@ class WebUiAuthService(
             requiresReauthentication = true,
         )
     }
+
+    /**
+     * 高风险操作统一要求再次校验当前密码，避免单靠登录 token 就执行保存或停机动作。
+     */
+    fun confirmHighRiskOperation(currentPassword: String): WebUiHighRiskConfirmationResult {
+        val state = credentialStore.loadState()
+        val confirmed = credentialStore.matchesPassword(state, currentPassword)
+        return WebUiHighRiskConfirmationResult(
+            confirmed = confirmed,
+            message = if (confirmed) "confirmed" else "invalid confirmation password",
+        )
+    }
 }
 
 /**
@@ -106,4 +118,12 @@ data class WebUiAuthenticatedSession(
     val token: String,
     val tokenVersion: Long,
     val mustChangePassword: Boolean,
+)
+
+/**
+ * 高风险确认结果只描述确认是否通过，供保存与动作路由统一消费。
+ */
+data class WebUiHighRiskConfirmationResult(
+    val confirmed: Boolean,
+    val message: String = "",
 )

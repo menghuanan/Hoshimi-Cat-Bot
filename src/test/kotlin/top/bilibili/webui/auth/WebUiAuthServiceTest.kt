@@ -61,4 +61,26 @@ class WebUiAuthServiceTest {
         assertFalse(relogin.mustChangePassword)
         assertFalse(service.login(bootstrap.initialPassword).success)
     }
+
+    @Test
+    fun `high risk confirmation should require the current password`() {
+        val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
+        val bootstrap = store.loadOrCreate()
+        val service = WebUiAuthService(
+            credentialStore = store,
+            tokenService = WebUiTokenService(tokenTtlSeconds = 300L),
+        )
+
+        val beforeChange = service.confirmHighRiskOperation("wrong-password")
+        service.changePassword(
+            currentPassword = bootstrap.initialPassword!!,
+            newPassword = "Better123!@",
+        )
+        val oldPasswordConfirmation = service.confirmHighRiskOperation(bootstrap.initialPassword)
+        val newPasswordConfirmation = service.confirmHighRiskOperation("Better123!@")
+
+        assertFalse(beforeChange.confirmed)
+        assertFalse(oldPasswordConfirmation.confirmed)
+        assertTrue(newPasswordConfirmation.confirmed)
+    }
 }

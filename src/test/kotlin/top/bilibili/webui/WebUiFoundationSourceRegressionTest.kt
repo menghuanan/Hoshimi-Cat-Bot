@@ -51,7 +51,7 @@ class WebUiFoundationSourceRegressionTest {
     }
 
     @Test
-    fun `frontend shell should include login page and remain api driven`() {
+    fun `frontend shell should include management sections and remain api driven`() {
         val loginPage = read("src/main/resources/webui/login.html")
         val shellPage = read("src/main/resources/webui/index.html")
         val shellScript = read("src/main/resources/webui/assets/app.js")
@@ -59,9 +59,24 @@ class WebUiFoundationSourceRegressionTest {
 
         assertTrue(loginPage.contains("id=\"login-form\""))
         assertTrue(shellPage.contains("id=\"runtime-summary\""))
+        assertTrue(shellPage.contains("id=\"bili-config-form\""))
+        assertTrue(shellPage.contains("id=\"bili-data-form\""))
+        assertTrue(shellPage.contains("id=\"bot-config-form\""))
+        assertTrue(shellPage.contains("id=\"log-source-select\""))
+        assertTrue(shellPage.contains("id=\"reload-config-action\""))
+        assertTrue(shellPage.contains("id=\"shutdown-action\""))
+        assertTrue(shellPage.contains("id=\"request-restart-action\""))
         assertTrue(shellScript.contains("/api/auth/session"))
         assertTrue(shellScript.contains("/api/runtime/summary"))
         assertTrue(shellScript.contains("/api/config/bili-config"))
+        assertTrue(shellScript.contains("/api/config/bili-data"))
+        assertTrue(shellScript.contains("/api/config/bot"))
+        assertTrue(shellScript.contains("/api/logs/sources"))
+        assertTrue(shellScript.contains("/api/logs/"))
+        assertTrue(shellScript.contains("/api/actions/reload-config"))
+        assertTrue(shellScript.contains("/api/actions/shutdown"))
+        assertTrue(shellScript.contains("/api/actions/request-restart"))
+        assertFalse(shellScript.contains("/api/config/save-all"))
         assertTrue(authScript.contains("/api/auth/login"))
         assertTrue(authScript.contains("/api/auth/change-password"))
     }

@@ -15,6 +15,14 @@ function persistToken(token) {
 }
 
 /**
+ * 认证流程结束后统一清理输入框，避免旧密码长期停留在页面上。
+ */
+function clearSensitiveInputs() {
+    loginPasswordInput.value = "";
+    newPasswordInput.value = "";
+}
+
+/**
  * 登录响应若要求强制改密，则切换到改密表单；否则直接进入主壳页。
  */
 function applyLoginState(response, currentPassword) {
@@ -43,6 +51,7 @@ async function loginWithPassword(password) {
         throw new Error(payload.message || `HTTP ${response.status}`);
     }
     applyLoginState(payload, password);
+    clearSensitiveInputs();
 }
 
 /**
@@ -106,6 +115,7 @@ changePasswordForm.addEventListener("submit", async (event) => {
         sessionStorage.removeItem("webuiToken");
         authStatus.textContent = "Password changed. Logging in again...";
         await loginWithPassword(newPasswordInput.value);
+        currentPasswordInput.value = "";
     } catch (error) {
         authStatus.textContent = `Password change failed: ${error.message}`;
     }

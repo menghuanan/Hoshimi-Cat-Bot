@@ -7,6 +7,8 @@ import top.bilibili.BiliData
 import top.bilibili.TranslateConfig
 import top.bilibili.config.BotConfig
 import top.bilibili.config.ConfigManager
+import top.bilibili.utils.json
+import top.bilibili.utils.md5
 import top.bilibili.webui.model.WebUiConfigFieldDto
 import top.bilibili.webui.model.WebUiConfigFileDto
 import top.bilibili.webui.model.WebUiFieldCapability
@@ -24,15 +26,22 @@ class WebUiConfigFacade(
      */
     fun readBiliConfig(): WebUiConfigFileDto {
         val config = biliConfigProvider()
-        return WebUiConfigFileDto(
+        return buildConfigFileDto(
             sourceFile = "BiliConfig.yml",
             title = "BiliConfig",
             fields = listOf(
-                readOnlyField("adminContact", "管理员联系人", config.normalizedAdminSubject().orEmpty()),
-                maskedField("accountConfig.cookie", "登录 Cookie", config.accountConfig.cookie),
-                readOnlyField("translateConfig.baidu.APP_ID", "Baidu APP_ID", config.translateConfig.baidu.APP_ID),
-                maskedField("translateConfig.baidu.SECURITY_KEY", "Baidu SECURITY_KEY", config.translateConfig.baidu.SECURITY_KEY),
-                readOnlyField("enableConfig.debugMode", "调试模式", config.enableConfig.debugMode.toString()),
+                editableField("adminContact", "管理员联系人", config.normalizedAdminSubject().orEmpty()),
+                maskedEditableField("accountConfig.cookie", "登录 Cookie", config.accountConfig.cookie),
+                editableField("translateConfig.baidu.APP_ID", "Baidu APP_ID", config.translateConfig.baidu.APP_ID),
+                maskedEditableField("translateConfig.baidu.SECURITY_KEY", "Baidu SECURITY_KEY", config.translateConfig.baidu.SECURITY_KEY),
+                editableField("enableConfig.debugMode", "调试模式", config.enableConfig.debugMode.toString()),
+            ),
+            rawSnapshot = mapOf(
+                "adminContact" to config.normalizedAdminSubject().orEmpty(),
+                "accountConfig.cookie" to config.accountConfig.cookie,
+                "translateConfig.baidu.APP_ID" to config.translateConfig.baidu.APP_ID,
+                "translateConfig.baidu.SECURITY_KEY" to config.translateConfig.baidu.SECURITY_KEY,
+                "enableConfig.debugMode" to config.enableConfig.debugMode.toString(),
             ),
         )
     }
@@ -42,13 +51,24 @@ class WebUiConfigFacade(
      */
     fun readBiliData(): WebUiConfigFileDto {
         val data = biliDataProvider()
-        return WebUiConfigFileDto(
+        return buildConfigFileDto(
             sourceFile = "BiliData.yml",
             title = "BiliData",
             fields = listOf(
                 systemField("dataVersion", "数据版本", data.dataVersion.toString()),
                 systemField("dynamic.count", "订阅数量", data.dynamic.size.toString()),
                 systemField("group.count", "分组数量", data.group.size.toString()),
+                editableField(
+                    "linkParseBlacklistContacts",
+                    "链接解析黑名单联系人",
+                    data.linkParseBlacklistContacts.sorted().joinToString("\n"),
+                ),
+            ),
+            rawSnapshot = mapOf(
+                "dataVersion" to data.dataVersion.toString(),
+                "dynamic.count" to data.dynamic.size.toString(),
+                "group.count" to data.group.size.toString(),
+                "linkParseBlacklistContacts" to data.linkParseBlacklistContacts.sorted().joinToString("\n"),
             ),
         )
     }
@@ -59,19 +79,59 @@ class WebUiConfigFacade(
     fun readBotConfig(): WebUiConfigFileDto {
         val config = botConfigProvider()
         val oneBot11 = config.selectedOneBot11Config()
-        return WebUiConfigFileDto(
+        return buildConfigFileDto(
             sourceFile = "bot.yml",
             title = "BotConfig",
             fields = listOf(
-                readOnlyField("platform.type", "平台类型", config.selectedPlatformType().name),
-                readOnlyField("platform.adapter", "适配器", config.selectedAdapterKind().name),
-                readOnlyField("platform.onebot11.host", "OneBot11 Host", oneBot11.host),
-                readOnlyField("platform.onebot11.port", "OneBot11 Port", oneBot11.port.toString()),
-                maskedField("platform.onebot11.token", "OneBot11 Token", oneBot11.token),
+                editableField("platform.type", "平台类型", config.selectedPlatformType().name),
+                editableField("platform.adapter", "适配器", config.selectedAdapterKind().name),
+                editableField("platform.onebot11.host", "OneBot11 Host", oneBot11.host),
+                editableField("platform.onebot11.port", "OneBot11 Port", oneBot11.port.toString()),
+                maskedEditableField("platform.onebot11.token", "OneBot11 Token", oneBot11.token),
                 readOnlyField("webui.enabled", "WebUI 启用", config.webui.enabled.toString()),
                 readOnlyField("webui.credentialFile", "WebUI 凭据文件", config.webui.credentialFile),
                 systemField("firstRunFlag", "首次运行标记", config.firstRunFlag.toString()),
             ),
+            rawSnapshot = mapOf(
+                "platform.type" to config.selectedPlatformType().name,
+                "platform.adapter" to config.selectedAdapterKind().name,
+                "platform.onebot11.host" to oneBot11.host,
+                "platform.onebot11.port" to oneBot11.port.toString(),
+                "platform.onebot11.token" to oneBot11.token,
+                "webui.enabled" to config.webui.enabled.toString(),
+                "webui.credentialFile" to config.webui.credentialFile,
+                "firstRunFlag" to config.firstRunFlag.toString(),
+            ),
+        )
+    }
+
+    /**
+     * 统一把字段快照封装为文件 DTO，并基于最终响应内容生成乐观并发所需的 snapshot token。
+     */
+    private fun buildConfigFileDto(
+        sourceFile: String,
+        title: String,
+        fields: List<WebUiConfigFieldDto>,
+        rawSnapshot: Map<String, String>,
+    ): WebUiConfigFileDto {
+        return WebUiConfigFileDto(
+            sourceFile = sourceFile,
+            title = title,
+            fields = fields,
+            snapshotToken = computeWebUiSnapshotToken(sourceFile, title, rawSnapshot),
+        )
+    }
+
+    /**
+     * 可编辑普通字段保持明文展示，供管理页直接回填到输入控件。
+     */
+    private fun editableField(key: String, label: String, value: String): WebUiConfigFieldDto {
+        return WebUiConfigFieldDto(
+            key = key,
+            label = label,
+            value = value,
+            capability = WebUiFieldCapability.EDITABLE,
+            editable = true,
         )
     }
 
@@ -91,13 +151,13 @@ class WebUiConfigFacade(
     /**
      * 脱敏字段统一改写值文本，确保前端无法通过 DTO 直接拿到原始 secret。
      */
-    private fun maskedField(key: String, label: String, rawValue: String): WebUiConfigFieldDto {
+    private fun maskedEditableField(key: String, label: String, rawValue: String): WebUiConfigFieldDto {
         return WebUiConfigFieldDto(
             key = key,
             label = label,
             value = mask(rawValue),
             capability = WebUiFieldCapability.MASKED,
-            editable = false,
+            editable = true,
         )
     }
 
@@ -120,4 +180,33 @@ class WebUiConfigFacade(
     private fun mask(rawValue: String): String {
         return if (rawValue.isBlank()) "" else "******"
     }
+}
+
+/**
+ * snapshot token 只绑定文件名、标题和字段快照，避免把 token 自身递归纳入哈希输入。
+ */
+@kotlinx.serialization.Serializable
+private data class WebUiConfigSnapshotTokenPayload(
+    val sourceFile: String,
+    val title: String,
+    val rawSnapshot: Map<String, String>,
+)
+
+/**
+ * 配置快照 token 统一由后端原始值派生，避免脱敏后的 `******` 让不同 secret 产生同一并发版本号。
+ */
+internal fun computeWebUiSnapshotToken(
+    sourceFile: String,
+    title: String,
+    rawSnapshot: Map<String, String>,
+): String {
+    val tokenPayload = WebUiConfigSnapshotTokenPayload(
+        sourceFile = sourceFile,
+        title = title,
+        rawSnapshot = rawSnapshot,
+    )
+    return json.encodeToString(
+        WebUiConfigSnapshotTokenPayload.serializer(),
+        tokenPayload,
+    ).md5()
 }

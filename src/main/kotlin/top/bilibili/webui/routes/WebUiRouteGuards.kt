@@ -48,3 +48,24 @@ fun ApplicationCall.extractWebUiToken(): String? {
         ?.takeIf { it.isNotBlank() }
     return bearerToken ?: request.cookies[WebUiTokenCookieName]
 }
+
+/**
+ * 高风险写入和动作请求必须再次确认当前密码，避免单靠登录 token 就执行破坏性操作。
+ */
+suspend fun ApplicationCall.requireHighRiskConfirmation(
+    authService: WebUiAuthService,
+    confirmationPassword: String,
+): Boolean {
+    val result = authService.confirmHighRiskOperation(confirmationPassword)
+    if (!result.confirmed) {
+        respond(
+            HttpStatusCode.Forbidden,
+            WebUiAuthResponseDto(
+                success = false,
+                message = result.message,
+            ),
+        )
+        return false
+    }
+    return true
+}

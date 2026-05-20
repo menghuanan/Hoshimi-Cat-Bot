@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class WebUiFieldCapability {
+    EDITABLE,
     READ_ONLY,
     MASKED,
     SYSTEM_MANAGED,
@@ -32,4 +33,5 @@ data class WebUiConfigFileDto(
     val sourceFile: String,
     val title: String,
     val fields: List<WebUiConfigFieldDto>,
+    val snapshotToken: String,
 )

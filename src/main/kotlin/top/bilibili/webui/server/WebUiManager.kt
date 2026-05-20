@@ -14,10 +14,16 @@ import top.bilibili.webui.auth.WebUiAuthService
 import top.bilibili.webui.auth.WebUiCredentialStore
 import top.bilibili.webui.auth.WebUiTokenService
 import top.bilibili.webui.config.WebUiSettings
+import top.bilibili.webui.routes.registerWebUiActionRoutes
 import top.bilibili.webui.routes.registerWebUiAuthRoutes
 import top.bilibili.webui.routes.registerWebUiApiRoutes
+import top.bilibili.webui.routes.registerWebUiLogRoutes
 import top.bilibili.webui.routes.registerWebUiStaticRoutes
+import top.bilibili.webui.service.WebUiActionFacade
+import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiConfigFacade
+import top.bilibili.webui.service.WebUiConfigWriteFacade
+import top.bilibili.webui.service.WebUiLogFacade
 import top.bilibili.webui.service.WebUiRuntimeFacade
 
 /**
@@ -55,12 +61,19 @@ class WebUiManager(
         }
 
         // 服务器只安装最小 JSON 与路由能力，为后续管理接口保留清晰边界。
+        val configFacade = WebUiConfigFacade()
         val startedServer = embeddedServer(CIO, host = settings.host, port = settings.port) {
             installWebUiModule(
                 settings = settings,
                 authService = authService,
                 runtimeFacade = WebUiRuntimeFacade(),
-                configFacade = WebUiConfigFacade(),
+                configFacade = configFacade,
+                configWriteFacade = WebUiConfigWriteFacade(
+                    configFacade = configFacade,
+                ),
+                logFacade = WebUiLogFacade(),
+                actionFacade = WebUiActionFacade(),
+                auditService = WebUiAuditService(),
             )
         }
         startedServer.start(wait = false)
@@ -90,6 +103,10 @@ fun Application.installWebUiModule(
     authService: WebUiAuthService,
     runtimeFacade: WebUiRuntimeFacade,
     configFacade: WebUiConfigFacade,
+    configWriteFacade: WebUiConfigWriteFacade,
+    logFacade: WebUiLogFacade,
+    actionFacade: WebUiActionFacade,
+    auditService: WebUiAuditService,
 ) {
     install(ContentNegotiation) {
         json(json)
@@ -97,6 +114,8 @@ fun Application.installWebUiModule(
     routing {
         registerWebUiStaticRoutes(settings, authService)
         registerWebUiAuthRoutes(authService)
-        registerWebUiApiRoutes(authService, runtimeFacade, configFacade)
+        registerWebUiApiRoutes(authService, runtimeFacade, configFacade, configWriteFacade, auditService)
+        registerWebUiLogRoutes(authService, logFacade)
+        registerWebUiActionRoutes(authService, actionFacade, auditService)
     }
 }

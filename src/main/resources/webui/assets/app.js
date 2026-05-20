@@ -1,20 +1,43 @@
 const runtimeSummary = document.getElementById("runtime-summary");
-const biliConfigBlock = document.getElementById("bili-config");
-const biliDataBlock = document.getElementById("bili-data");
-const botConfigBlock = document.getElementById("bot-config");
+const runtimeStatus = document.getElementById("runtime-status");
+const biliConfigForm = document.getElementById("bili-config-form");
+const biliDataForm = document.getElementById("bili-data-form");
+const botConfigForm = document.getElementById("bot-config-form");
+const biliConfigStatus = document.getElementById("bili-config-status");
+const biliDataStatus = document.getElementById("bili-data-status");
+const botConfigStatus = document.getElementById("bot-config-status");
+const logSourceSelect = document.getElementById("log-source-select");
+const refreshLogViewerButton = document.getElementById("refresh-log-viewer");
+const logViewer = document.getElementById("log-viewer");
+const logStatus = document.getElementById("log-status");
+const reloadConfigActionButton = document.getElementById("reload-config-action");
+const shutdownActionButton = document.getElementById("shutdown-action");
+const requestRestartActionButton = document.getElementById("request-restart-action");
+const actionStatus = document.getElementById("action-status");
+
+const LOGS_BASE = "/api/logs/";
+const snapshotState = {
+    biliConfig: "",
+    biliData: "",
+    botConfig: "",
+};
 
 /**
  * API 调用统一附带当前 token，确保运行态和配置数据都只来自受保护的 `/api/*` 响应。
  */
-async function apiFetch(path) {
+async function apiFetch(path, options = {}) {
     const token = sessionStorage.getItem("webuiToken");
     const headers = {
         Accept: "application/json",
+        ...(options.headers || {}),
     };
     if (token) {
         headers.Authorization = `Bearer ${token}`;
     }
-    return fetch(path, { headers });
+    return fetch(path, {
+        ...options,
+        headers,
+    });
 }
 
 /**
@@ -34,32 +57,262 @@ async function ensureAuthenticatedSession() {
     return session;
 }
 
-/**
- * 统一把 DTO 响应格式化到只读面板里，保持前端完全由 API 驱动。
- */
-function renderJson(target, payload) {
-    target.textContent = JSON.stringify(payload, null, 2);
+async function readJsonResponse(path, options = {}) {
+    const response = await apiFetch(path, options);
+    const payload = await response.json().catch(() => ({}));
+    return {
+        response,
+        payload,
+    };
 }
 
-async function loadShell() {
+/**
+ * 统一把保存结果和动作结果显示到状态区，明确展示 validation/conflict/effect/recommendedAction。
+ */
+function describeResult(payload, fallbackStatus) {
+    const message = payload.message || `HTTP ${fallbackStatus}`;
+    const effect = payload.effectiveLevel ? `effect=${payload.effectiveLevel}` : "";
+    const recommendedAction = payload.recommendedAction ? `next=${payload.recommendedAction}` : "";
+    const validationErrors = Array.isArray(payload.validationErrors) && payload.validationErrors.length > 0
+        ? `errors=${payload.validationErrors.join(", ")}`
+        : "";
+    return [message, effect, recommendedAction, validationErrors]
+        .filter((part) => part)
+        .join(" | ");
+}
+
+/**
+ * 读取字段 DTO 时按 key 建索引，避免前端把后端对象结构写死成位置依赖。
+ */
+function fieldMap(fileDto) {
+    return Object.fromEntries(fileDto.fields.map((field) => [field.key, field]));
+}
+
+function setSecretInputValue(input, field) {
+    input.value = "";
+    input.placeholder = field && field.value ? "留空表示保留现有值" : "当前未设置";
+}
+
+async function loadRuntimeSummary() {
+    const { response, payload } = await readJsonResponse("/api/runtime/summary");
+    if (!response.ok) {
+        runtimeStatus.textContent = describeResult(payload, response.status);
+        return;
+    }
+    runtimeSummary.textContent = JSON.stringify(payload, null, 2);
+    runtimeStatus.textContent = "Runtime summary loaded.";
+}
+
+async function loadBiliConfigPanel() {
+    const { response, payload } = await readJsonResponse("/api/config/bili-config");
+    if (!response.ok) {
+        biliConfigStatus.textContent = describeResult(payload, response.status);
+        return;
+    }
+    const fields = fieldMap(payload);
+    snapshotState.biliConfig = payload.snapshotToken;
+    document.getElementById("bili-config-admin-contact").value = fields["adminContact"]?.value || "";
+    document.getElementById("bili-config-baidu-app-id").value = fields["translateConfig.baidu.APP_ID"]?.value || "";
+    document.getElementById("bili-config-debug-mode").checked = fields["enableConfig.debugMode"]?.value === "true";
+    setSecretInputValue(document.getElementById("bili-config-cookie"), fields["accountConfig.cookie"]);
+    setSecretInputValue(document.getElementById("bili-config-baidu-security-key"), fields["translateConfig.baidu.SECURITY_KEY"]);
+    biliConfigStatus.textContent = `snapshot=${payload.snapshotToken}`;
+}
+
+async function loadBiliDataPanel() {
+    const { response, payload } = await readJsonResponse("/api/config/bili-data");
+    if (!response.ok) {
+        biliDataStatus.textContent = describeResult(payload, response.status);
+        return;
+    }
+    const fields = fieldMap(payload);
+    snapshotState.biliData = payload.snapshotToken;
+    document.getElementById("bili-data-blacklist").value = fields["linkParseBlacklistContacts"]?.value || "";
+    biliDataStatus.textContent = `snapshot=${payload.snapshotToken} | subscriptions=${fields["dynamic.count"]?.value || "0"} | groups=${fields["group.count"]?.value || "0"}`;
+}
+
+async function loadBotConfigPanel() {
+    const { response, payload } = await readJsonResponse("/api/config/bot");
+    if (!response.ok) {
+        botConfigStatus.textContent = describeResult(payload, response.status);
+        return;
+    }
+    const fields = fieldMap(payload);
+    snapshotState.botConfig = payload.snapshotToken;
+    document.getElementById("bot-config-platform-type").value = fields["platform.type"]?.value || "";
+    document.getElementById("bot-config-adapter").value = fields["platform.adapter"]?.value || "";
+    document.getElementById("bot-config-host").value = fields["platform.onebot11.host"]?.value || "";
+    document.getElementById("bot-config-port").value = fields["platform.onebot11.port"]?.value || "";
+    setSecretInputValue(document.getElementById("bot-config-token"), fields["platform.onebot11.token"]);
+    botConfigStatus.textContent = `snapshot=${payload.snapshotToken}`;
+}
+
+async function saveBiliConfig(event) {
+    event.preventDefault();
+    const { response, payload } = await readJsonResponse("/api/config/bili-config", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            snapshotToken: snapshotState.biliConfig,
+            adminContact: document.getElementById("bili-config-admin-contact").value.trim(),
+            cookie: document.getElementById("bili-config-cookie").value,
+            baiduAppId: document.getElementById("bili-config-baidu-app-id").value.trim(),
+            baiduSecurityKey: document.getElementById("bili-config-baidu-security-key").value,
+            debugMode: document.getElementById("bili-config-debug-mode").checked,
+            confirmationPassword: document.getElementById("bili-config-confirmation").value,
+        }),
+    });
+    biliConfigStatus.textContent = describeResult(payload, response.status);
+    if (response.ok) {
+        document.getElementById("bili-config-confirmation").value = "";
+        await loadBiliConfigPanel();
+    }
+}
+
+async function saveBiliData(event) {
+    event.preventDefault();
+    const contacts = document.getElementById("bili-data-blacklist").value
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line);
+    const { response, payload } = await readJsonResponse("/api/config/bili-data", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            snapshotToken: snapshotState.biliData,
+            linkParseBlacklistContacts: contacts,
+            confirmationPassword: document.getElementById("bili-data-confirmation").value,
+        }),
+    });
+    biliDataStatus.textContent = describeResult(payload, response.status);
+    if (response.ok) {
+        document.getElementById("bili-data-confirmation").value = "";
+        await loadBiliDataPanel();
+    }
+}
+
+async function saveBotConfig(event) {
+    event.preventDefault();
+    const { response, payload } = await readJsonResponse("/api/config/bot", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            snapshotToken: snapshotState.botConfig,
+            platformType: document.getElementById("bot-config-platform-type").value.trim(),
+            adapter: document.getElementById("bot-config-adapter").value.trim(),
+            oneBot11Host: document.getElementById("bot-config-host").value.trim(),
+            oneBot11Port: Number(document.getElementById("bot-config-port").value),
+            oneBot11Token: document.getElementById("bot-config-token").value,
+            confirmationPassword: document.getElementById("bot-config-confirmation").value,
+        }),
+    });
+    botConfigStatus.textContent = describeResult(payload, response.status);
+    if (response.ok) {
+        document.getElementById("bot-config-confirmation").value = "";
+        await loadBotConfigPanel();
+    }
+}
+
+async function loadLogSources() {
+    const { response, payload } = await readJsonResponse("/api/logs/sources");
+    if (!response.ok) {
+        logStatus.textContent = describeResult(payload, response.status);
+        return;
+    }
+    logSourceSelect.innerHTML = "";
+    payload.sources.forEach((source) => {
+        const option = document.createElement("option");
+        option.value = source.id;
+        option.textContent = source.title;
+        logSourceSelect.append(option);
+    });
+    if (payload.sources.length > 0) {
+        await refreshLogViewer();
+    } else {
+        logViewer.textContent = "";
+        logStatus.textContent = "No allowed log sources are available.";
+    }
+}
+
+async function refreshLogViewer() {
+    const sourceId = logSourceSelect.value;
+    if (!sourceId) {
+        logStatus.textContent = "Choose a log source first.";
+        return;
+    }
+    const { response, payload } = await readJsonResponse(`${LOGS_BASE}${encodeURIComponent(sourceId)}?tail=200`);
+    if (!response.ok) {
+        logStatus.textContent = describeResult(payload, response.status);
+        return;
+    }
+    logViewer.textContent = payload.text || "(empty log window)";
+    logStatus.textContent = `lines=${payload.lineCount} | hasMore=${payload.hasMore} | lastModified=${payload.lastModifiedEpochMillis}`;
+}
+
+async function runAction(path, statusTarget) {
+    const { response, payload } = await readJsonResponse(path, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            confirmationPassword: document.getElementById("action-confirmation").value,
+        }),
+    });
+    statusTarget.textContent = describeResult(payload, response.status);
+}
+
+async function loadManagementShell() {
     const session = await ensureAuthenticatedSession();
     if (!session) {
         return;
     }
 
-    const [runtime, biliConfig, biliData, botConfig] = await Promise.all([
-        apiFetch("/api/runtime/summary"),
-        apiFetch("/api/config/bili-config"),
-        apiFetch("/api/config/bili-data"),
-        apiFetch("/api/config/bot"),
+    await Promise.all([
+        loadRuntimeSummary(),
+        loadBiliConfigPanel(),
+        loadBiliDataPanel(),
+        loadBotConfigPanel(),
+        loadLogSources(),
     ]);
-
-    renderJson(runtimeSummary, await runtime.json());
-    renderJson(biliConfigBlock, await biliConfig.json());
-    renderJson(biliDataBlock, await biliData.json());
-    renderJson(botConfigBlock, await botConfig.json());
 }
 
-loadShell().catch((error) => {
+biliConfigForm.addEventListener("submit", saveBiliConfig);
+biliDataForm.addEventListener("submit", saveBiliData);
+botConfigForm.addEventListener("submit", saveBotConfig);
+refreshLogViewerButton.addEventListener("click", () => {
+    refreshLogViewer().catch((error) => {
+        logStatus.textContent = `failed to refresh log: ${error.message}`;
+    });
+});
+logSourceSelect.addEventListener("change", () => {
+    refreshLogViewer().catch((error) => {
+        logStatus.textContent = `failed to refresh log: ${error.message}`;
+    });
+});
+reloadConfigActionButton.addEventListener("click", () => {
+    runAction("/api/actions/reload-config", actionStatus).catch((error) => {
+        actionStatus.textContent = `reload failed: ${error.message}`;
+    });
+});
+shutdownActionButton.addEventListener("click", () => {
+    runAction("/api/actions/shutdown", actionStatus).catch((error) => {
+        actionStatus.textContent = `shutdown failed: ${error.message}`;
+    });
+});
+requestRestartActionButton.addEventListener("click", () => {
+    runAction("/api/actions/request-restart", actionStatus).catch((error) => {
+        actionStatus.textContent = `restart request failed: ${error.message}`;
+    });
+});
+
+loadManagementShell().catch((error) => {
     runtimeSummary.textContent = `failed to load shell: ${error.message}`;
+    runtimeStatus.textContent = "management shell load failed";
 });
