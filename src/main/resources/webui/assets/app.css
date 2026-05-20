@@ -110,6 +110,82 @@ pre {
     color: #30405f;
 }
 
+#log-viewer {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.config-overview {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.config-overview-row {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(49, 66, 95, 0.08);
+}
+
+.config-overview-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.config-overview-label {
+    font-weight: 700;
+    color: #31425f;
+}
+
+.config-overview-key {
+    color: #6a7895;
+    font-size: 0.78rem;
+}
+
+.config-overview-value {
+    margin: 0;
+    padding: 12px;
+    border-radius: 10px;
+    background: #f5f7fb;
+    max-height: 180px;
+    overflow: auto;
+}
+
+.config-capability {
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #ffffff;
+    background: #64748b;
+}
+
+.capability-editable {
+    background: #2563eb;
+}
+
+.capability-read_only {
+    background: #64748b;
+}
+
+.capability-masked {
+    background: #0f766e;
+}
+
+.capability-system_managed {
+    background: #b45309;
+}
+
 .stack {
     display: grid;
     gap: 14px;

@@ -12,17 +12,23 @@ const refreshLogViewerButton = document.getElementById("refresh-log-viewer");
 const logViewer = document.getElementById("log-viewer");
 const logWindowMeta = document.getElementById("log-window-meta");
 const logStatus = document.getElementById("log-status");
+const biliConfigOverview = document.getElementById("bili-config-overview");
+const biliDataOverview = document.getElementById("bili-data-overview");
+const botConfigOverview = document.getElementById("bot-config-overview");
 const reloadConfigActionButton = document.getElementById("reload-config-action");
 const shutdownActionButton = document.getElementById("shutdown-action");
 const requestRestartActionButton = document.getElementById("request-restart-action");
 const actionStatus = document.getElementById("action-status");
 
 const LOGS_BASE = "/api/logs/";
+const LOG_REFRESH_INTERVAL_MS = 5000;
 const snapshotState = {
     biliConfig: "",
     biliData: "",
     botConfig: "",
 };
+let logRefreshTimer = null;
+let logRefreshInFlight = false;
 
 /**
  * API 调用统一附带当前 token，确保运行态和配置数据都只来自受保护的 `/api/*` 响应。
@@ -98,6 +104,45 @@ function fieldMap(fileDto) {
     return Object.fromEntries(fileDto.fields.map((field) => [field.key, field]));
 }
 
+/**
+ * 配置 overview 统一按字段列表渲染，让三份配置文件的完整只读树都能直接在页面上看见。
+ */
+function renderConfigOverview(container, fileDto) {
+    container.innerHTML = "";
+    if (!fileDto || !Array.isArray(fileDto.fields) || fileDto.fields.length === 0) {
+        container.textContent = "No configuration fields available.";
+        return;
+    }
+
+    fileDto.fields.forEach((field) => {
+        const row = document.createElement("article");
+        row.className = "config-overview-row";
+
+        const head = document.createElement("div");
+        head.className = "config-overview-head";
+
+        const label = document.createElement("span");
+        label.className = "config-overview-label";
+        label.textContent = field.label || field.key;
+
+        const capability = document.createElement("span");
+        capability.className = `config-capability capability-${String(field.capability || "READ_ONLY").toLowerCase()}`;
+        capability.textContent = field.capability || "READ_ONLY";
+
+        const key = document.createElement("code");
+        key.className = "config-overview-key";
+        key.textContent = field.key;
+
+        const value = document.createElement("pre");
+        value.className = "config-overview-value";
+        value.textContent = field.value || "(empty)";
+
+        head.append(label, capability);
+        row.append(head, key, value);
+        container.append(row);
+    });
+}
+
 function setSecretInputValue(input, field) {
     input.value = "";
     input.placeholder = field && field.value ? "留空表示保留现有值" : "当前未设置";
@@ -140,6 +185,31 @@ function describeLogWindow(payload) {
         .join(" | ");
 }
 
+/**
+ * 日志自动刷新只允许单实例运行，避免轮询和手动刷新互相叠加。
+ */
+function stopLogAutoRefresh() {
+    if (logRefreshTimer !== null) {
+        clearInterval(logRefreshTimer);
+        logRefreshTimer = null;
+    }
+}
+
+/**
+ * 只要日志源可用就启动轮询刷新，让尾部窗口跟随最新日志变化。
+ */
+function startLogAutoRefresh() {
+    stopLogAutoRefresh();
+    logRefreshTimer = setInterval(() => {
+        if (document.visibilityState === "hidden") {
+            return;
+        }
+        refreshLogViewer().catch((error) => {
+            logStatus.textContent = `failed to refresh log: ${error.message}`;
+        });
+    }, LOG_REFRESH_INTERVAL_MS);
+}
+
 async function loadRuntimeSummary() {
     const { response, payload } = await readJsonResponse("/api/runtime/summary");
     if (!response.ok) {
@@ -164,6 +234,7 @@ async function loadBiliConfigPanel() {
     setSecretInputValue(document.getElementById("bili-config-cookie"), fields["accountConfig.cookie"]);
     setSecretInputValue(document.getElementById("bili-config-baidu-security-key"), fields["translateConfig.baidu.SECURITY_KEY"]);
     biliConfigStatus.textContent = `snapshot=${payload.snapshotToken}`;
+    renderConfigOverview(biliConfigOverview, payload);
 }
 
 async function loadBiliDataPanel() {
@@ -176,6 +247,7 @@ async function loadBiliDataPanel() {
     snapshotState.biliData = payload.snapshotToken;
     document.getElementById("bili-data-blacklist").value = fields["linkParseBlacklistContacts"]?.value || "";
     biliDataStatus.textContent = `snapshot=${payload.snapshotToken} | subscriptions=${fields["dynamic.count"]?.value || "0"} | groups=${fields["group.count"]?.value || "0"}`;
+    renderConfigOverview(biliDataOverview, payload);
 }
 
 async function loadBotConfigPanel() {
@@ -192,6 +264,7 @@ async function loadBotConfigPanel() {
     document.getElementById("bot-config-port").value = fields["platform.onebot11.port"]?.value || "";
     setSecretInputValue(document.getElementById("bot-config-token"), fields["platform.onebot11.token"]);
     botConfigStatus.textContent = `snapshot=${payload.snapshotToken}`;
+    renderConfigOverview(botConfigOverview, payload);
 }
 
 async function saveBiliConfig(event) {
@@ -270,6 +343,7 @@ async function loadLogSources() {
     const { response, payload } = await readJsonResponse("/api/logs/sources");
     if (!response.ok) {
         logStatus.textContent = describeResult(payload, response.status);
+        stopLogAutoRefresh();
         return;
     }
     logSourceSelect.innerHTML = "";
@@ -281,7 +355,9 @@ async function loadLogSources() {
     });
     if (payload.sources.length > 0) {
         await refreshLogViewer();
+        startLogAutoRefresh();
     } else {
+        stopLogAutoRefresh();
         logViewer.textContent = "";
         logWindowMeta.textContent = "No source metadata is currently available.";
         logStatus.textContent = "No allowed log sources are available.";
@@ -289,23 +365,33 @@ async function loadLogSources() {
 }
 
 async function refreshLogViewer() {
+    if (logRefreshInFlight) {
+        return;
+    }
+    logRefreshInFlight = true;
     const sourceId = logSourceSelect.value;
     if (!sourceId) {
         logStatus.textContent = "Choose a log source first.";
+        logRefreshInFlight = false;
         return;
     }
-    const requestedTail = Number(logTailSelect.value || 200);
-    const { response, payload } = await readJsonResponse(`${LOGS_BASE}${encodeURIComponent(sourceId)}?tail=${requestedTail}`);
-    if (!response.ok) {
-        logStatus.textContent = describeResult(payload, response.status);
-        return;
+    try {
+        const requestedTail = Number(logTailSelect.value || 200);
+        const { response, payload } = await readJsonResponse(`${LOGS_BASE}${encodeURIComponent(sourceId)}?tail=${requestedTail}`);
+        if (!response.ok) {
+            logStatus.textContent = describeResult(payload, response.status);
+            return;
+        }
+        renderTailOptions(payload.availableTailLines, payload.requestedTailLines);
+        logViewer.textContent = payload.text || "(empty log window)";
+        logViewer.scrollTop = logViewer.scrollHeight;
+        logWindowMeta.textContent = describeLogWindow(payload);
+        logStatus.textContent = payload.sourceMissing
+            ? "Selected log file is not currently available."
+            : "Log window loaded.";
+    } finally {
+        logRefreshInFlight = false;
     }
-    renderTailOptions(payload.availableTailLines, payload.requestedTailLines);
-    logViewer.textContent = payload.text || "(empty log window)";
-    logWindowMeta.textContent = describeLogWindow(payload);
-    logStatus.textContent = payload.sourceMissing
-        ? "Selected log file is not currently available."
-        : "Log window loaded.";
 }
 
 async function runAction(path, statusTarget) {

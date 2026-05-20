@@ -3,6 +3,7 @@ package top.bilibili.webui.service
 import top.bilibili.BiliAccountConfig
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
+import top.bilibili.BiliData
 import top.bilibili.TranslateConfig
 import top.bilibili.config.BotConfig
 import top.bilibili.config.ConfigManager
@@ -109,12 +110,7 @@ class WebUiConfigWriteFacade(
             )
         }
 
-        val nextToken = snapshotTokenForBiliData(
-            dataVersion = currentDto.fields.first { it.key == "dataVersion" }.value,
-            dynamicCount = currentDto.fields.first { it.key == "dynamic.count" }.value,
-            groupCount = currentDto.fields.first { it.key == "group.count" }.value,
-            blacklistContacts = normalizedContacts,
-        )
+        val nextToken = snapshotTokenForBiliData()
         return successResult(
             snapshotToken = nextToken,
             effectiveLevel = WebUiSaveEffectLevel.APPLIED_IMMEDIATELY,
@@ -281,37 +277,23 @@ class WebUiConfigWriteFacade(
      * `BiliConfig.yml` 的 token 继续绑定后端原始值，确保 secret 改动也会推进快照版本。
      */
     private fun snapshotTokenForBiliConfig(config: BiliConfig): String {
+        val snapshot = buildBiliConfigSnapshot(config)
         return computeWebUiSnapshotToken(
             sourceFile = "BiliConfig.yml",
             title = "BiliConfig",
-            rawSnapshot = mapOf(
-                "adminContact" to config.normalizedAdminSubject().orEmpty(),
-                "accountConfig.cookie" to config.accountConfig.cookie,
-                "translateConfig.baidu.APP_ID" to config.translateConfig.baidu.APP_ID,
-                "translateConfig.baidu.SECURITY_KEY" to config.translateConfig.baidu.SECURITY_KEY,
-                "enableConfig.debugMode" to config.enableConfig.debugMode.toString(),
-            ),
+            rawSnapshot = snapshot.rawSnapshot,
         )
     }
 
     /**
-     * `BiliData.yml` 当前 token 只在固定字段和黑名单集合变化时推进，保持与读侧 DTO 同步。
+     * `BiliData.yml` 的 token 绑定当前持久化快照，确保业务数据、模板策略和黑名单变化都会推进版本号。
      */
-    private fun snapshotTokenForBiliData(
-        dataVersion: String,
-        dynamicCount: String,
-        groupCount: String,
-        blacklistContacts: Set<String>,
-    ): String {
+    private fun snapshotTokenForBiliData(): String {
+        val snapshot = buildBiliDataSnapshot(BiliData)
         return computeWebUiSnapshotToken(
             sourceFile = "BiliData.yml",
             title = "BiliData",
-            rawSnapshot = mapOf(
-                "dataVersion" to dataVersion,
-                "dynamic.count" to dynamicCount,
-                "group.count" to groupCount,
-                "linkParseBlacklistContacts" to blacklistContacts.sorted().joinToString("\n"),
-            ),
+            rawSnapshot = snapshot.rawSnapshot,
         )
     }
 
@@ -319,20 +301,11 @@ class WebUiConfigWriteFacade(
      * `bot.yml` 的 token 跟随平台字段和 secret 一起变化，保证连接参数外部修改能被前端感知。
      */
     private fun snapshotTokenForBotConfig(config: BotConfig): String {
-        val oneBot11 = config.selectedOneBot11Config()
+        val snapshot = buildBotConfigSnapshot(config)
         return computeWebUiSnapshotToken(
             sourceFile = "bot.yml",
             title = "BotConfig",
-            rawSnapshot = mapOf(
-                "platform.type" to config.selectedPlatformType().name,
-                "platform.adapter" to config.selectedAdapterKind().name,
-                "platform.onebot11.host" to oneBot11.host,
-                "platform.onebot11.port" to oneBot11.port.toString(),
-                "platform.onebot11.token" to oneBot11.token,
-                "webui.enabled" to config.webui.enabled.toString(),
-                "webui.credentialFile" to config.webui.credentialFile,
-                "firstRunFlag" to config.firstRunFlag.toString(),
-            ),
+            rawSnapshot = snapshot.rawSnapshot,
         )
     }
 }

@@ -86,4 +86,22 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(authScript.contains("/api/auth/change-password"))
         assertTrue(shellScript.contains("restartRequestMode"))
     }
+
+    /**
+     * 日志窗口需要自动轮询并保持可滚动尾部视图，避免只靠手动刷新才能看到新日志。
+     */
+    @Test
+    fun `log viewer should refresh itself and keep a scrollable window`() {
+        val shellPage = read("src/main/resources/webui/index.html")
+        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+
+        assertTrue(shellPage.contains("id=\"bili-config-overview\""))
+        assertTrue(shellPage.contains("id=\"bili-data-overview\""))
+        assertTrue(shellPage.contains("id=\"bot-config-overview\""))
+        assertTrue(shellScript.contains("setInterval("))
+        assertTrue(shellScript.contains("logViewer.scrollTop = logViewer.scrollHeight"))
+        assertTrue(shellStyle.contains("#log-viewer"))
+        assertTrue(shellStyle.contains("overflow-y: auto"))
+    }
 }

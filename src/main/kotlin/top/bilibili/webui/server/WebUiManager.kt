@@ -54,8 +54,7 @@ class WebUiManager(
         if (bootstrap.initialPassword != null) {
             // 初始密码只在本地启动期输出一次，方便管理员完成首次登录和强制改密。
             logger.warn(
-                "WebUI 初始密码已生成，请立即登录并修改密码。credentialFile={}, initialPassword={}",
-                settings.credentialStateFile.absolutePath,
+                "WebUI 初始密码已生成，请立即登录并修改密码，密码={}",
                 bootstrap.initialPassword,
             )
         }
