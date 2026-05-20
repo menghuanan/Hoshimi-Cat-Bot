@@ -126,8 +126,20 @@ class WebUiFoundationSourceRegressionTest {
     fun `frontend shell should version account control assets`() {
         val shellPage = read("src/main/resources/webui/index.html")
 
-        assertTrue(shellPage.contains("""/assets/app.css?v=account-controls"""))
-        assertTrue(shellPage.contains("""/assets/app.js?v=account-controls"""))
+        assertTrue(shellPage.contains("""/assets/app.css?v=account-controls-layer"""))
+        assertTrue(shellPage.contains("""/assets/app.js?v=account-controls-layer"""))
+    }
+
+    /**
+     * 顶栏自身必须建立高层级上下文，避免 backdrop-filter 生成的层叠上下文被后续内容卡片盖住。
+     */
+    @Test
+    fun `frontend shell should keep admin menu above dashboard cards`() {
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+
+        assertTrue(shellStyle.contains(".topbar {"))
+        assertTrue(shellStyle.contains("position: relative;"))
+        assertTrue(shellStyle.contains("z-index: 60;"))
     }
 
     /**

@@ -428,6 +428,9 @@ input:focus {
 }
 
 .topbar {
+    /* 顶栏需要独立高层级，避免 backdrop-filter 的层叠上下文被内容卡片盖住下拉菜单。 */
+    position: relative;
+    z-index: 60;
     height: 44px;
     display: flex;
     align-items: center;
