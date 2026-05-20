@@ -6,6 +6,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -522,6 +523,15 @@ class WebUiRouteSmokeTest {
         val logWindow = createWebUiClient().get("/api/logs/main?tail=20") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
+        val exportedLog = createWebUiClient().get("/api/logs/main/export?tail=20") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val clearedLog = createWebUiClient().post("/api/logs/main/clear") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val logWindowAfterClear = createWebUiClient().get("/api/logs/main?tail=20") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
         val reload = createWebUiClient().post("/api/actions/reload-config") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $token")
@@ -535,12 +545,17 @@ class WebUiRouteSmokeTest {
 
         assertEquals(HttpStatusCode.OK, sourceList.status)
         assertEquals(HttpStatusCode.OK, logWindow.status)
+        assertEquals(HttpStatusCode.OK, exportedLog.status)
+        assertEquals(HttpStatusCode.OK, clearedLog.status)
+        assertEquals(HttpStatusCode.OK, logWindowAfterClear.status)
         assertEquals(HttpStatusCode.OK, reload.status)
         assertEquals(HttpStatusCode.OK, restart.status)
         assertEquals(listOf("main"), sourceList.body<WebUiLogSourceListDto>().sources.map { source -> source.id })
         assertEquals(2, logWindow.body<WebUiLogWindowDto>().lineCount)
         assertEquals(listOf(2), logWindow.body<WebUiLogWindowDto>().availableTailLines)
         assertEquals(false, logWindow.body<WebUiLogWindowDto>().sourceMissing)
+        assertTrue(exportedLog.bodyAsText().contains("line-2"))
+        assertEquals(0, logWindowAfterClear.body<WebUiLogWindowDto>().lineCount)
         assertEquals("reload-config", reload.body<WebUiActionResultDto>().action)
         assertEquals(top.bilibili.webui.model.WebUiActionOutcome.RELOAD_CONFIG_REQUESTED, reload.body<WebUiActionResultDto>().outcome)
         assertEquals("request-restart", restart.body<WebUiActionResultDto>().action)

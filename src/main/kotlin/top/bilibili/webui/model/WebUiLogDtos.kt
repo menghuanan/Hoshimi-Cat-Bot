@@ -34,3 +34,16 @@ data class WebUiLogWindowDto(
     val hasMore: Boolean,
     val sourceMissing: Boolean,
 )
+
+/**
+ * 清空日志结果只返回固定 source 的执行状态和原始大小，便于前端给出明确反馈。
+ */
+@Serializable
+data class WebUiLogClearResultDto(
+    val sourceId: String,
+    val title: String,
+    val cleared: Boolean,
+    val sourceMissing: Boolean,
+    val bytesBefore: Long,
+    val lastModifiedEpochMillis: Long,
+)

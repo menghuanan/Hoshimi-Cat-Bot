@@ -98,4 +98,54 @@ class WebUiLogFacadeTest {
         assertEquals(listOf(10), window.availableTailLines)
         assertTrue(window.sourceMissing)
     }
+
+    /**
+     * 清空日志只允许作用于固定白名单 source，避免前端按钮变成任意文件截断入口。
+     */
+    @Test
+    fun `clear should truncate only fixed log source files`() {
+        val logFile = tempRoot.resolve("bilibili-bot.log")
+        Files.writeString(logFile, "line-1\nline-2\n", StandardCharsets.UTF_8)
+        val facade = WebUiLogFacade(
+            sourceResolvers = mapOf(
+                "main" to { logFile.toFile() },
+            ),
+        )
+
+        val result = facade.clearLogSource("main")
+        val rejected = facade.clearLogSource("../secrets")
+
+        assertNotNull(result)
+        assertTrue(result.cleared)
+        assertEquals("main", result.sourceId)
+        assertTrue(result.bytesBefore > 0L)
+        assertEquals("", Files.readString(logFile, StandardCharsets.UTF_8))
+        assertNull(rejected)
+    }
+
+    /**
+     * 导出日志复用受限 tail 窗口，确保下载内容和页面可见来源保持同一安全边界。
+     */
+    @Test
+    fun `export should return bounded utf8 content for fixed source`() {
+        val logFile = tempRoot.resolve("bilibili-bot.log")
+        Files.writeString(
+            logFile,
+            "line-1\nline-2\nline-3\n",
+            StandardCharsets.UTF_8,
+        )
+        val facade = WebUiLogFacade(
+            sourceResolvers = mapOf(
+                "main" to { logFile.toFile() },
+            ),
+            maxTailLines = 2,
+        )
+
+        val exportText = facade.exportLogText("main", tailLines = 20)
+
+        assertNotNull(exportText)
+        assertFalse(exportText.contains("line-1"))
+        assertTrue(exportText.contains("line-2"))
+        assertTrue(exportText.contains("line-3"))
+    }
 }

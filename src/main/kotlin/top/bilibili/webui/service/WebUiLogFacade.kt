@@ -3,6 +3,7 @@ package top.bilibili.webui.service
 import top.bilibili.webui.model.WebUiLogSourceDto
 import top.bilibili.webui.model.WebUiLogSourceListDto
 import top.bilibili.webui.model.WebUiLogWindowDto
+import top.bilibili.webui.model.WebUiLogClearResultDto
 import java.io.File
 import java.nio.charset.StandardCharsets
 
@@ -11,7 +12,7 @@ import java.nio.charset.StandardCharsets
  */
 class WebUiLogFacade(
     private val sourceResolvers: Map<String, () -> File?> = defaultLogSourceResolvers(),
-    private val maxTailLines: Int = 200,
+    private val maxTailLines: Int = 500,
 ) {
     /**
      * 返回当前允许暴露给管理页的固定日志来源。
@@ -31,12 +32,7 @@ class WebUiLogFacade(
      * 只按固定 source id 读取 UTF-8 tail 窗口；未知或危险 source 一律拒绝。
      */
     fun readLogWindow(sourceId: String, tailLines: Int): WebUiLogWindowDto? {
-        val resolver = sourceResolvers[sourceId] ?: return null
-        if (sourceId.contains("..") || sourceId.contains('/') || sourceId.contains('\\')) {
-            return null
-        }
-
-        val logFile = resolver() ?: return null
+        val logFile = resolveFixedLogFile(sourceId) ?: return null
         val availableTailLines = tailLinePresets()
         if (!logFile.exists() || !logFile.isFile) {
             return WebUiLogWindowDto(
@@ -66,6 +62,52 @@ class WebUiLogFacade(
             hasMore = lines.size > windowLines.size,
             sourceMissing = false,
         )
+    }
+
+    /**
+     * 清空固定日志源时只截断已解析的白名单文件；缺失文件返回可显示状态而不是创建新文件。
+     */
+    fun clearLogSource(sourceId: String): WebUiLogClearResultDto? {
+        val logFile = resolveFixedLogFile(sourceId) ?: return null
+        if (!logFile.exists() || !logFile.isFile) {
+            return WebUiLogClearResultDto(
+                sourceId = sourceId,
+                title = defaultLogSourceTitle(sourceId),
+                cleared = false,
+                sourceMissing = true,
+                bytesBefore = 0L,
+                lastModifiedEpochMillis = 0L,
+            )
+        }
+
+        val bytesBefore = logFile.length()
+        logFile.writeText("", StandardCharsets.UTF_8)
+        return WebUiLogClearResultDto(
+            sourceId = sourceId,
+            title = defaultLogSourceTitle(sourceId),
+            cleared = true,
+            sourceMissing = false,
+            bytesBefore = bytesBefore,
+            lastModifiedEpochMillis = logFile.lastModified(),
+        )
+    }
+
+    /**
+     * 导出日志复用 tail 边界，避免下载接口绕开页面读取窗口的大小限制。
+     */
+    fun exportLogText(sourceId: String, tailLines: Int): String? {
+        return readLogWindow(sourceId, tailLines)?.text
+    }
+
+    /**
+     * 固定日志源解析集中做 source id 校验，所有读取、清空和导出入口共用同一安全边界。
+     */
+    private fun resolveFixedLogFile(sourceId: String): File? {
+        val resolver = sourceResolvers[sourceId] ?: return null
+        if (sourceId.contains("..") || sourceId.contains('/') || sourceId.contains('\\')) {
+            return null
+        }
+        return resolver()
     }
 
     /**

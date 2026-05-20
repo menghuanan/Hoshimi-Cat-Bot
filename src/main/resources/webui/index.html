@@ -707,77 +707,46 @@
 
             <section class="page page-logs" data-view="logs" hidden>
                 <div class="log-toolbar">
-                    <div class="fake-select fake-select--compact">
-                        <span>全部等级</span>
-                        <svg viewBox="0 0 24 24"><use href="#icon-chevron"></use></svg>
-                    </div>
-                    <div class="fake-select fake-select--compact">
-                        <span>全部模块</span>
-                        <svg viewBox="0 0 24 24"><use href="#icon-chevron"></use></svg>
-                    </div>
-                    <div class="fake-search fake-search--wide">
+                    <label class="log-control">
+                        <span>日志来源</span>
+                        <select id="log-source-filter" class="log-select" aria-label="日志来源">
+                            <option value="">加载中</option>
+                        </select>
+                    </label>
+                    <label class="log-control">
+                        <span>日志等级</span>
+                        <select id="log-level-filter" class="log-select" aria-label="日志等级">
+                            <option value="ALL">全部等级</option>
+                            <option value="TRACE">TRACE</option>
+                            <option value="DEBUG">DEBUG</option>
+                            <option value="INFO">INFO</option>
+                            <option value="WARN">WARN</option>
+                            <option value="ERROR">ERROR</option>
+                        </select>
+                    </label>
+                    <label class="log-control">
+                        <span>模块</span>
+                        <select id="log-module-filter" class="log-select" aria-label="模块">
+                            <option value="ALL">全部模块</option>
+                        </select>
+                    </label>
+                    <label class="log-search-field">
                         <svg viewBox="0 0 24 24" class="search-icon"><use href="#icon-search"></use></svg>
-                        <span>搜索日志内容</span>
-                    </div>
-                    <label class="fake-check fake-check--checked">
-                        <span class="fake-box"></span>
+                        <input id="log-search-input" type="search" autocomplete="off" placeholder="搜索日志内容" aria-label="搜索日志内容">
+                    </label>
+                    <label class="log-check">
+                        <input id="log-auto-refresh" type="checkbox" checked>
                         <span>自动刷新</span>
                     </label>
-                    <span class="btn btn-secondary btn-small">清空日志</span>
-                    <span class="btn btn-secondary btn-small">导出日志</span>
+                    <button id="log-clear-button" class="btn btn-secondary btn-small" type="button">清空日志</button>
+                    <button id="log-export-button" class="btn btn-secondary btn-small" type="button">导出日志</button>
+                    <span id="log-status" class="log-status" role="status">等待加载日志</span>
                 </div>
 
                 <section class="panel log-panel">
-                    <div class="log-list">
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:45:10</span>
-                            <span class="log-level log-level-info">INFO</span>
-                            <span class="log-message">[WebSocket] 客户端连接成功 127.0.0.1:54321</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:44:21</span>
-                            <span class="log-level log-level-info">INFO</span>
-                            <span class="log-message">[推送] 直播推送成功：米哈游Official</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:40:12</span>
-                            <span class="log-level log-level-info">INFO</span>
-                            <span class="log-message">[推送] 动态推送成功：LexBurner</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:35:48</span>
-                            <span class="log-level log-level-info">INFO</span>
-                            <span class="log-message">[推送] 直播推送成功：老番茄</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:30:05</span>
-                            <span class="log-level log-level-info">INFO</span>
-                            <span class="log-message">[推送] 动态推送成功：老师好我叫何同学</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:28:11</span>
-                            <span class="log-level log-level-info">INFO</span>
-                            <span class="log-message">[推送] 直播推送成功：绘梨Kuma</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:23:33</span>
-                            <span class="log-level log-level-warn">WARN</span>
-                            <span class="log-message">[QQ] 收到未知消息类型：GroupRecall</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:20:10</span>
-                            <span class="log-level log-level-error">ERROR</span>
-                            <span class="log-message">[配置] 推送失败：目标群 987654321 不存在</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:18:45</span>
-                            <span class="log-level log-level-warn">WARN</span>
-                            <span class="log-message">[WebSocket] 客户端重新断开 127.0.0.1:54321</span>
-                        </div>
-                        <div class="log-row">
-                            <span class="log-time">2024-05-22 16:16:22</span>
-                            <span class="log-level log-level-info">INFO</span>
-                            <span class="log-message">[系统] 定时任务执行完成，耗时 245ms</span>
+                    <div class="log-list" data-log-list aria-live="polite">
+                        <div class="log-row log-row--empty">
+                            <span class="log-message">日志加载中</span>
                         </div>
                     </div>
                 </section>

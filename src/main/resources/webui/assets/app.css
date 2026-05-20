@@ -1443,6 +1443,80 @@ input:focus {
     max-width: 160px;
 }
 
+.log-control {
+    display: grid;
+    gap: 4px;
+    min-width: 126px;
+}
+
+.log-control span {
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.log-select,
+.log-search-field input {
+    min-height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-strong);
+    color: var(--text-strong);
+    font: inherit;
+    font-size: 0.82rem;
+}
+
+.log-select {
+    width: 100%;
+    padding: 0 10px;
+}
+
+.log-search-field {
+    position: relative;
+    flex: 1 1 260px;
+    min-width: 220px;
+}
+
+.log-search-field .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    width: 15px;
+    height: 15px;
+    color: var(--muted);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.log-search-field input {
+    width: 100%;
+    padding: 0 12px 0 34px;
+}
+
+.log-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    color: var(--muted-strong);
+    font-size: 0.82rem;
+    font-weight: 700;
+    user-select: none;
+}
+
+.log-check input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--brand);
+}
+
+.log-status {
+    flex: 1 1 180px;
+    color: var(--muted);
+    font-size: 0.76rem;
+    text-align: right;
+}
+
 .fake-check {
     display: inline-flex;
     align-items: center;
@@ -1494,7 +1568,7 @@ input:focus {
 
 .log-row {
     display: grid;
-    grid-template-columns: 138px 56px minmax(0, 1fr);
+    grid-template-columns: 150px 56px minmax(120px, 180px) minmax(0, 1fr);
     gap: 10px;
     align-items: center;
     padding: 7px 0;
@@ -1539,6 +1613,23 @@ input:focus {
 .log-message {
     color: var(--muted-strong);
     font-size: 0.84rem;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.log-module {
+    color: var(--muted);
+    font-size: 0.74rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.log-row--empty {
+    grid-template-columns: 1fr;
+    min-height: 128px;
+    place-items: center;
+    color: var(--muted);
 }
 
 @media (max-width: 1400px) {
@@ -1591,5 +1682,17 @@ input:focus {
 
     .subscription-controls {
         flex-wrap: wrap;
+    }
+
+    .log-status {
+        text-align: left;
+    }
+
+    .log-row {
+        grid-template-columns: 118px 56px minmax(0, 1fr);
+    }
+
+    .log-module {
+        grid-column: 1 / -1;
     }
 }
