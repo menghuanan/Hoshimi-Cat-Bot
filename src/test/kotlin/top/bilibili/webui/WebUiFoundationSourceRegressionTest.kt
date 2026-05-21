@@ -258,6 +258,8 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellScript.contains("开启随机模板"))
         assertTrue(shellScript.contains("templateExplainText"))
         assertTrue(shellScript.contains("targetGroups"))
+        assertTrue(shellScript.contains("""data-multi-select="targetGroups""""))
+        assertFalse(shellScript.contains("""<select name="targetGroups" multiple"""))
         assertTrue(shellScript.contains("暂无过滤器"))
         assertTrue(shellScript.contains("暂无模板"))
         assertTrue(shellScript.contains("暂无atall信息"))

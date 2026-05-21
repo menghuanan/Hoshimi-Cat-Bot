@@ -1301,6 +1301,96 @@ select:focus {
     gap: 12px;
 }
 
+/* 目标群聊多选做成下拉式控件，避免原生 multiple 列表占用表单高度。 */
+.multi-select {
+    position: relative;
+}
+
+.multi-select-trigger {
+    width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-strong);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.multi-select-trigger[aria-expanded="true"],
+.multi-select-trigger:focus {
+    border-color: rgba(45, 108, 246, 0.55);
+    box-shadow: 0 0 0 3px rgba(45, 108, 246, 0.12);
+}
+
+.multi-select-trigger span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.multi-select-chevron {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    color: var(--muted);
+}
+
+.multi-select-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 5;
+    display: grid;
+    gap: 2px;
+    max-height: 184px;
+    overflow: auto;
+    padding: 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 12px;
+    background: var(--surface-strong);
+    box-shadow: var(--shadow-md);
+}
+
+.multi-select-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    color: var(--text-strong);
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.multi-select-option:hover {
+    background: var(--surface-soft);
+}
+
+.multi-select-option input {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    accent-color: var(--brand);
+}
+
+.multi-select-option.is-disabled {
+    color: var(--muted);
+    cursor: default;
+}
+
 .template-content-box {
     width: 100%;
     aspect-ratio: 1 / 1;

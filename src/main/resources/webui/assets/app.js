@@ -972,12 +972,19 @@ function renderAtAllForm(item = null) {
     const targets = getCurrentSubscriptionTargets();
     setSubscriptionEditTitle(item ? "编辑at全体" : "添加at全体");
     const targetOptions = targets.length === 0
-        ? '<option value="" disabled>暂无可选群聊</option>'
+        ? '<div class="multi-select-option is-disabled">暂无可选群聊</div>'
         : targets.map((target) => {
             const formatted = formatSubscriptionSubject(target);
-            const selected = item?.groups?.includes(target) ? " selected" : "";
-            return `<option value="${escapeHtml(target)}"${selected}>${escapeHtml(formatted.value)}</option>`;
+            const checked = item?.groups?.includes(target) ? " checked" : "";
+            return `
+                <label class="multi-select-option">
+                    <input type="checkbox" name="targetGroups" value="${escapeHtml(target)}"${checked}>
+                    <span>${escapeHtml(formatted.value)}</span>
+                </label>
+            `;
         }).join("");
+    const selectedTargets = targets.filter((target) => item?.groups?.includes(target));
+    const selectedLabel = formatMultiSelectSummary(selectedTargets);
     subscriptionEditActionPanel.innerHTML = `
         <form class="subscription-config-form" data-config-form="atall">
             <input type="hidden" name="key" value="${escapeHtml(item?.key || "")}">
@@ -989,9 +996,17 @@ function renderAtAllForm(item = null) {
             </label>
             <label class="field">
                 <span>目标群聊</span>
-                <select name="targetGroups" multiple size="4">
-                    ${targetOptions}
-                </select>
+                <div class="multi-select" data-multi-select="targetGroups">
+                    <button class="multi-select-trigger" type="button" data-multi-select-trigger aria-expanded="false">
+                        <span data-multi-select-label>${escapeHtml(selectedLabel)}</span>
+                        <svg viewBox="0 0 24 24" class="multi-select-chevron" aria-hidden="true">
+                            <use href="#icon-chevron"></use>
+                        </svg>
+                    </button>
+                    <div class="multi-select-menu" data-multi-select-menu hidden>
+                        ${targetOptions}
+                    </div>
+                </div>
             </label>
             <div class="modal-actions subscription-config-footer" data-config-footer>
                 <button class="btn btn-secondary" type="button" data-config-cancel="atall">取消</button>
@@ -1009,6 +1024,56 @@ function renderAtAllForm(item = null) {
 function getCurrentSubscriptionTargets() {
     const item = subscriptionState.items.find((candidate) => candidate.id === subscriptionState.editingItemId);
     return Array.isArray(item?.targets) ? item.targets : [];
+}
+
+/**
+ * 多选目标群聊在收起状态显示“请选择”或首个群号 +N，避免按钮被长列表撑开。
+ */
+function formatMultiSelectSummary(values) {
+    if (!Array.isArray(values) || values.length === 0) {
+        return "请选择目标群聊";
+    }
+    const formatted = values.map((value) => formatSubscriptionSubject(value).value);
+    return formatted.length === 1 ? formatted[0] : `${formatted[0]} +${formatted.length - 1}`;
+}
+
+/**
+ * 自定义多选框只展开当前一个菜单，保持它像普通选择框一样操作。
+ */
+function toggleMultiSelect(multiSelect) {
+    if (!multiSelect) {
+        return;
+    }
+    const menu = multiSelect.querySelector("[data-multi-select-menu]");
+    const trigger = multiSelect.querySelector("[data-multi-select-trigger]");
+    const willOpen = Boolean(menu?.hidden);
+    closeMultiSelectMenus();
+    menu?.toggleAttribute("hidden", !willOpen);
+    trigger?.setAttribute("aria-expanded", String(willOpen));
+}
+
+/**
+ * 关闭全部多选下拉菜单，避免弹窗里保留多个浮层。
+ */
+function closeMultiSelectMenus() {
+    subscriptionEditModal?.querySelectorAll("[data-multi-select]").forEach((multiSelect) => {
+        multiSelect.querySelector("[data-multi-select-menu]")?.setAttribute("hidden", "");
+        multiSelect.querySelector("[data-multi-select-trigger]")?.setAttribute("aria-expanded", "false");
+    });
+}
+
+/**
+ * 目标群聊勾选变化后同步收起态文案，提交时仍直接读取 checkbox 值。
+ */
+function updateMultiSelectLabel(multiSelect) {
+    if (!multiSelect) {
+        return;
+    }
+    const values = Array.from(multiSelect.querySelectorAll('input[name="targetGroups"]:checked')).map((input) => input.value);
+    const label = multiSelect.querySelector("[data-multi-select-label]");
+    if (label) {
+        label.textContent = formatMultiSelectSummary(values);
+    }
 }
 
 /**
@@ -1117,7 +1182,7 @@ async function submitTemplateForm(form) {
 async function submitAtAllForm(form) {
     const oldKey = form.elements.key.value;
     const oldItem = subscriptionState.editingLists.atall.find((item) => item.key === oldKey);
-    const targetGroups = Array.from(form.elements.targetGroups?.selectedOptions || []).map((option) => option.value);
+    const targetGroups = Array.from(form.querySelectorAll('input[name="targetGroups"]:checked')).map((input) => input.value);
     if (targetGroups.length === 0) {
         setSubscriptionEditStatus("目标群聊必须至少选择一个");
         return;
@@ -1924,6 +1989,14 @@ if (closeSubscriptionEditButton) {
 if (subscriptionEditModal) {
     // 编辑弹窗内部使用事件代理，列表刷新和表单切换后不需要重新绑定按钮。
     subscriptionEditModal.addEventListener("click", (event) => {
+        const multiSelectTrigger = event.target.closest("[data-multi-select-trigger]");
+        if (multiSelectTrigger) {
+            toggleMultiSelect(multiSelectTrigger.closest("[data-multi-select]"));
+            return;
+        }
+        if (!event.target.closest("[data-multi-select]")) {
+            closeMultiSelectMenus();
+        }
         const actionButton = event.target.closest("[data-edit-action]");
         if (actionButton) {
             const action = actionButton.dataset.editAction;
@@ -2000,6 +2073,11 @@ if (subscriptionEditModal) {
         const randomToggle = event.target.closest("[data-template-random-toggle]");
         if (randomToggle) {
             toggleTemplateRandom(randomToggle);
+            return;
+        }
+        const targetGroupOption = event.target.closest('input[name="targetGroups"]');
+        if (targetGroupOption) {
+            updateMultiSelectLabel(targetGroupOption.closest("[data-multi-select]"));
         }
     });
 }
