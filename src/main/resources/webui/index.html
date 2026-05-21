@@ -23,10 +23,6 @@
         <circle cx="12" cy="12" r="3.3" fill="none" stroke="currentColor" stroke-width="1.7"/>
         <path d="M12 3.8v2.1M12 18.1v2.1M3.8 12h2.1M18.1 12h2.1M6 6l1.5 1.5M16.5 16.5 18 18M18 6l-1.5 1.5M7.5 16.5 6 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
     </symbol>
-    <symbol id="icon-switch" viewBox="0 0 24 24">
-        <rect x="3.5" y="7.5" width="17" height="9" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
-        <circle cx="9" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7"/>
-    </symbol>
     <symbol id="icon-subscriptions" viewBox="0 0 24 24">
         <rect x="4" y="5" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
         <path d="M8 9h8M8 12h6M8 15h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
@@ -143,12 +139,6 @@
                     <use href="#icon-settings"></use>
                 </svg>
                 <span>系统配置</span>
-            </button>
-            <button class="nav-item" type="button" data-nav-target="features" aria-pressed="false">
-                <svg viewBox="0 0 24 24" class="nav-icon">
-                    <use href="#icon-switch"></use>
-                </svg>
-                <span>功能开关</span>
             </button>
             <button class="nav-item" type="button" data-nav-target="subscriptions" aria-pressed="false">
                 <svg viewBox="0 0 24 24" class="nav-icon">
@@ -467,66 +457,6 @@
                             </div>
                         </div>
                     </section>
-                </div>
-            </section>
-
-            <section class="page page-features" data-view="features" hidden>
-                <div class="section-head">
-                    <div>
-                        <h2>功能开关</h2>
-                        <p>开启或关闭 bot 的各项功能</p>
-                    </div>
-                    <svg viewBox="0 0 24 24" class="section-arrow"><use href="#icon-chevron"></use></svg>
-                </div>
-
-                <div class="feature-grid">
-                    <article class="feature-card">
-                        <span class="feature-icon feature-icon--green"><svg viewBox="0 0 24 24"><use href="#icon-tv"></use></svg></span>
-                        <h3>直播推送</h3>
-                        <p>推送 UP 主直播提醒</p>
-                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                    </article>
-                    <article class="feature-card">
-                        <span class="feature-icon feature-icon--purple"><svg viewBox="0 0 24 24"><use href="#icon-chat"></use></svg></span>
-                        <h3>动态推送</h3>
-                        <p>推送 UP 主动态提醒</p>
-                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                    </article>
-                    <article class="feature-card">
-                        <span class="feature-icon feature-icon--orange"><svg viewBox="0 0 24 24"><use href="#icon-users"></use></svg></span>
-                        <h3>群消息回复</h3>
-                        <p>处理群聊中的回复消息</p>
-                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                    </article>
-                    <article class="feature-card">
-                        <span class="feature-icon feature-icon--blue"><svg viewBox="0 0 24 24"><use href="#icon-link"></use></svg></span>
-                        <h3>链接开关</h3>
-                        <p>自动解析链接并展开</p>
-                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                    </article>
-                    <article class="feature-card">
-                        <span class="feature-icon feature-icon--pink"><svg viewBox="0 0 24 24"><use href="#icon-heart"></use></svg></span>
-                        <h3>自动点赞</h3>
-                        <p>自动给内容点赞</p>
-                        <span class="switch" aria-hidden="true"><span></span></span>
-                    </article>
-                    <article class="feature-card">
-                        <span class="feature-icon feature-icon--cyan"><svg viewBox="0 0 24 24"><use href="#icon-chat"></use></svg></span>
-                        <h3>命令处理</h3>
-                        <p>处理群内 bot 指令</p>
-                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                    </article>
-                    <article class="feature-card">
-                        <span class="feature-icon feature-icon--teal"><svg viewBox="0 0 24 24"><use href="#icon-shield"></use></svg></span>
-                        <h3>防撤回</h3>
-                        <p>保留消息撤回记录</p>
-                        <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                    </article>
-                    <article class="feature-card feature-card--more">
-                        <span class="feature-icon feature-icon--gray"><svg viewBox="0 0 24 24"><use href="#icon-dots"></use></svg></span>
-                        <h3>更多功能</h3>
-                        <p>更多扩展能力</p>
-                    </article>
                 </div>
             </section>
 

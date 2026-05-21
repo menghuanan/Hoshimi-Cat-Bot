@@ -8,7 +8,6 @@ const views = new Map(
 const viewTitles = {
     home: "首页",
     settings: "系统配置",
-    features: "功能开关",
     subscriptions: "订阅管理",
     logs: "日志",
 };

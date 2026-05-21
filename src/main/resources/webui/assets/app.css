@@ -604,15 +604,13 @@ select:focus {
 }
 
 .panel-header h2,
-.section-head h2,
 .page-head h2 {
     color: var(--text-strong);
     font-size: 1rem;
     font-weight: 800;
 }
 
-.panel-header p,
-.section-head p {
+.panel-header p {
     color: var(--muted);
     font-size: 0.82rem;
     line-height: 1.5;
@@ -1465,81 +1463,6 @@ select:focus {
     background: linear-gradient(135deg, #ef4444, #f97373);
 }
 
-/* 功能开关页使用八宫格布局，右下角“更多功能”卡片只保留展示态。 */
-.section-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-.section-arrow {
-    width: 16px;
-    height: 16px;
-    color: var(--muted);
-}
-
-.feature-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-}
-
-.feature-card {
-    min-height: 156px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 18px 14px 14px;
-    text-align: center;
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    background: var(--surface);
-    box-shadow: var(--shadow-md);
-}
-
-.feature-card--more {
-    justify-content: center;
-}
-
-.feature-icon {
-    width: 44px;
-    height: 44px;
-    display: grid;
-    place-items: center;
-    border-radius: 16px;
-    color: #fff;
-}
-
-.feature-icon svg {
-    width: 24px;
-    height: 24px;
-}
-
-.feature-icon--green { background: linear-gradient(135deg, #2fc96d, #28b95c); }
-.feature-icon--purple { background: linear-gradient(135deg, #7b5cff, #5f47e5); }
-.feature-icon--orange { background: linear-gradient(135deg, #ff9b3d, #ff7f14); }
-.feature-icon--blue { background: linear-gradient(135deg, #3f8dff, #2d6cf6); }
-.feature-icon--pink { background: linear-gradient(135deg, #ff6aa0, #ff4f89); }
-.feature-icon--cyan { background: linear-gradient(135deg, #39bfdc, #1f9fc0); }
-.feature-icon--teal { background: linear-gradient(135deg, #35b7aa, #26968b); }
-.feature-icon--gray { background: linear-gradient(135deg, #b9c0d0, #9fa8bc); }
-
-.feature-card h3 {
-    color: var(--text-strong);
-    font-size: 0.92rem;
-    font-weight: 800;
-}
-
-.feature-card p {
-    color: var(--muted);
-    font-size: 0.74rem;
-    line-height: 1.4;
-}
-
 /* 订阅管理页现在由接口数据驱动，筛选、搜索和卡片信息块都在前端运行态渲染。 */
 .page-subscriptions {
     min-height: calc(100vh - 96px);
@@ -2070,10 +1993,6 @@ select:focus {
         grid-column: span 1;
     }
 
-    .feature-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
     .subscription-grid {
         grid-template-columns: repeat(4, 320px);
     }
@@ -2095,7 +2014,6 @@ select:focus {
     .metric-grid,
     .dashboard-grid,
     .config-grid,
-    .feature-grid,
     .subscription-grid {
         grid-template-columns: 1fr;
     }
