@@ -10,11 +10,13 @@ import top.bilibili.webui.model.WebUiSubscriptionListDto
 
 /**
  * WebUI 配置 facade 负责把各配置文件的当前只读视图映射为独立 DTO，避免跨文件泄露边界。
+ * BiliData 文件修改时间只作为旧订阅卡片缺少管理更新时间时的展示兜底。
  */
 class WebUiConfigFacade(
     private val biliConfigProvider: () -> BiliConfig = { runCatching { BiliConfigManager.config }.getOrDefault(BiliConfig()) },
     private val biliDataProvider: () -> BiliData = { runCatching { BiliConfigManager.data }.getOrDefault(BiliData) },
     private val botConfigProvider: () -> BotConfig = { runCatching { ConfigManager.botConfig }.getOrDefault(BotConfig()) },
+    private val biliDataModifiedAtProvider: () -> Long = { BiliConfigManager.dataFileLastModifiedEpochMillis() },
 ) {
     /**
      * `BiliConfig.yml` 视图只暴露只读快照和脱敏后的敏感字段。
@@ -48,7 +50,10 @@ class WebUiConfigFacade(
      * 订阅管理页读取卡片级聚合视图，避免浏览器端从完整字段树里推导业务关系。
      */
     fun readSubscriptions(): WebUiSubscriptionListDto {
-        return buildSubscriptionOverview(biliDataProvider())
+        return buildSubscriptionOverview(
+            data = biliDataProvider(),
+            fallbackUpdatedAtEpochMillis = biliDataModifiedAtProvider(),
+        )
     }
 
     /**

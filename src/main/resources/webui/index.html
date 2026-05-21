@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>dynamic-bot WebUI Shell</title>
     <script src="/assets/theme.js"></script>
-    <link rel="stylesheet" href="/assets/app.css?v=subscriptions-card-flow-v5">
+    <link rel="stylesheet" href="/assets/app.css?v=subscriptions-card-flow-v9">
 </head>
 <body class="dashboard-page">
 <svg aria-hidden="true" focusable="false" class="svg-sprite">
@@ -534,7 +534,7 @@
                 <div class="subscription-toolbar">
                     <div class="tabs-row tabs-row--plain">
                         <button class="tab is-active" type="button" data-subscription-filter="all" aria-pressed="true">全部</button>
-                        <button class="tab" type="button" data-subscription-filter="dynamic" aria-pressed="false">直播与动态</button>
+                        <button class="tab" type="button" data-subscription-filter="dynamic" aria-pressed="false">订阅</button>
                         <button class="tab" type="button" data-subscription-filter="bangumi" aria-pressed="false">番剧</button>
                         <button class="tab" type="button" data-subscription-filter="group" aria-pressed="false">分组</button>
                     </div>
@@ -668,12 +668,29 @@
             <button id="close-subscription-edit" class="modal-close" type="button" aria-label="关闭编辑订阅窗口">×</button>
         </div>
         <div class="subscription-actions-row">
-            <button class="btn btn-secondary" type="button" data-edit-action="filter">添加过滤器</button>
-            <button class="btn btn-secondary" type="button" data-edit-action="template">添加模板</button>
-            <button class="btn btn-secondary" type="button" data-edit-action="atall">开启at全体</button>
-            <button class="btn btn-secondary" type="button" data-edit-action="theme">修改主题色</button>
+            <button class="btn btn-secondary" type="button" data-edit-action="filter">编辑过滤器</button>
+            <button class="btn btn-secondary" type="button" data-edit-action="template">编辑模板</button>
+            <button class="btn btn-secondary" type="button" data-edit-action="atall">编辑at全体</button>
+            <button class="btn btn-secondary" type="button" data-edit-action="theme">编辑主题色</button>
         </div>
         <p id="subscription-edit-status" class="modal-status" aria-live="polite"></p>
+    </section>
+</div>
+<div id="subscription-delete-modal" class="modal-backdrop" hidden>
+    <section class="subscription-modal-card subscription-modal-card--compact" role="dialog" aria-modal="true" aria-labelledby="subscription-delete-title">
+        <div class="modal-head">
+            <h2 id="subscription-delete-title">删除订阅</h2>
+            <button id="close-subscription-delete" class="modal-close" type="button" aria-label="关闭删除订阅窗口">×</button>
+        </div>
+        <div class="subscription-delete-body">
+            <p id="subscription-delete-summary">确认删除这个订阅吗？</p>
+            <p>删除后该UID、番剧、分组下的所有信息将会丢失，包括推送目标、过滤器、模板、at全体和主题色。</p>
+        </div>
+        <p id="subscription-delete-status" class="modal-status" aria-live="polite"></p>
+        <div class="modal-actions subscription-delete-actions">
+            <button id="cancel-subscription-delete" class="btn btn-secondary" type="button">取消</button>
+            <button id="confirm-subscription-delete" class="btn btn-primary subscription-delete-confirm" type="button">确认删除</button>
+        </div>
     </section>
 </div>
 <div id="change-password-modal" class="modal-backdrop" hidden>
@@ -703,6 +720,6 @@
         </form>
     </section>
 </div>
-<script src="/assets/app.js?v=subscriptions-card-flow-v5"></script>
+<script src="/assets/app.js?v=subscriptions-card-flow-v9"></script>
 </body>
 </html>

@@ -58,6 +58,7 @@ class WebUiConfigFacadeTest {
     private val originalDynamicColorByUid = BiliData.dynamicColorByUid.toMutableMap()
     private val originalAtAll = BiliData.atAll.toMutableMap()
     private val originalAtAllCooldownUntil = BiliData.atAllCooldownUntil.toMutableMap()
+    private val originalSubscriptionCardUpdatedAt = BiliData.subscriptionCardUpdatedAt.toMutableMap()
     private val originalGroup = BiliData.group.toMutableMap()
     private val originalBangumi = BiliData.bangumi.toMutableMap()
     private val originalLinkParseBlacklist = BiliData.linkParseBlacklist.toMutableSet()
@@ -74,6 +75,7 @@ class WebUiConfigFacadeTest {
         BiliData.dynamicColorByUid = originalDynamicColorByUid.toMutableMap()
         BiliData.atAll = originalAtAll.toMutableMap()
         BiliData.atAllCooldownUntil = originalAtAllCooldownUntil.toMutableMap()
+        BiliData.subscriptionCardUpdatedAt = originalSubscriptionCardUpdatedAt.toMutableMap()
         BiliData.group = originalGroup.toMutableMap()
         BiliData.bangumi = originalBangumi.toMutableMap()
         BiliData.linkParseBlacklist = originalLinkParseBlacklist.toMutableSet()
@@ -588,6 +590,11 @@ class WebUiConfigFacadeTest {
             atAll = mutableMapOf(
                 "onebot11:group:1" to mutableMapOf(123L to mutableSetOf(AtAllType.LIVE)),
             )
+            subscriptionCardUpdatedAt = mutableMapOf(
+                "dynamic:123" to 333L,
+                "group:team-a" to 444L,
+                "bangumi:456" to 555L,
+            )
             group = mutableMapOf(
                 "team-a" to Group(
                     name = "team-a",
@@ -621,8 +628,8 @@ class WebUiConfigFacadeTest {
         assertEquals(2, overview.dynamicCount)
         assertEquals(1, overview.bangumiCount)
         assertEquals(1, overview.groupCount)
-        assertEquals(listOf("直播", "动态"), dynamicCard.tags)
-        assertEquals(222L, dynamicCard.lastUpdatedEpochMillis)
+        assertEquals(listOf("订阅"), dynamicCard.tags)
+        assertEquals(333L, dynamicCard.lastUpdatedEpochMillis)
         assertEquals(listOf("onebot11:group:1", "onebot11:group:2"), dynamicCard.targets)
         assertTrue(dynamicCard.filterInfo.contains("group:1"))
         assertTrue(dynamicCard.templateNames.contains("DyOneMsg"))
@@ -634,9 +641,47 @@ class WebUiConfigFacadeTest {
         assertEquals("#112233", dynamicCard.themeColor)
         assertEquals(listOf("番剧"), bangumiCard.tags)
         assertEquals("#334455", bangumiCard.themeColor)
+        assertEquals(555L, bangumiCard.lastUpdatedEpochMillis)
         assertEquals("推送目标", groupCard.targetSectionTitle)
         assertEquals(listOf("onebot11:group:1072150397", "onebot11:group:12344555"), groupCard.targets)
         assertEquals("订阅UID: 123、789", groupCard.identifierLabel)
+        assertEquals(444L, groupCard.lastUpdatedEpochMillis)
+    }
+
+    /**
+     * 旧数据没有卡片级更新时间时，使用 BiliData 文件修改时间兜底，避免继续展示推送时间或暂无更新。
+     */
+    @Test
+    fun `subscription overview should fall back to data file update time when card timestamp is missing`() {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    last = 222L,
+                    lastLive = 111L,
+                    contacts = mutableSetOf("onebot11:group:1"),
+                ),
+            )
+            filter = mutableMapOf()
+            dynamicTemplatePolicyByScope = mutableMapOf()
+            liveTemplatePolicyByScope = mutableMapOf()
+            liveCloseTemplatePolicyByScope = mutableMapOf()
+            dynamicColorByUid = mutableMapOf()
+            atAll = mutableMapOf()
+            subscriptionCardUpdatedAt = mutableMapOf()
+            group = mutableMapOf()
+            bangumi = mutableMapOf()
+        }
+        val facade = WebUiConfigFacade(
+            biliConfigProvider = { BiliConfig() },
+            biliDataProvider = { BiliData },
+            botConfigProvider = { BotConfig() },
+            biliDataModifiedAtProvider = { 999L },
+        )
+
+        val dynamicCard = facade.readSubscriptions().items.first { it.id == "dynamic:123" }
+
+        assertEquals(999L, dynamicCard.lastUpdatedEpochMillis)
     }
 
     /**

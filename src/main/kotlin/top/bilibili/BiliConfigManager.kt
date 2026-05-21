@@ -58,6 +58,13 @@ object BiliConfigManager {
     }
 
     /**
+     * 读取 BiliData.yml 的最近修改时间，仅供 WebUI 旧卡片更新时间兜底展示。
+     */
+    fun dataFileLastModifiedEpochMillis(): Long {
+        return dataFile.takeIf { it.exists() }?.lastModified()?.coerceAtLeast(0L) ?: 0L
+    }
+
+    /**
      * 从磁盘加载主配置；文件不存在时创建默认配置。
      */
     private fun loadConfig(): BiliConfig {

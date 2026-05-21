@@ -13,13 +13,13 @@ import top.bilibili.webui.model.WebUiSubscriptionListDto
 /**
  * 订阅概览只读聚合 BiliData 中的订阅、过滤、模板、@全体和主题色，不参与任何配置写回。
  */
-internal fun buildSubscriptionOverview(data: BiliData): WebUiSubscriptionListDto {
+internal fun buildSubscriptionOverview(data: BiliData, fallbackUpdatedAtEpochMillis: Long = 0L): WebUiSubscriptionListDto {
     val dynamicItems = data.dynamic.entries
         .sortedWith(compareByDescending<Map.Entry<Long, SubData>> { maxOf(it.value.last, it.value.lastLive) }.thenBy { it.key })
-        .map { (uid, subscription) -> buildDynamicSubscriptionItem(data, uid, subscription) }
+        .map { (uid, subscription) -> buildDynamicSubscriptionItem(data, uid, subscription, fallbackUpdatedAtEpochMillis) }
     val groupItems = data.group.entries
         .sortedBy { it.key }
-        .map { (name, group) -> buildGroupSubscriptionItem(data, name, group.contacts) }
+        .map { (name, group) -> buildGroupSubscriptionItem(data, name, group.contacts, fallbackUpdatedAtEpochMillis) }
     val bangumiItems = data.bangumi.entries
         .sortedBy { it.key }
         .map { (seasonId, bangumi) ->
@@ -39,7 +39,7 @@ internal fun buildSubscriptionOverview(data: BiliData): WebUiSubscriptionListDto
                 atAllInfo = "未开启",
                 themeColor = bangumi.color.orEmpty(),
                 themeColorCount = if (bangumi.color.isNullOrBlank()) 0 else 1,
-                lastUpdatedEpochMillis = 0L,
+                lastUpdatedEpochMillis = subscriptionCardUpdatedAt(data, "bangumi:$seasonId", fallbackUpdatedAtEpochMillis),
             )
         }
     val items = (dynamicItems + groupItems + bangumiItems)
@@ -53,12 +53,13 @@ internal fun buildSubscriptionOverview(data: BiliData): WebUiSubscriptionListDto
 }
 
 /**
- * 动态订阅卡片保留直播与动态双标签，并以 last/lastLive 中较新的时间作为最后更新。
+ * 动态订阅卡片在 WebUI 中统一归类为订阅，更新时间只读取管理数据变更记录。
  */
 private fun buildDynamicSubscriptionItem(
     data: BiliData,
     uid: Long,
     subscription: SubData,
+    fallbackUpdatedAtEpochMillis: Long,
 ): WebUiSubscriptionItemDto {
     val scopes = subscriptionScopes(subscription)
     val templateNames = collectTemplateNames(data, uid, scopes)
@@ -68,7 +69,7 @@ private fun buildDynamicSubscriptionItem(
         title = subscription.name,
         identifierLabel = "UID: $uid",
         sourceId = uid,
-        tags = listOf("直播", "动态"),
+        tags = listOf("订阅"),
         targetSectionTitle = "推送目标",
         targets = subscription.contacts.sorted(),
         filterInfo = summarizeFilters(data, uid),
@@ -78,7 +79,7 @@ private fun buildDynamicSubscriptionItem(
         atAllInfo = summarizeAtAll(data, uid, scopes),
         themeColor = resolveDynamicColor(data, uid, scopes),
         themeColorCount = countThemeColors(data, uid),
-        lastUpdatedEpochMillis = maxOf(subscription.last, subscription.lastLive),
+        lastUpdatedEpochMillis = subscriptionCardUpdatedAt(data, "dynamic:$uid", fallbackUpdatedAtEpochMillis),
     )
 }
 
@@ -89,6 +90,7 @@ private fun buildGroupSubscriptionItem(
     data: BiliData,
     groupName: String,
     contacts: Set<String>,
+    fallbackUpdatedAtEpochMillis: Long,
 ): WebUiSubscriptionItemDto {
     val groupRef = "groupRef:$groupName"
     val linkedSubscriptions = data.dynamic.entries
@@ -114,10 +116,16 @@ private fun buildGroupSubscriptionItem(
         atAllInfo = atAllText,
         themeColor = "",
         themeColorCount = uids.sumOf { uid -> countThemeColors(data, uid) },
-        lastUpdatedEpochMillis = linkedSubscriptions.maxOfOrNull { (_, subscription) ->
-            maxOf(subscription.last, subscription.lastLive)
-        } ?: 0L,
+        lastUpdatedEpochMillis = subscriptionCardUpdatedAt(data, "group:$groupName", fallbackUpdatedAtEpochMillis),
     )
+}
+
+/**
+ * WebUI 卡片更新时间只表达管理信息变更，不使用订阅内容的最近推送时间。
+ */
+private fun subscriptionCardUpdatedAt(data: BiliData, itemId: String, fallbackUpdatedAtEpochMillis: Long): Long {
+    return data.subscriptionCardUpdatedAt[itemId]?.takeIf { it > 0L }
+        ?: fallbackUpdatedAtEpochMillis.coerceAtLeast(0L)
 }
 
 /**

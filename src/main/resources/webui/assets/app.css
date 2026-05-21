@@ -34,6 +34,7 @@
     --teal-soft: #e5faf6;
     --shadow-lg: 0 18px 44px rgba(16, 34, 78, 0.08);
     --shadow-md: 0 10px 24px rgba(16, 34, 78, 0.06);
+    --primary-action-shadow: 0 12px 24px rgba(45, 108, 246, 0.24);
     --radius-xl: 22px;
     --radius-lg: 18px;
     --radius-md: 14px;
@@ -64,6 +65,7 @@ html[data-theme="dark"] {
     --muted-strong: #c3ccda;
     --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.34);
     --shadow-md: 0 10px 24px rgba(0, 0, 0, 0.28);
+    --primary-action-shadow: 0 12px 24px rgba(4, 12, 28, 0.42);
 }
 
 * {
@@ -1092,9 +1094,10 @@ select:focus {
 }
 
 .btn-primary {
+    border: 0;
     background: linear-gradient(135deg, #2d6cf6, #4f83ff);
     color: #fff;
-    box-shadow: 0 12px 24px rgba(45, 108, 246, 0.24);
+    box-shadow: var(--primary-action-shadow);
 }
 
 .btn-secondary {
@@ -1214,6 +1217,29 @@ select:focus {
     justify-content: flex-start;
     min-height: 36px;
     cursor: pointer;
+}
+
+/* 删除确认弹窗把高风险后果放在页面内展示，替代浏览器默认 confirm 的顶部提示。 */
+.subscription-delete-body {
+    display: grid;
+    gap: 8px;
+    padding: 8px 20px 0;
+    color: var(--muted-strong);
+    font-size: 0.84rem;
+    line-height: 1.6;
+}
+
+.subscription-delete-body p:first-child {
+    color: var(--text-strong);
+    font-weight: 800;
+}
+
+.subscription-delete-actions {
+    padding: 0 20px 20px;
+}
+
+.subscription-delete-confirm {
+    background: linear-gradient(135deg, #ef4444, #f97373);
 }
 
 /* 功能开关页使用八宫格布局，右下角“更多功能”卡片只保留展示态。 */

@@ -19,6 +19,7 @@ data class BiliDataWrapper(
     var dynamicColorByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
     var atAll: MutableMap<String, MutableMap<Long, MutableSet<AtAllType>>> = mutableMapOf(),
     var atAllCooldownUntil: MutableMap<String, Long> = mutableMapOf(),
+    var subscriptionCardUpdatedAt: MutableMap<String, Long> = mutableMapOf(),
     var group: MutableMap<String, Group> = mutableMapOf(),
     var bangumi: MutableMap<Long, Bangumi> = mutableMapOf(),
     var linkParseBlacklist: MutableSet<Long> = mutableSetOf(),
@@ -43,6 +44,7 @@ data class BiliDataWrapper(
                 dynamicColorByUid = biliData.dynamicColorByUid,
                 atAll = biliData.atAll,
                 atAllCooldownUntil = biliData.atAllCooldownUntil,
+                subscriptionCardUpdatedAt = biliData.subscriptionCardUpdatedAt,
                 group = biliData.group,
                 bangumi = biliData.bangumi,
                 linkParseBlacklist = biliData.linkParseBlacklist,
@@ -73,6 +75,7 @@ data class BiliDataWrapper(
             biliData.dynamicColorByUid = wrapper.dynamicColorByUid
             biliData.atAll = wrapper.atAll
             biliData.atAllCooldownUntil = wrapper.atAllCooldownUntil
+            biliData.subscriptionCardUpdatedAt = wrapper.subscriptionCardUpdatedAt
             biliData.group = wrapper.group
             biliData.bangumi = wrapper.bangumi
             biliData.linkParseBlacklist = wrapper.linkParseBlacklist
@@ -102,6 +105,7 @@ data class LegacyBiliDataWrapperV3(
     var dynamicColorByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
     var atAll: MutableMap<String, MutableMap<Long, MutableSet<AtAllType>>> = mutableMapOf(),
     var atAllCooldownUntil: MutableMap<String, Long> = mutableMapOf(),
+    var subscriptionCardUpdatedAt: MutableMap<String, Long> = mutableMapOf(),
     var group: MutableMap<String, Group> = mutableMapOf(),
     var bangumi: MutableMap<Long, Bangumi> = mutableMapOf(),
     var linkParseBlacklist: MutableSet<Long> = mutableSetOf(),
@@ -131,6 +135,7 @@ data class LegacyBiliDataWrapperV3(
             biliData.dynamicColorByUid = wrapper.dynamicColorByUid
             biliData.atAll = wrapper.atAll
             biliData.atAllCooldownUntil = wrapper.atAllCooldownUntil
+            biliData.subscriptionCardUpdatedAt = wrapper.subscriptionCardUpdatedAt
             biliData.group = wrapper.group
             biliData.bangumi = wrapper.bangumi
             biliData.linkParseBlacklist = wrapper.linkParseBlacklist

@@ -20,6 +20,7 @@ class BiliDataWrapperFeatureTest {
         BiliData.liveCloseTemplatePolicyByScope.clear()
         BiliData.dynamicColorByUid.clear()
         BiliData.atAll.clear()
+        BiliData.subscriptionCardUpdatedAt.clear()
     }
 
     @Test
@@ -116,5 +117,24 @@ class BiliDataWrapperFeatureTest {
         BiliData.dynamicTemplatePolicyByScope.getValue(scope).getValue(uid).templates += "TwoMsg"
 
         assertEquals(listOf("OneMsg"), wrapper.dynamicTemplatePolicyByScope[scope]?.get(uid)?.templates?.toList())
+    }
+
+    /**
+     * 订阅卡片管理更新时间属于持久化业务数据，重载后不能回退到推送内容时间。
+     */
+    @Test
+    fun `wrapper roundtrip should preserve subscription card update timestamps`() {
+        BiliData.subscriptionCardUpdatedAt = mutableMapOf(
+            "dynamic:123456" to 1779360000000L,
+            "group:team-a" to 1779360001000L,
+        )
+
+        val wrapper = BiliDataWrapper.from(BiliData)
+        BiliData.subscriptionCardUpdatedAt = mutableMapOf()
+
+        BiliDataWrapper.applyTo(wrapper, BiliData)
+
+        assertEquals(1779360000000L, BiliData.subscriptionCardUpdatedAt["dynamic:123456"])
+        assertEquals(1779360001000L, BiliData.subscriptionCardUpdatedAt["group:team-a"])
     }
 }

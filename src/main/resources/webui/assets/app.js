@@ -59,6 +59,12 @@ const subscriptionModalStatus = document.getElementById("subscription-modal-stat
 const subscriptionEditModal = document.getElementById("subscription-edit-modal");
 const closeSubscriptionEditButton = document.getElementById("close-subscription-edit");
 const subscriptionEditStatus = document.getElementById("subscription-edit-status");
+const subscriptionDeleteModal = document.getElementById("subscription-delete-modal");
+const closeSubscriptionDeleteButton = document.getElementById("close-subscription-delete");
+const cancelSubscriptionDeleteButton = document.getElementById("cancel-subscription-delete");
+const confirmSubscriptionDeleteButton = document.getElementById("confirm-subscription-delete");
+const subscriptionDeleteSummary = document.getElementById("subscription-delete-summary");
+const subscriptionDeleteStatus = document.getElementById("subscription-delete-status");
 const themePreferenceCookieName = window.WebUiTheme?.cookieName || "dynamic_bot_webui_theme";
 const runtimeRefreshIntervalMs = 30_000;
 const logRefreshIntervalMs = 5_000;
@@ -77,6 +83,7 @@ const subscriptionState = {
     items: [],
     loaded: false,
     editingItemId: "",
+    pendingDeleteItemId: "",
 };
 let logRefreshTimer = null;
 let logRequestSequence = 0;
@@ -282,10 +289,13 @@ function subscriptionAvatarClass(index) {
 }
 
 /**
- * 订阅标签复用现有 pill 色板，直播、动态、番剧分别落到固定颜色。
+ * 订阅标签复用现有 pill 色板，订阅、番剧和分组分别落到固定颜色。
  */
 function subscriptionTagClass(tag) {
     const normalizedTag = String(tag || "");
+    if (normalizedTag === "订阅") {
+        return "pill-blue";
+    }
     if (normalizedTag === "直播") {
         return "pill-gold";
     }
@@ -355,7 +365,7 @@ function formatSubscriptionCount(value, unit) {
 }
 
 /**
- * 最后更新时间使用后端聚合出的最近内容更新时间，缺失时显示暂无更新。
+ * 最后更新时间使用后端聚合出的卡片管理信息更新时间，缺失时显示暂无更新。
  */
 function formatSubscriptionUpdatedTime(epochMillis) {
     const value = Number(epochMillis);
@@ -397,7 +407,7 @@ function filteredSubscriptions() {
 function syncSubscriptionFilters() {
     const labels = {
         all: "全部",
-        dynamic: "直播与动态",
+        dynamic: "订阅",
         bangumi: "番剧",
         group: "分组",
     };
@@ -569,12 +579,49 @@ async function createSubscription() {
 }
 
 /**
- * 删除订阅前保留浏览器确认，避免误触时直接移除订阅及其附属配置。
+ * 删除订阅前打开页面内确认弹窗，避免浏览器默认 confirm 从顶部打断当前管理流。
  */
-async function deleteSubscription(itemId) {
-    if (!itemId || !window.confirm("确认删除这个订阅及其关联配置吗？")) {
+function openSubscriptionDeleteModal(itemId) {
+    const item = subscriptionState.items.find((candidate) => candidate.id === itemId);
+    if (!subscriptionDeleteModal || !item) {
         return;
     }
+    subscriptionState.pendingDeleteItemId = itemId;
+    if (subscriptionDeleteSummary) {
+        subscriptionDeleteSummary.textContent = `确认删除 ${item.title || item.identifierLabel || itemId} 吗？`;
+    }
+    if (subscriptionDeleteStatus) {
+        subscriptionDeleteStatus.textContent = "";
+        subscriptionDeleteStatus.classList.remove("is-success");
+    }
+    subscriptionDeleteModal.hidden = false;
+}
+
+/**
+ * 关闭删除确认弹窗时清空待删除 ID，防止取消后再次点击确认误删旧卡片。
+ */
+function closeSubscriptionDeleteModal() {
+    subscriptionState.pendingDeleteItemId = "";
+    if (subscriptionDeleteModal) {
+        subscriptionDeleteModal.hidden = true;
+    }
+}
+
+/**
+ * 删除确认按钮只读取弹窗保存的待删除 ID，确保用户看见后果说明后才发出删除请求。
+ */
+async function confirmSubscriptionDelete() {
+    const itemId = subscriptionState.pendingDeleteItemId;
+    if (!itemId) {
+        return;
+    }
+    await deleteSubscription(itemId);
+}
+
+/**
+ * 删除订阅请求只负责调用后端和刷新列表，交互确认由页面弹窗提前完成。
+ */
+async function deleteSubscription(itemId) {
     const response = await fetch(`/api/subscriptions/${encodeURIComponent(itemId)}`, {
         method: "DELETE",
         headers: buildAuthHeaders(),
@@ -589,6 +636,7 @@ async function deleteSubscription(itemId) {
         return;
     }
     await refreshSubscriptions();
+    closeSubscriptionDeleteModal();
 }
 
 /**
@@ -1332,14 +1380,32 @@ if (subscriptionList) {
         }
         const deleteButton = event.target.closest("[data-subscription-delete]");
         if (deleteButton) {
-            deleteSubscription(deleteButton.dataset.subscriptionDelete || "")
-                .catch((error) => setSubscriptionError(error.message || "删除失败"));
+            openSubscriptionDeleteModal(deleteButton.dataset.subscriptionDelete || "");
         }
     });
 }
 
 if (closeSubscriptionEditButton) {
     closeSubscriptionEditButton.addEventListener("click", closeSubscriptionEditModal);
+}
+
+if (closeSubscriptionDeleteButton) {
+    closeSubscriptionDeleteButton.addEventListener("click", closeSubscriptionDeleteModal);
+}
+
+if (cancelSubscriptionDeleteButton) {
+    cancelSubscriptionDeleteButton.addEventListener("click", closeSubscriptionDeleteModal);
+}
+
+if (confirmSubscriptionDeleteButton) {
+    // 删除确认按钮绑定真实删除请求，失败文案留在列表或弹窗状态区域展示。
+    confirmSubscriptionDeleteButton.addEventListener("click", () => {
+        confirmSubscriptionDelete().catch((error) => {
+            if (subscriptionDeleteStatus) {
+                subscriptionDeleteStatus.textContent = error.message || "删除失败";
+            }
+        });
+    });
 }
 
 document.querySelectorAll("[data-edit-action]").forEach((button) => {
@@ -1349,10 +1415,10 @@ document.querySelectorAll("[data-edit-action]").forEach((button) => {
             return;
         }
         const labels = {
-            filter: "添加过滤器",
-            template: "添加模板",
-            atall: "开启at全体",
-            theme: "修改主题色",
+            filter: "编辑过滤器",
+            template: "编辑模板",
+            atall: "编辑at全体",
+            theme: "编辑主题色",
         };
         subscriptionEditStatus.textContent = `${labels[button.dataset.editAction] || "编辑"}：配置入口已打开`;
         subscriptionEditStatus.classList.add("is-success");
@@ -1450,6 +1516,9 @@ document.addEventListener("keydown", (event) => {
     }
     if (subscriptionEditModal && !subscriptionEditModal.hidden) {
         closeSubscriptionEditModal();
+    }
+    if (subscriptionDeleteModal && !subscriptionDeleteModal.hidden) {
+        closeSubscriptionDeleteModal();
     }
 });
 

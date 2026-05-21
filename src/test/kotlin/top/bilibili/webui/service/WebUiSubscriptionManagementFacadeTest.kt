@@ -2,6 +2,7 @@ package top.bilibili.webui.service
 
 import kotlinx.coroutines.runBlocking
 import top.bilibili.AtAllType
+import top.bilibili.Bangumi
 import top.bilibili.BiliData
 import top.bilibili.DynamicFilter
 import top.bilibili.Group
@@ -23,6 +24,7 @@ class WebUiSubscriptionManagementFacadeTest {
     private val originalDynamicColorByUid = BiliData.dynamicColorByUid.toMutableMap()
     private val originalAtAll = BiliData.atAll.toMutableMap()
     private val originalAtAllCooldownUntil = BiliData.atAllCooldownUntil.toMutableMap()
+    private val originalSubscriptionCardUpdatedAt = BiliData.subscriptionCardUpdatedAt.toMutableMap()
     private val originalGroup = BiliData.group.toMutableMap()
     private val originalBangumi = BiliData.bangumi.toMutableMap()
 
@@ -36,6 +38,7 @@ class WebUiSubscriptionManagementFacadeTest {
         BiliData.dynamicColorByUid = originalDynamicColorByUid.toMutableMap()
         BiliData.atAll = originalAtAll.toMutableMap()
         BiliData.atAllCooldownUntil = originalAtAllCooldownUntil.toMutableMap()
+        BiliData.subscriptionCardUpdatedAt = originalSubscriptionCardUpdatedAt.toMutableMap()
         BiliData.group = originalGroup.toMutableMap()
         BiliData.bangumi = originalBangumi.toMutableMap()
     }
@@ -52,6 +55,7 @@ class WebUiSubscriptionManagementFacadeTest {
                 "为 $subject 订阅 Alice 成功!"
             },
             saveDataAction = { true },
+            currentTimeMillisProvider = { 1779360000000L },
         )
 
         val missing = facade.createSubscription(WebUiSubscriptionCreateRequestDto(type = "dynamic", uid = "123"))
@@ -62,6 +66,7 @@ class WebUiSubscriptionManagementFacadeTest {
         assertFalse(missing.success)
         assertEquals(listOf(123L to "onebot11:group:10001"), calls)
         assertTrue(created.success)
+        assertEquals(1779360000000L, BiliData.subscriptionCardUpdatedAt["dynamic:123"])
     }
 
     /**
@@ -76,6 +81,7 @@ class WebUiSubscriptionManagementFacadeTest {
                 "追番成功 [Test]"
             },
             saveDataAction = { true },
+            currentTimeMillisProvider = { 1779360001000L },
         )
 
         val invalid = facade.createSubscription(
@@ -88,6 +94,53 @@ class WebUiSubscriptionManagementFacadeTest {
         assertFalse(invalid.success)
         assertEquals(listOf("ss12345" to "onebot11:group:10001"), calls)
         assertTrue(created.success)
+        assertEquals(1779360001000L, BiliData.subscriptionCardUpdatedAt["bangumi:ss12345"])
+    }
+
+    /**
+     * ep 入口会在业务服务中解析到 season id，WebUI 卡片更新时间必须落到最终展示的番剧卡片 ID。
+     */
+    @Test
+    fun `create bangumi subscription by episode should record resolved season card update time`() = runBlocking {
+        val facade = WebUiSubscriptionManagementFacade(
+            followPgcAction = { _, subject ->
+                BiliData.bangumi[456L] = Bangumi(
+                    title = "Bangumi A",
+                    seasonId = 456L,
+                    mediaId = 789L,
+                    type = "bangumi",
+                    contacts = mutableSetOf(subject),
+                )
+                "追番成功 [Bangumi A]"
+            },
+            saveDataAction = { true },
+            currentTimeMillisProvider = { 1779360003000L },
+        )
+
+        val created = facade.createSubscription(
+            WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "ep12345", targetGroup = "10001"),
+        )
+
+        assertTrue(created.success)
+        assertEquals(1779360003000L, BiliData.subscriptionCardUpdatedAt["bangumi:456"])
+    }
+
+    /**
+     * 新增分组卡片时记录管理更新时间，避免尚无推送内容的卡片显示暂无更新。
+     */
+    @Test
+    fun `create group subscription should record card management update time`() = runBlocking {
+        val facade = WebUiSubscriptionManagementFacade(
+            saveDataAction = { true },
+            currentTimeMillisProvider = { 1779360002000L },
+        )
+
+        val created = facade.createSubscription(
+            WebUiSubscriptionCreateRequestDto(type = "group", groupName = "team-a", targetGroup = "10001"),
+        )
+
+        assertTrue(created.success)
+        assertEquals(1779360002000L, BiliData.subscriptionCardUpdatedAt["group:team-a"])
     }
 
     /**

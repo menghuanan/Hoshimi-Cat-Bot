@@ -16,9 +16,11 @@ import top.bilibili.webui.model.WebUiSubscriptionMutationResultDto
 
 /**
  * WebUI 订阅管理 facade 复用业务服务写入运行态，再通过 BiliConfigManager 统一持久化业务数据。
+ * 时钟通过构造参数注入，便于卡片管理更新时间在测试中保持确定性。
  */
 class WebUiSubscriptionManagementFacade(
     private val saveDataAction: () -> Boolean = { BiliConfigManager.saveData() },
+    private val currentTimeMillisProvider: () -> Long = { System.currentTimeMillis() },
     private val addDynamicAction: suspend (Long, String) -> String = { uid, subject ->
         DynamicService.addDirectSubscribe(uid, subject, isSelf = false)
     },
@@ -78,6 +80,7 @@ class WebUiSubscriptionManagementFacade(
         if (!isSuccessMessage(message)) {
             return validationFailure("UID或群号错误：$message")
         }
+        markSubscriptionCardUpdated("dynamic:$uid")
         return persistMutation(success("dynamic:$uid", message))
     }
 
@@ -112,6 +115,7 @@ class WebUiSubscriptionManagementFacade(
         } else {
             null
         }
+        markSubscriptionCardUpdated("group:$groupName")
         val message = bindMessage ?: "分组 $groupName 已保存"
         return persistMutation(success("group:$groupName", message))
     }
@@ -129,10 +133,12 @@ class WebUiSubscriptionManagementFacade(
         if (subject == null) errors += "推送群组必须填写"
         if (errors.isNotEmpty()) return validationFailure(errors)
 
+        val previousBangumiContacts = BiliData.bangumi.mapValues { (_, bangumi) -> bangumi.contacts.toSet() }
         val message = followPgcAction(bangumiId, subject!!)
         if (!isSuccessMessage(message)) {
             return validationFailure("番剧号或群号错误：$message")
         }
+        markBangumiCardUpdated(bangumiId, previousBangumiContacts)
         return persistMutation(success("bangumi:$bangumiId", message))
     }
 
@@ -162,6 +168,7 @@ class WebUiSubscriptionManagementFacade(
             .toList()
         linkedUids.forEach(::removeUidPayload)
         BiliData.group.remove(groupName)
+        BiliData.subscriptionCardUpdatedAt.remove("group:$groupName")
         removeScopedPayload(groupRef)
         return success("group:$groupName", "分组已删除")
     }
@@ -174,6 +181,7 @@ class WebUiSubscriptionManagementFacade(
         if (BiliData.bangumi.remove(seasonId) == null) {
             return validationFailure("番剧订阅不存在")
         }
+        BiliData.subscriptionCardUpdatedAt.remove("bangumi:$seasonId")
         return success("bangumi:$seasonId", "番剧订阅已删除")
     }
 
@@ -182,6 +190,7 @@ class WebUiSubscriptionManagementFacade(
      */
     private fun removeUidPayload(uid: Long) {
         BiliData.dynamic.remove(uid)
+        BiliData.subscriptionCardUpdatedAt.remove("dynamic:$uid")
         BiliData.filter.entries.removeIf { (_, filtersByUid) ->
             filtersByUid.remove(uid)
             filtersByUid.isEmpty()
@@ -228,6 +237,31 @@ class WebUiSubscriptionManagementFacade(
      */
     private fun isSuccessMessage(message: String): Boolean {
         return message.contains("成功")
+    }
+
+    /**
+     * 记录 WebUI 卡片管理信息更新时间，避免列表页用推送内容时间误导用户。
+     */
+    private fun markSubscriptionCardUpdated(itemId: String) {
+        BiliData.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+    }
+
+    /**
+     * 番剧新增入口保留原始 ep/ss 标识，同时为 ss 前缀写入概览卡片使用的季 ID。
+     */
+    private fun markBangumiCardUpdated(bangumiId: String, previousContactsBySeason: Map<Long, Set<String>>) {
+        markSubscriptionCardUpdated("bangumi:$bangumiId")
+        if (bangumiId.startsWith("ss")) {
+            bangumiId.removePrefix("ss").toLongOrNull()?.let { seasonId ->
+                markSubscriptionCardUpdated("bangumi:$seasonId")
+            }
+        }
+        // ep 入口只在业务服务返回后才能知道最终 season id，因此用联系人集合变化反查实际卡片。
+        BiliData.bangumi.forEach { (seasonId, bangumi) ->
+            if (previousContactsBySeason[seasonId] != bangumi.contacts.toSet()) {
+                markSubscriptionCardUpdated("bangumi:$seasonId")
+            }
+        }
     }
 
     /**

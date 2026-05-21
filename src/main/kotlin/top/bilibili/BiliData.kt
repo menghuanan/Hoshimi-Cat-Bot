@@ -45,6 +45,9 @@ object BiliData {
     // key: normalized subject|uid|actual at-all type name -> cooldown expire timestamp millis
     var atAllCooldownUntil: MutableMap<String, Long> = mutableMapOf()
 
+    // key: WebUI subscription card id -> management data update timestamp millis
+    var subscriptionCardUpdatedAt: MutableMap<String, Long> = mutableMapOf()
+
     // key: group name - 分组
     var group: MutableMap<String, Group> = mutableMapOf()
 
