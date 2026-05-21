@@ -391,7 +391,7 @@ class WebUiConfigWriteFacadeTest {
     }
 
     @Test
-    fun `bot config writes should persist platform webui targets and admins while preserving secrets`() {
+    fun `bot config writes should persist visible fields and preserve hidden webui internals`() {
         var currentBotConfig = BotConfig(
             platform = PlatformConfig(
                 type = PlatformType.ONEBOT11,
@@ -480,8 +480,13 @@ class WebUiConfigWriteFacadeTest {
         assertEquals(true, savedBotConfig?.webui?.enabled)
         assertEquals("0.0.0.0", savedBotConfig?.webui?.host)
         assertEquals(19080, savedBotConfig?.webui?.port)
+        assertEquals("webui-credentials.json", savedBotConfig?.webui?.credentialFile)
+        assertEquals("", savedBotConfig?.webui?.staticDir)
         assertEquals(1, savedBotConfig?.targets?.size)
+        assertEquals(1L, savedBotConfig?.targets?.firstOrNull()?.id)
+        assertEquals("onebot11:group:1", savedBotConfig?.targets?.firstOrNull()?.contact)
         assertEquals(1, savedBotConfig?.admins?.size)
+        assertEquals(10086L, savedBotConfig?.admins?.firstOrNull()?.groupId)
         assertEquals(1, savedBotConfig?.firstRunFlag)
     }
 

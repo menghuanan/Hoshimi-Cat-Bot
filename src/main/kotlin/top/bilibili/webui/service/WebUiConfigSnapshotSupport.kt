@@ -301,7 +301,7 @@ private fun biliDataCapability(key: String): WebUiFieldCapability {
 }
 
 /**
- * `bot.yml` 的写入边界覆盖平台接入、WebUI 启动参数和管理员列表，保留 firstRunFlag 由系统维护。
+ * `bot.yml` 的写入边界只开放当前 WebUI 表单实际展示的字段，内部路径和预置目标保持只读。
  */
 private fun botConfigCapability(key: String): WebUiFieldCapability {
     return when (key) {
@@ -321,16 +321,13 @@ private fun botConfigCapability(key: String): WebUiFieldCapability {
         "webui.enabled",
         "webui.host",
         "webui.port",
-        "webui.credentialFile",
         "webui.tokenTtlSeconds",
-        "webui.staticDir",
-        "targets",
         "admins" -> WebUiFieldCapability.EDITABLE
         "platform.onebot11.token",
         "platform.qqOfficial.appSecret" -> WebUiFieldCapability.MASKED
         "firstRunFlag" -> WebUiFieldCapability.SYSTEM_MANAGED
         else -> when {
-            key.startsWith("targets.") || key.startsWith("admins.") -> WebUiFieldCapability.EDITABLE
+            key.startsWith("admins.") -> WebUiFieldCapability.EDITABLE
             else -> WebUiFieldCapability.READ_ONLY
         }
     }

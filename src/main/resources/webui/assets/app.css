@@ -981,6 +981,9 @@ select:focus {
 }
 
 .settings-placeholder {
+    width: min(100%, 760px);
+    max-width: 50%;
+    margin: 0 auto;
     min-height: 320px;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -1022,6 +1025,26 @@ select:focus {
     gap: 12px;
 }
 
+.settings-card-stack {
+    display: grid;
+    gap: 12px;
+}
+
+.settings-subcard {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-strong);
+}
+
+.settings-subcard h3 {
+    color: var(--text-strong);
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+
 .settings-field {
     display: flex;
     min-width: 0;
@@ -1058,6 +1081,26 @@ select:focus {
     padding: 0 10px;
 }
 
+.settings-input-unit {
+    position: relative;
+    display: block;
+}
+
+.settings-input-unit input {
+    padding-right: 48px;
+}
+
+.settings-unit {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
 .settings-field textarea {
     min-height: 112px;
     padding: 10px;
@@ -1092,6 +1135,32 @@ select:focus {
     background: var(--surface-strong);
     color: var(--text);
     line-height: 1.6;
+}
+
+.settings-readonly {
+    display: grid;
+    gap: 8px;
+}
+
+.settings-readonly > span {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.settings-readonly-list {
+    display: grid;
+    gap: 6px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-strong);
+    color: var(--text);
+    font-size: 0.88rem;
+}
+
+.settings-readonly-empty {
+    color: var(--muted);
 }
 
 .settings-list-editor {
@@ -2142,7 +2211,12 @@ select:focus {
     }
 
     .settings-panel {
+        max-width: 100%;
         padding: 12px;
+    }
+
+    .settings-placeholder {
+        max-width: 100%;
     }
 
     .settings-panel-head,

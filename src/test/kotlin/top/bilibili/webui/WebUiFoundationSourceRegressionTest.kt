@@ -129,10 +129,10 @@ class WebUiFoundationSourceRegressionTest {
     }
 
     /**
-     * 系统配置页的顶栏分类先提供可切换骨架，后续字段归类可以在各 panel 内逐步补齐。
+     * 系统配置页只保留 WebUI 允许编辑的八个分类，避免日志和内部文件路径混入设置入口。
      */
     @Test
-    fun `settings page should expose clickable category tabs with blank panels`() {
+    fun `settings page should expose refined category tabs and hide internal settings fields`() {
         val shellPage = read("src/main/resources/webui/index.html")
         val shellScript = read("src/main/resources/webui/assets/app.js")
         val shellStyle = read("src/main/resources/webui/assets/app.css")
@@ -144,7 +144,6 @@ class WebUiFoundationSourceRegressionTest {
             "polling" to "轮询配置",
             "render" to "渲染配置",
             "message" to "消息配置",
-            "log" to "日志配置",
             "admin" to "管理员",
             "translate" to "翻译配置",
         ).forEach { (key, label) ->
@@ -157,6 +156,28 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellScript.contains("settingsTabButtons"))
         assertTrue(shellScript.contains("activateSettingsTab"))
         assertTrue(shellStyle.contains(".settings-placeholder"))
+        assertTrue(shellStyle.contains("max-width: 50%;"))
+        assertTrue(shellScript.contains("renderSettingFieldWithUnit"))
+        assertTrue(shellScript.contains("""unit: "小时""""))
+        assertTrue(shellScript.contains("""unit: "秒""""))
+        assertTrue(shellScript.contains("""unit: "毫秒""""))
+        assertTrue(shellScript.contains("""unit: "天""""))
+        assertTrue(shellScript.contains("parseAdminLines"))
+        assertTrue(shellScript.contains("formatAdminSummary"))
+        assertTrue(shellScript.contains("adminContactQQ"))
+        assertFalse(shellPage.contains("""data-settings-tab="log""""))
+        assertFalse(shellPage.contains("""data-settings-panel="log""""))
+        assertFalse(shellPage.contains("日志配置"))
+        assertFalse(shellScript.contains("renderLogSettings"))
+        assertFalse(shellScript.contains("凭据文件"))
+        assertFalse(shellScript.contains("外部静态目录"))
+        assertFalse(shellScript.contains("动态模板表"))
+        assertFalse(shellScript.contains("直播模板表"))
+        assertFalse(shellScript.contains("下播模板表"))
+        assertFalse(shellScript.contains("预置推送目标 JSON"))
+        assertFalse(shellScript.contains("超级管理员联系人"))
+        assertFalse(shellScript.contains("群普通管理员 JSON"))
+        assertFalse(shellScript.contains("首次运行状态"))
         assertFalse(shellPage.contains("QQ 配置"))
         assertFalse(shellPage.contains("WebSocket 配置"))
         assertFalse(shellPage.contains("请输入 QQ 账号"))
@@ -194,9 +215,8 @@ class WebUiFoundationSourceRegressionTest {
         val shellStyle = read("src/main/resources/webui/assets/app.css")
 
         assertTrue(shellStyle.contains("""--sidebar-width: 235px;"""))
-        assertTrue(shellStyle.contains("""    .sidebar {
-        width: 213px;
-    }"""))
+        assertTrue(shellStyle.contains("@media"))
+        assertTrue(shellStyle.contains("width: 213px;"))
         assertFalse(shellStyle.contains("""--sidebar-width: 176px;"""))
     }
 

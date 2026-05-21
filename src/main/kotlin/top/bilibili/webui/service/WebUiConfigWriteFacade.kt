@@ -247,17 +247,11 @@ class WebUiConfigWriteFacade(
                 enabled = request.webUiEnabled,
                 host = request.webUiHost.trim(),
                 port = request.webUiPort,
-                credentialFile = request.webUiCredentialFile.trim(),
+                credentialFile = current.webui.credentialFile,
                 tokenTtlSeconds = request.webUiTokenTtlSeconds,
-                staticDir = request.webUiStaticDir.trim(),
+                staticDir = current.webui.staticDir,
             ).normalized(),
-            targets = request.targets.map { target ->
-                TargetConfig(
-                    type = target.type.trim(),
-                    id = target.id,
-                    contact = target.contact.trim(),
-                )
-            }.toMutableList(),
+            targets = current.targets.toMutableList(),
             admins = request.admins.map { admin ->
                 GroupAdminConfig(
                     groupId = admin.groupId,
