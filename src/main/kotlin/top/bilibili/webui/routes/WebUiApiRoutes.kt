@@ -14,7 +14,12 @@ import top.bilibili.webui.model.WebUiBiliDataWriteRequestDto
 import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
 import top.bilibili.webui.model.WebUiSaveEffectLevel
+import top.bilibili.webui.model.WebUiSubscriptionAtAllSaveRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionCreateRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionFilterSaveRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionTemplateRandomRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionTemplateSaveRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionThemeSaveRequestDto
 import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiConfigFacade
 import top.bilibili.webui.service.WebUiConfigWriteFacade
@@ -73,6 +78,94 @@ fun Route.registerWebUiApiRoutes(
         call.requireWebUiSession(authService, auditService) ?: return@delete
         val id = call.parameters["id"].orEmpty()
         val result = subscriptionManagementFacade.deleteSubscription(id)
+        call.respondSubscriptionMutation(result)
+    }
+
+    get("/api/subscriptions/{id}/filters") {
+        call.requireWebUiSession(authService, auditService) ?: return@get
+        val id = call.parameters["id"].orEmpty()
+        call.respond(subscriptionManagementFacade.listSubscriptionFilters(id))
+    }
+
+    post("/api/subscriptions/{id}/filters") {
+        call.requireWebUiSession(authService, auditService) ?: return@post
+        val id = call.parameters["id"].orEmpty()
+        val request = call.receive<WebUiSubscriptionFilterSaveRequestDto>()
+        val result = subscriptionManagementFacade.saveSubscriptionFilter(id, request)
+        call.respondSubscriptionMutation(result)
+    }
+
+    delete("/api/subscriptions/{id}/filters/{key}") {
+        call.requireWebUiSession(authService, auditService) ?: return@delete
+        val id = call.parameters["id"].orEmpty()
+        val key = call.parameters["key"].orEmpty()
+        val result = subscriptionManagementFacade.deleteSubscriptionFilter(id, key)
+        call.respondSubscriptionMutation(result)
+    }
+
+    get("/api/subscriptions/{id}/templates") {
+        call.requireWebUiSession(authService, auditService) ?: return@get
+        val id = call.parameters["id"].orEmpty()
+        call.respond(subscriptionManagementFacade.listSubscriptionTemplates(id))
+    }
+
+    post("/api/subscriptions/{id}/templates") {
+        call.requireWebUiSession(authService, auditService) ?: return@post
+        val id = call.parameters["id"].orEmpty()
+        val request = call.receive<WebUiSubscriptionTemplateSaveRequestDto>()
+        val result = subscriptionManagementFacade.saveSubscriptionTemplate(id, request)
+        call.respondSubscriptionMutation(result)
+    }
+
+    delete("/api/subscriptions/{id}/templates/{key}") {
+        call.requireWebUiSession(authService, auditService) ?: return@delete
+        val id = call.parameters["id"].orEmpty()
+        val key = call.parameters["key"].orEmpty()
+        val result = subscriptionManagementFacade.deleteSubscriptionTemplate(id, key)
+        call.respondSubscriptionMutation(result)
+    }
+
+    post("/api/subscriptions/{id}/templates/random") {
+        call.requireWebUiSession(authService, auditService) ?: return@post
+        val id = call.parameters["id"].orEmpty()
+        val request = call.receive<WebUiSubscriptionTemplateRandomRequestDto>()
+        val result = subscriptionManagementFacade.setSubscriptionTemplateRandom(id, request.enabled)
+        call.respondSubscriptionMutation(result)
+    }
+
+    get("/api/subscriptions/{id}/atall") {
+        call.requireWebUiSession(authService, auditService) ?: return@get
+        val id = call.parameters["id"].orEmpty()
+        call.respond(subscriptionManagementFacade.listSubscriptionAtAll(id))
+    }
+
+    post("/api/subscriptions/{id}/atall") {
+        call.requireWebUiSession(authService, auditService) ?: return@post
+        val id = call.parameters["id"].orEmpty()
+        val request = call.receive<WebUiSubscriptionAtAllSaveRequestDto>()
+        val result = subscriptionManagementFacade.saveSubscriptionAtAll(id, request.type, request.targetGroups)
+        call.respondSubscriptionMutation(result)
+    }
+
+    delete("/api/subscriptions/{id}/atall/{key}") {
+        call.requireWebUiSession(authService, auditService) ?: return@delete
+        val id = call.parameters["id"].orEmpty()
+        val key = call.parameters["key"].orEmpty()
+        val result = subscriptionManagementFacade.deleteSubscriptionAtAll(id, key)
+        call.respondSubscriptionMutation(result)
+    }
+
+    get("/api/subscriptions/{id}/theme") {
+        call.requireWebUiSession(authService, auditService) ?: return@get
+        val id = call.parameters["id"].orEmpty()
+        call.respond(subscriptionManagementFacade.readSubscriptionTheme(id))
+    }
+
+    post("/api/subscriptions/{id}/theme") {
+        call.requireWebUiSession(authService, auditService) ?: return@post
+        val id = call.parameters["id"].orEmpty()
+        val request = call.receive<WebUiSubscriptionThemeSaveRequestDto>()
+        val result = subscriptionManagementFacade.saveSubscriptionTheme(id, request.color)
         call.respondSubscriptionMutation(result)
     }
 

@@ -22,6 +22,12 @@ import kotlin.test.assertTrue
 import top.bilibili.BiliData
 import top.bilibili.BiliAccountConfig
 import top.bilibili.BiliConfig
+import top.bilibili.DynamicFilter
+import top.bilibili.FilterMode
+import top.bilibili.RegularFilter
+import top.bilibili.SubData
+import top.bilibili.TemplatePolicy
+import top.bilibili.TypeFilter
 import top.bilibili.config.BotConfig
 import top.bilibili.config.NapCatConfig
 import top.bilibili.config.PlatformConfig
@@ -46,8 +52,16 @@ import top.bilibili.webui.model.WebUiResourceUsageDto
 import top.bilibili.webui.model.WebUiRuntimeSummaryDto
 import top.bilibili.webui.model.WebUiSessionDto
 import top.bilibili.webui.model.WebUiChangePasswordRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionAtAllSaveRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionCreateRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionFilterListDto
+import top.bilibili.webui.model.WebUiSubscriptionFilterSaveRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionMutationResultDto
+import top.bilibili.webui.model.WebUiSubscriptionTemplateListDto
+import top.bilibili.webui.model.WebUiSubscriptionTemplateRandomRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionTemplateSaveRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionThemeDto
+import top.bilibili.webui.model.WebUiSubscriptionThemeSaveRequestDto
 import top.bilibili.tasker.DailyPushStatsSnapshot
 import top.bilibili.tasker.PushDeliveryRecordSnapshot
 import top.bilibili.webui.server.installWebUiModule
@@ -57,6 +71,7 @@ import top.bilibili.webui.service.WebUiConfigFacade
 import top.bilibili.webui.service.WebUiConfigWriteFacade
 import top.bilibili.webui.service.WebUiLogFacade
 import top.bilibili.webui.service.WebUiRuntimeFacade
+import top.bilibili.webui.service.WebUiSubscriptionManagementFacade
 import top.bilibili.connector.PlatformHttpClientSnapshot
 import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
@@ -67,6 +82,10 @@ class WebUiRouteSmokeTest {
     private val originalDynamic = BiliData.dynamic.toMutableMap()
     private val originalGroup = BiliData.group.toMutableMap()
     private val originalBlacklist = BiliData.linkParseBlacklistContacts.toMutableSet()
+    private val originalFilter = BiliData.filter.toMutableMap()
+    private val originalDynamicTemplatePolicies = BiliData.dynamicTemplatePolicyByScope.toMutableMap()
+    private val originalDynamicColorByUid = BiliData.dynamicColorByUid.toMutableMap()
+    private val originalAtAll = BiliData.atAll.toMutableMap()
 
     @AfterTest
     fun cleanup() {
@@ -75,6 +94,10 @@ class WebUiRouteSmokeTest {
         BiliData.dynamic = originalDynamic.toMutableMap()
         BiliData.group = originalGroup.toMutableMap()
         BiliData.linkParseBlacklistContacts = originalBlacklist.toMutableSet()
+        BiliData.filter = originalFilter.toMutableMap()
+        BiliData.dynamicTemplatePolicyByScope = originalDynamicTemplatePolicies.toMutableMap()
+        BiliData.dynamicColorByUid = originalDynamicColorByUid.toMutableMap()
+        BiliData.atAll = originalAtAll.toMutableMap()
     }
 
     @Test
@@ -232,6 +255,103 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.BadRequest, invalidCreate.status)
         assertTrue(invalidCreate.body<WebUiSubscriptionMutationResultDto>().message.contains("ep 或 ss"))
         assertEquals(HttpStatusCode.BadRequest, invalidDelete.status)
+    }
+
+    /**
+     * 订阅配置编辑 API 应覆盖过滤器、模板、@全体和主题色四类入口，并保持认证边界一致。
+     */
+    @Test
+    fun `subscription config editor routes should expose filter template atall and theme operations`() = testApplication {
+        val authService = buildAuthService()
+        val bootstrapPassword = authService.bootstrapCredentials().initialPassword!!
+        val runtimeConfig = BiliConfig()
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            filter = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(
+                    123L to DynamicFilter(
+                        typeSelect = TypeFilter(),
+                        regularSelect = RegularFilter(FilterMode.BLACK_LIST, mutableListOf("^old")),
+                    ),
+                ),
+            )
+            dynamicTemplatePolicyByScope = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(123L to TemplatePolicy(templates = mutableListOf("OneMsg"))),
+            )
+            dynamicColorByUid = mutableMapOf()
+            atAll = mutableMapOf()
+        }
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                subscriptionManagementFacade = WebUiSubscriptionManagementFacade(
+                    configProvider = { runtimeConfig },
+                    saveConfigAction = { true },
+                    saveDataAction = { true },
+                ),
+                auditService = WebUiAuditService(sink = {}),
+            )
+        }
+
+        val token = reloginForPhase3(authService, bootstrapPassword)
+        val client = createWebUiClient()
+        val filters = client.get("/api/subscriptions/dynamic%3A123/filters") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }.body<WebUiSubscriptionFilterListDto>()
+        val filterKey = filters.filters.first().key
+        val filterSaved = client.post("/api/subscriptions/dynamic%3A123/filters") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(WebUiSubscriptionFilterSaveRequestDto(key = filterKey, kind = "regex", mode = "white", content = "^new"))
+        }
+        val templates = client.get("/api/subscriptions/dynamic%3A123/templates") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }.body<WebUiSubscriptionTemplateListDto>()
+        val templateSaved = client.post("/api/subscriptions/dynamic%3A123/templates") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(WebUiSubscriptionTemplateSaveRequestDto(type = "dynamic", name = "WebTpl", content = "{name}"))
+        }
+        val randomSaved = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(WebUiSubscriptionTemplateRandomRequestDto(enabled = true))
+        }
+        val atAllSaved = client.post("/api/subscriptions/dynamic%3A123/atall") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(WebUiSubscriptionAtAllSaveRequestDto(type = "直播", targetGroups = listOf("onebot11:group:10001")))
+        }
+        val themeSaved = client.post("/api/subscriptions/dynamic%3A123/theme") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(WebUiSubscriptionThemeSaveRequestDto(color = "#AABBCC"))
+        }
+        val theme = client.get("/api/subscriptions/dynamic%3A123/theme") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }.body<WebUiSubscriptionThemeDto>()
+
+        assertEquals(listOf("r0"), filters.filters.map { it.prefix })
+        assertEquals(listOf("OneMsg"), templates.templates.map { it.name })
+        assertEquals(HttpStatusCode.OK, filterSaved.status)
+        assertEquals(HttpStatusCode.OK, templateSaved.status)
+        assertEquals(HttpStatusCode.OK, randomSaved.status)
+        assertEquals(HttpStatusCode.OK, atAllSaved.status)
+        assertEquals(HttpStatusCode.OK, themeSaved.status)
+        assertEquals("#AABBCC", theme.color)
     }
 
     /**

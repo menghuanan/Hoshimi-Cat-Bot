@@ -3,12 +3,19 @@ package top.bilibili.webui.service
 import kotlinx.coroutines.runBlocking
 import top.bilibili.AtAllType
 import top.bilibili.Bangumi
+import top.bilibili.BiliConfig
 import top.bilibili.BiliData
 import top.bilibili.DynamicFilter
+import top.bilibili.DynamicFilterType
+import top.bilibili.FilterMode
 import top.bilibili.Group
+import top.bilibili.RegularFilter
 import top.bilibili.SubData
 import top.bilibili.TemplatePolicy
+import top.bilibili.TypeFilter
 import top.bilibili.webui.model.WebUiSubscriptionCreateRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionFilterSaveRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionTemplateSaveRequestDto
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -188,5 +195,242 @@ class WebUiSubscriptionManagementFacadeTest {
         assertTrue(BiliData.dynamicColorByUid.isEmpty())
         assertTrue(BiliData.atAll.isEmpty())
         assertTrue(BiliData.atAllCooldownUntil.isEmpty())
+    }
+
+    /**
+     * 过滤器编辑页需要把同一个 UID 下不同群的类型和正则规则拆成单条记录，便于前端只删除选中的那一条。
+     */
+    @Test
+    fun `filter editor should list save update and delete a single filter row`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            filter = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(
+                    123L to DynamicFilter(
+                        typeSelect = TypeFilter(FilterMode.BLACK_LIST, mutableListOf(DynamicFilterType.FORWARD)),
+                        regularSelect = RegularFilter(FilterMode.WHITE_LIST, mutableListOf("^hello")),
+                    ),
+                ),
+            )
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+
+        val initial = facade.listSubscriptionFilters("dynamic:123")
+        val regexKey = initial.filters.first { it.kind == "regex" }.key
+        val updated = facade.saveSubscriptionFilter(
+            "dynamic:123",
+            WebUiSubscriptionFilterSaveRequestDto(
+                key = regexKey,
+                kind = "regex",
+                mode = "black",
+                content = "新内容.*",
+            ),
+        )
+        val deleted = facade.deleteSubscriptionFilter("dynamic:123", regexKey)
+
+        assertEquals(listOf("t0", "r0"), initial.filters.map { it.prefix })
+        assertEquals("标签过滤", initial.filters.first().label)
+        assertTrue(updated.success)
+        assertTrue(deleted.success)
+        assertEquals(listOf(DynamicFilterType.FORWARD), BiliData.filter.getValue("onebot11:group:10001").getValue(123L).typeSelect.list)
+        assertTrue(BiliData.filter.getValue("onebot11:group:10001").getValue(123L).regularSelect.list.isEmpty())
+    }
+
+    /**
+     * 分组卡片的过滤器数量按 UID 绑定全量统计，编辑页也要列出同一批底层过滤器避免卡片和弹窗数量不一致。
+     */
+    @Test
+    fun `group filter editor should include every uid filter counted by the card`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                3108865L to SubData(
+                    name = "小莫寝不足",
+                    contacts = mutableSetOf(
+                        "onebot11:group:763174993",
+                        "onebot11:group:826295005",
+                        "onebot11:group:425939196",
+                        "onebot11:group:586042989",
+                    ),
+                    sourceRefs = mutableSetOf(
+                        "direct:onebot11:group:763174993",
+                        "direct:onebot11:group:826295005",
+                        "direct:onebot11:group:425939196",
+                        "direct:onebot11:group:586042989",
+                        "groupRef:CatHouse",
+                    ),
+                ),
+            )
+            group = mutableMapOf(
+                "CatHouse" to Group(
+                    name = "CatHouse",
+                    creator = 1L,
+                    contacts = mutableSetOf(
+                        "onebot11:group:763174993",
+                        "onebot11:group:826295005",
+                        "onebot11:group:425939196",
+                    ),
+                ),
+            )
+            filter = mutableMapOf(
+                "onebot11:group:763174993" to mutableMapOf(
+                    3108865L to DynamicFilter(
+                        typeSelect = TypeFilter(FilterMode.BLACK_LIST, mutableListOf(DynamicFilterType.FORWARD)),
+                    ),
+                ),
+                "onebot11:group:826295005" to mutableMapOf(
+                    3108865L to DynamicFilter(
+                        typeSelect = TypeFilter(FilterMode.BLACK_LIST, mutableListOf(DynamicFilterType.FORWARD)),
+                    ),
+                ),
+                "onebot11:group:586042989" to mutableMapOf(
+                    3108865L to DynamicFilter(
+                        typeSelect = TypeFilter(FilterMode.BLACK_LIST, mutableListOf(DynamicFilterType.FORWARD)),
+                    ),
+                ),
+            )
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+
+        val filters = facade.listSubscriptionFilters("group:CatHouse")
+
+        assertEquals(3, filters.filters.size)
+        assertEquals(
+            listOf("onebot11:group:586042989", "onebot11:group:763174993", "onebot11:group:826295005"),
+            filters.filters.map { it.scope },
+        )
+    }
+
+    /**
+     * 模板编辑页同时维护模板正文和 UID 策略，随机开关必须写入底层 TemplatePolicy。
+     */
+    @Test
+    fun `template editor should upsert template content bind policy and toggle random mode`() = runBlocking {
+        val runtimeConfig = BiliConfig()
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            dynamicTemplatePolicyByScope = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(123L to TemplatePolicy(templates = mutableListOf("OneMsg"))),
+            )
+        }
+        var savedConfig = false
+        var savedData = false
+        val facade = WebUiSubscriptionManagementFacade(
+            configProvider = { runtimeConfig },
+            saveConfigAction = {
+                savedConfig = true
+                true
+            },
+            saveDataAction = {
+                savedData = true
+                true
+            },
+        )
+
+        val initial = facade.listSubscriptionTemplates("dynamic:123")
+        val saved = facade.saveSubscriptionTemplate(
+            "dynamic:123",
+            WebUiSubscriptionTemplateSaveRequestDto(
+                key = "",
+                type = "dynamic",
+                name = "WebDy",
+                content = "{name}\n{link}",
+            ),
+        )
+        val random = facade.setSubscriptionTemplateRandom("dynamic:123", true)
+
+        assertEquals(listOf("OneMsg"), initial.templates.map { it.name })
+        assertTrue(saved.success)
+        assertTrue(random.success)
+        assertEquals("{name}\n{link}", runtimeConfig.templateConfig.dynamicPush["WebDy"])
+        assertEquals(listOf("OneMsg", "WebDy"), BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).templates)
+        assertTrue(BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).randomEnabled)
+        assertTrue(savedConfig)
+        assertTrue(savedData)
+    }
+
+    /**
+     * @全体和主题色编辑都按当前订阅的推送群展开，删除时只移除所选类型或所选 UID 颜色。
+     */
+    @Test
+    fun `atall and theme editors should mutate only selected subscription payload`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001", "direct:onebot11:group:10002"),
+                ),
+                456L to SubData(
+                    name = "Bob",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            atAll = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(
+                    123L to mutableSetOf(AtAllType.LIVE),
+                    456L to mutableSetOf(AtAllType.DYNAMIC),
+                ),
+            )
+            dynamicColorByUid = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(123L to "#112233", 456L to "#445566"),
+            )
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+
+        val atAllRows = facade.listSubscriptionAtAll("dynamic:123")
+        val savedAtAll = facade.saveSubscriptionAtAll("dynamic:123", "全部动态", listOf("onebot11:group:10001"))
+        val deletedAtAll = facade.deleteSubscriptionAtAll("dynamic:123", atAllRows.items.first().key)
+        val theme = facade.saveSubscriptionTheme("dynamic:123", "#ABCDEF")
+
+        assertEquals("直播 10001", atAllRows.items.first().summary)
+        assertTrue(savedAtAll.success)
+        assertTrue(deletedAtAll.success)
+        assertTrue(theme.success)
+        assertFalse(BiliData.atAll.getValue("onebot11:group:10001").getValue(123L).contains(AtAllType.LIVE))
+        assertTrue(BiliData.atAll.getValue("onebot11:group:10001").getValue(456L).contains(AtAllType.DYNAMIC))
+        assertEquals("#ABCDEF", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(123L))
+        assertEquals("#445566", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(456L))
+    }
+
+    /**
+     * @全体编辑页的目标群聊是多选必填；保存已有类型时要用新选择替换旧群聊分布。
+     */
+    @Test
+    fun `atall editor should require target groups and replace same type groups`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001", "direct:onebot11:group:10002"),
+                ),
+            )
+            atAll = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(123L to mutableSetOf(AtAllType.LIVE)),
+                "onebot11:group:10002" to mutableMapOf(123L to mutableSetOf(AtAllType.LIVE)),
+            )
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+
+        val missingTarget = facade.saveSubscriptionAtAll("dynamic:123", "直播", emptyList())
+        val edited = facade.saveSubscriptionAtAll("dynamic:123", "直播", listOf("onebot11:group:10001"))
+
+        assertFalse(missingTarget.success)
+        assertTrue(edited.success)
+        assertTrue(BiliData.atAll.getValue("onebot11:group:10001").getValue(123L).contains(AtAllType.LIVE))
+        assertFalse(BiliData.atAll.containsKey("onebot11:group:10002"))
     }
 }

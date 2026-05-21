@@ -59,3 +59,122 @@ data class WebUiSubscriptionMutationResultDto(
     val itemId: String? = null,
     val validationErrors: List<String> = emptyList(),
 )
+
+/**
+ * 订阅过滤器编辑页的列表响应，按底层 t/r 索引拆成单条可编辑记录。
+ */
+@Serializable
+data class WebUiSubscriptionFilterListDto(
+    val filters: List<WebUiSubscriptionFilterItemDto>,
+)
+
+/**
+ * 单条过滤规则的 WebUI 表示，key 用于后续编辑或删除时精确定位底层列表项。
+ */
+@Serializable
+data class WebUiSubscriptionFilterItemDto(
+    val key: String,
+    val prefix: String,
+    val kind: String,
+    val label: String,
+    val mode: String,
+    val content: String,
+    val scope: String,
+    val summary: String,
+)
+
+/**
+ * 过滤器保存请求同时覆盖新增和编辑；key 为空表示追加到当前订阅的所有适用目标。
+ */
+@Serializable
+data class WebUiSubscriptionFilterSaveRequestDto(
+    val key: String = "",
+    val kind: String,
+    val mode: String,
+    val content: String,
+)
+
+/**
+ * 订阅模板编辑页响应，包含当前策略中的模板和随机开关状态。
+ */
+@Serializable
+data class WebUiSubscriptionTemplateListDto(
+    val templates: List<WebUiSubscriptionTemplateItemDto>,
+    val randomEnabled: Boolean,
+)
+
+/**
+ * 单条模板策略记录保留模板正文，便于编辑页直接回填名称和内容。
+ */
+@Serializable
+data class WebUiSubscriptionTemplateItemDto(
+    val key: String,
+    val type: String,
+    val typeLabel: String,
+    val name: String,
+    val content: String,
+    val scope: String,
+)
+
+/**
+ * 模板保存请求会同时写入模板正文和当前订阅的模板策略绑定。
+ */
+@Serializable
+data class WebUiSubscriptionTemplateSaveRequestDto(
+    val key: String = "",
+    val type: String,
+    val name: String,
+    val content: String,
+)
+
+/**
+ * 随机模板开关请求只承载布尔值，具体作用域由订阅卡片 ID 决定。
+ */
+@Serializable
+data class WebUiSubscriptionTemplateRandomRequestDto(
+    val enabled: Boolean,
+)
+
+/**
+ * @全体编辑页按类型聚合群组，避免同一类型在多群配置时占满列表。
+ */
+@Serializable
+data class WebUiSubscriptionAtAllListDto(
+    val items: List<WebUiSubscriptionAtAllItemDto>,
+)
+
+/**
+ * 单条 @全体聚合记录，key 对应底层 AtAllType.name。
+ */
+@Serializable
+data class WebUiSubscriptionAtAllItemDto(
+    val key: String,
+    val type: String,
+    val summary: String,
+    val groups: List<String>,
+)
+
+/**
+ * @全体保存请求只需要类型，目标群组由订阅卡片的推送目标展开。
+ */
+@Serializable
+data class WebUiSubscriptionAtAllSaveRequestDto(
+    val type: String,
+    val targetGroups: List<String> = emptyList(),
+)
+
+/**
+ * 主题色编辑页只读响应，当前没有配置时返回空字符串。
+ */
+@Serializable
+data class WebUiSubscriptionThemeDto(
+    val color: String,
+)
+
+/**
+ * 主题色保存请求要求单个 HEX 颜色，后端负责格式校验和作用域展开。
+ */
+@Serializable
+data class WebUiSubscriptionThemeSaveRequestDto(
+    val color: String,
+)

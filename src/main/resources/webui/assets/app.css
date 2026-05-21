@@ -1210,13 +1210,146 @@ select:focus {
 .subscription-actions-row {
     display: grid;
     gap: 8px;
-    padding: 10px 20px 4px;
+    padding: 10px 20px 20px;
 }
 
 .subscription-actions-row .btn {
     justify-content: flex-start;
     min-height: 36px;
     cursor: pointer;
+}
+
+/* 订阅配置编辑页复用同一个弹窗，列表和表单都保持紧凑的管理面板密度。 */
+.subscription-config-list {
+    display: grid;
+    gap: 8px;
+    max-height: 360px;
+    overflow: auto;
+}
+
+.subscription-config-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 38px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-soft);
+}
+
+.subscription-config-main {
+    min-width: 0;
+    color: var(--text-strong);
+    font-size: 0.82rem;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.subscription-config-main small {
+    margin-left: 6px;
+    color: var(--muted);
+    font-size: 0.7rem;
+}
+
+.subscription-config-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+}
+
+.subscription-config-empty {
+    min-height: 164px;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.subscription-config-footer {
+    padding-top: 10px;
+}
+
+.subscription-config-footer--split {
+    justify-content: flex-end;
+}
+
+.subscription-config-footer .modal-status {
+    flex: 1;
+    margin: 0;
+    align-self: center;
+    min-width: 0;
+}
+
+.subscription-config-footer-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: flex-end;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
+}
+
+.subscription-config-form {
+    display: grid;
+    gap: 12px;
+}
+
+.template-content-box {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    min-height: 180px;
+    max-height: 260px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-strong);
+    color: var(--text);
+    font: inherit;
+    resize: vertical;
+    overflow: auto;
+    outline: none;
+}
+
+.template-content-box:focus {
+    border-color: rgba(45, 108, 246, 0.55);
+    box-shadow: 0 0 0 3px rgba(45, 108, 246, 0.12);
+}
+
+.template-explain {
+    margin: 0;
+    max-height: 120px;
+    overflow: auto;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--muted-strong);
+    font-family: inherit;
+    font-size: 0.74rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
+.template-random-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted-strong);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.template-random-toggle input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--brand);
 }
 
 /* 删除确认弹窗把高风险后果放在页面内展示，替代浏览器默认 confirm 的顶部提示。 */

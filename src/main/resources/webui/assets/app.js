@@ -59,6 +59,8 @@ const subscriptionModalStatus = document.getElementById("subscription-modal-stat
 const subscriptionEditModal = document.getElementById("subscription-edit-modal");
 const closeSubscriptionEditButton = document.getElementById("close-subscription-edit");
 const subscriptionEditStatus = document.getElementById("subscription-edit-status");
+const subscriptionEditTitle = document.getElementById("subscription-edit-title");
+const subscriptionEditActionPanel = subscriptionEditModal?.querySelector(".subscription-actions-row");
 const subscriptionDeleteModal = document.getElementById("subscription-delete-modal");
 const closeSubscriptionDeleteButton = document.getElementById("close-subscription-delete");
 const cancelSubscriptionDeleteButton = document.getElementById("cancel-subscription-delete");
@@ -83,10 +85,41 @@ const subscriptionState = {
     items: [],
     loaded: false,
     editingItemId: "",
+    editingAction: "",
+    editingLists: {
+        filter: [],
+        template: [],
+        atall: [],
+    },
     pendingDeleteItemId: "",
 };
 let logRefreshTimer = null;
 let logRequestSequence = 0;
+const templateExplainText = {
+    dynamic: [
+        "动态模板可用占位符",
+        "{name} UP主名称　{uid}/{mid} 用户ID　{time} 发布时间",
+        "{type} 动态类型　{did} 动态ID　{content} 正文摘要",
+        "{link} 动态链接　{links} 动态内链接列表",
+        "{draw} 推送卡片图　{images} 动态图片",
+        "使用 \\r 可把模板拆成多条消息。",
+    ].join("\n"),
+    live: [
+        "开播模板可用占位符",
+        "{name} 主播名称　{uid}/{mid} 用户ID　{time} 开播时间",
+        "{title} 直播标题　{area} 直播分区",
+        "{link} 直播间链接　{cover} 直播封面",
+        "{draw} 推送卡片图",
+        "使用 \\r 可把模板拆成多条消息。",
+    ].join("\n"),
+    liveClose: [
+        "下播模板可用占位符",
+        "{name} 主播名称　{uid}/{mid} 用户ID　{time} 下播时间",
+        "{title} 直播标题　{duration} 直播时长",
+        "{area} 直播分区　{link} 直播间链接",
+        "使用 \\r 可把模板拆成多条消息。",
+    ].join("\n"),
+};
 
 /**
  * 读取当前 WebUI token；没有 sessionStorage 时仍允许同源 cookie 完成认证。
@@ -640,27 +673,526 @@ async function deleteSubscription(itemId) {
 }
 
 /**
- * 编辑弹窗当前提供动作入口，具体配置表单后续可复用同一个 itemId 延展。
+ * 编辑弹窗打开时先回到动作菜单，后续四类配置页都在同一窗口内切换。
  */
 function openSubscriptionEditModal(itemId) {
     if (!subscriptionEditModal) {
         return;
     }
     subscriptionState.editingItemId = itemId || "";
-    if (subscriptionEditStatus) {
-        subscriptionEditStatus.textContent = "";
-        subscriptionEditStatus.classList.remove("is-success");
-    }
+    subscriptionState.editingAction = "";
+    setSubscriptionEditStatus("");
+    renderSubscriptionEditMenu();
     subscriptionEditModal.hidden = false;
 }
 
 /**
- * 关闭编辑弹窗时清空当前 itemId，避免后续动作误用上一次卡片。
+ * 关闭编辑弹窗时清空当前 itemId 和列表快照，避免后续动作误用上一次卡片。
  */
 function closeSubscriptionEditModal() {
     subscriptionState.editingItemId = "";
+    subscriptionState.editingAction = "";
+    subscriptionState.editingLists = {filter: [], template: [], atall: []};
+    setSubscriptionEditStatus("");
     if (subscriptionEditModal) {
         subscriptionEditModal.hidden = true;
+    }
+}
+
+/**
+ * 编辑弹窗底部状态统一处理成功和失败颜色，避免不同配置页各自拼接反馈样式。
+ */
+function setSubscriptionEditStatus(message, success = false) {
+    if (!subscriptionEditStatus) {
+        return;
+    }
+    subscriptionEditStatus.textContent = message || "";
+    subscriptionEditStatus.classList.toggle("is-success", Boolean(success));
+}
+
+/**
+ * 编辑弹窗状态条会被移动到当前页脚里，和右侧按钮始终保持同一行。
+ */
+function attachSubscriptionEditStatus() {
+    if (!subscriptionEditStatus || !subscriptionEditActionPanel) {
+        return;
+    }
+    const footer = subscriptionEditActionPanel.querySelector("[data-config-footer]");
+    if (footer && subscriptionEditStatus.parentElement !== footer) {
+        footer.prepend(subscriptionEditStatus);
+    }
+}
+
+/**
+ * 编辑弹窗标题统一由页面状态控制，方便列表页和表单页切换时保持清晰上下文。
+ */
+function setSubscriptionEditTitle(title) {
+    if (subscriptionEditTitle) {
+        subscriptionEditTitle.textContent = title || "编辑订阅";
+    }
+}
+
+/**
+ * 编辑菜单保留四个入口，并由后续页面负责加载真实后端配置。
+ */
+function renderSubscriptionEditMenu() {
+    if (!subscriptionEditActionPanel) {
+        return;
+    }
+    setSubscriptionEditTitle("编辑订阅");
+    subscriptionEditActionPanel.innerHTML = `
+        <button class="btn btn-secondary" type="button" data-edit-action="filter">编辑过滤器</button>
+        <button class="btn btn-secondary" type="button" data-edit-action="template">编辑模板</button>
+        <button class="btn btn-secondary" type="button" data-edit-action="atall">编辑at全体</button>
+        <button class="btn btn-secondary" type="button" data-edit-action="theme">编辑主题色</button>
+    `;
+}
+
+/**
+ * 当前订阅配置 API 的基础路径统一编码 itemId，避免冒号或模板 key 破坏路由。
+ */
+function subscriptionConfigBaseUrl(suffix) {
+    return `/api/subscriptions/${encodeURIComponent(subscriptionState.editingItemId)}${suffix}`;
+}
+
+/**
+ * 配置接口统一解析 JSON 错误响应，让表单页可以直接显示后端校验文案。
+ */
+async function fetchSubscriptionConfigJson(url, options = {}) {
+    const response = await fetch(url, options);
+    if (response.status === 401 || response.status === 403) {
+        location.href = "/login";
+        return null;
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+        throw new Error(payload.message || `请求失败：HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+/**
+ * 列表页空状态使用同一块居中区域，满足没有过滤器、模板或 atall 时的展示要求。
+ */
+function emptyConfigList(text) {
+    return `<div class="subscription-config-empty">${escapeHtml(text)}</div>`;
+}
+
+/**
+ * 配置页加载态先渲染页脚，再写入状态文本，确保加载失败时提示也和按钮保持同一行。
+ */
+function renderConfigLoading(title, message) {
+    setSubscriptionEditTitle(title);
+    subscriptionEditActionPanel.innerHTML = `
+        ${emptyConfigList("正在加载")}
+        <div class="modal-actions subscription-config-footer" data-config-footer>
+            <button class="btn btn-secondary" type="button" data-editor-back>取消</button>
+        </div>
+    `;
+    attachSubscriptionEditStatus();
+    setSubscriptionEditStatus(message || "正在加载");
+}
+
+/**
+ * 过滤器列表按后端返回的 t/r 前缀逐行展示，并给每行保留编辑和删除按钮。
+ */
+async function loadFilterEditor() {
+    subscriptionState.editingAction = "filter";
+    renderConfigLoading("已有过滤器", "正在加载过滤器");
+    const payload = await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/filters"), {headers: buildAuthHeaders()});
+    const filters = Array.isArray(payload?.filters) ? payload.filters : [];
+    subscriptionState.editingLists.filter = filters;
+    const rows = filters.length === 0 ? emptyConfigList("暂无过滤器") : filters.map((filter) => `
+        <div class="subscription-config-row">
+            <span class="subscription-config-main" title="${escapeHtml(filter.scope)}">${escapeHtml(filter.prefix)} ${escapeHtml(filter.label)}：${escapeHtml(filter.content)}</span>
+            <span class="subscription-config-actions">
+                <button class="btn btn-secondary btn-small" type="button" data-config-edit="filter" data-config-key="${escapeHtml(filter.key)}">编辑</button>
+                <button class="btn btn-secondary btn-small subscription-delete" type="button" data-config-delete="filter" data-config-key="${escapeHtml(filter.key)}">删除</button>
+            </span>
+        </div>
+    `).join("");
+    subscriptionEditActionPanel.innerHTML = `
+        <div class="subscription-config-list">${rows}</div>
+        <div class="modal-actions subscription-config-footer" data-config-footer>
+            <button class="btn btn-secondary" type="button" data-editor-back>取消</button>
+            <button class="btn btn-primary" type="button" data-config-add="filter">添加过滤器</button>
+        </div>
+    `;
+    attachSubscriptionEditStatus();
+    setSubscriptionEditStatus("");
+}
+
+/**
+ * 过滤器表单根据正则或标签过滤切换输入项，编辑时用已有规则内容回填。
+ */
+function renderFilterForm(filter = null) {
+    const kind = filter?.kind === "type" ? "type" : "regex";
+    const mode = filter?.mode === "白名单" ? "white" : "black";
+    setSubscriptionEditTitle(filter ? "编辑过滤器" : "添加过滤器");
+    subscriptionEditActionPanel.innerHTML = `
+        <form class="subscription-config-form" data-config-form="filter">
+            <input type="hidden" name="key" value="${escapeHtml(filter?.key || "")}">
+            <label class="field">
+                <span>选择过滤方式</span>
+                <select name="kind" data-filter-kind>
+                    <option value="regex"${kind === "regex" ? " selected" : ""}>正则</option>
+                    <option value="type"${kind === "type" ? " selected" : ""}>标签</option>
+                </select>
+            </label>
+            <label class="field" data-filter-regex-field${kind === "type" ? " hidden" : ""}>
+                <span>正则内容</span>
+                <input name="regexContent" type="text" autocomplete="off" value="${escapeHtml(kind === "regex" ? filter?.content || "" : "")}">
+            </label>
+            <label class="field" data-filter-type-field${kind === "regex" ? " hidden" : ""}>
+                <span>标签</span>
+                <select name="typeContent">
+                    ${["动态", "转发动态", "视频", "音乐", "专栏", "直播"].map((label) => `<option value="${label}"${filter?.content === label ? " selected" : ""}>${label}</option>`).join("")}
+                </select>
+            </label>
+            <label class="field">
+                <span>黑/白名单</span>
+                <select name="mode">
+                    <option value="black"${mode === "black" ? " selected" : ""}>黑名单</option>
+                    <option value="white"${mode === "white" ? " selected" : ""}>白名单</option>
+                </select>
+            </label>
+            <div class="modal-actions subscription-config-footer" data-config-footer>
+                <button class="btn btn-secondary" type="button" data-config-cancel="filter">取消</button>
+                <button class="btn btn-primary" type="submit">确认</button>
+            </div>
+        </form>
+    `;
+    attachSubscriptionEditStatus();
+    setSubscriptionEditStatus("");
+}
+
+/**
+ * 模板列表展示策略内已有模板，并把随机模板开关直接对接后端策略。
+ */
+async function loadTemplateEditor() {
+    subscriptionState.editingAction = "template";
+    renderConfigLoading("已有模板", "正在加载模板");
+    const payload = await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/templates"), {headers: buildAuthHeaders()});
+    const templates = Array.isArray(payload?.templates) ? payload.templates : [];
+    subscriptionState.editingLists.template = templates;
+    const rows = templates.length === 0 ? emptyConfigList("暂无模板") : templates.map((template) => `
+        <div class="subscription-config-row">
+            <span class="subscription-config-main">${escapeHtml(template.name)} <small>${escapeHtml(template.typeLabel || "")}</small></span>
+            <span class="subscription-config-actions">
+                <button class="btn btn-secondary btn-small" type="button" data-config-edit="template" data-config-key="${escapeHtml(template.key)}">编辑</button>
+                <button class="btn btn-secondary btn-small subscription-delete" type="button" data-config-delete="template" data-config-key="${escapeHtml(template.key)}">删除</button>
+            </span>
+        </div>
+    `).join("");
+    subscriptionEditActionPanel.innerHTML = `
+        <div class="subscription-config-list">${rows}</div>
+        <div class="modal-actions subscription-config-footer subscription-config-footer--split" data-config-footer>
+            <div class="subscription-config-footer-left">
+                <label class="template-random-toggle">
+                    <input type="checkbox" data-template-random-toggle${payload?.randomEnabled ? " checked" : ""}>
+                    <span>开启随机模板</span>
+                </label>
+            </div>
+            <button class="btn btn-primary" type="button" data-config-add="template">添加模板</button>
+        </div>
+    `;
+    attachSubscriptionEditStatus();
+    setSubscriptionEditStatus("");
+}
+
+/**
+ * 模板表单带类型、名称、正文和占位符说明，正文框保持正方形并允许内部滚动。
+ */
+function renderTemplateForm(template = null) {
+    const type = template?.type || "dynamic";
+    setSubscriptionEditTitle(template ? "编辑模板" : "添加模板");
+    subscriptionEditActionPanel.innerHTML = `
+        <form class="subscription-config-form" data-config-form="template">
+            <input type="hidden" name="key" value="${escapeHtml(template?.key || "")}">
+            <label class="field">
+                <span>模板类型</span>
+                <select name="type" data-template-type>
+                    <option value="dynamic"${type === "dynamic" ? " selected" : ""}>动态</option>
+                    <option value="live"${type === "live" ? " selected" : ""}>开播</option>
+                    <option value="liveClose"${type === "liveClose" ? " selected" : ""}>下播</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>模板名称</span>
+                <input name="name" type="text" autocomplete="off" value="${escapeHtml(template?.name || "")}">
+            </label>
+            <label class="field">
+                <span>模板内容</span>
+                <textarea class="template-content-box" name="content">${escapeHtml(template?.content || "")}</textarea>
+            </label>
+            <pre class="template-explain" data-template-explain>${escapeHtml(templateExplainText[type] || templateExplainText.dynamic)}</pre>
+            <div class="modal-actions subscription-config-footer" data-config-footer>
+                <button class="btn btn-secondary" type="button" data-config-cancel="template">取消</button>
+                <button class="btn btn-primary" type="submit">确认</button>
+            </div>
+        </form>
+    `;
+    attachSubscriptionEditStatus();
+    setSubscriptionEditStatus("");
+}
+
+/**
+ * @全体列表按类型聚合显示群号，删除只移除该类型的当前订阅配置。
+ */
+async function loadAtAllEditor() {
+    subscriptionState.editingAction = "atall";
+    renderConfigLoading("已有at信息", "正在加载at全体");
+    const payload = await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/atall"), {headers: buildAuthHeaders()});
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    subscriptionState.editingLists.atall = items;
+    const rows = items.length === 0 ? emptyConfigList("暂无atall信息") : items.map((item) => `
+        <div class="subscription-config-row">
+            <span class="subscription-config-main">${escapeHtml(item.summary)}</span>
+            <span class="subscription-config-actions">
+                <button class="btn btn-secondary btn-small" type="button" data-config-edit="atall" data-config-key="${escapeHtml(item.key)}">编辑</button>
+                <button class="btn btn-secondary btn-small subscription-delete" type="button" data-config-delete="atall" data-config-key="${escapeHtml(item.key)}">删除</button>
+            </span>
+        </div>
+    `).join("");
+    subscriptionEditActionPanel.innerHTML = `
+        <div class="subscription-config-list">${rows}</div>
+        <div class="modal-actions subscription-config-footer" data-config-footer>
+            <button class="btn btn-secondary" type="button" data-editor-back>取消</button>
+            <button class="btn btn-primary" type="button" data-config-add="atall">添加at全体</button>
+        </div>
+    `;
+    attachSubscriptionEditStatus();
+    setSubscriptionEditStatus("");
+}
+
+/**
+ * @全体表单只需要类型选择，作用群组由后端根据当前订阅展开。
+ */
+function renderAtAllForm(item = null) {
+    const targets = getCurrentSubscriptionTargets();
+    setSubscriptionEditTitle(item ? "编辑at全体" : "添加at全体");
+    const targetOptions = targets.length === 0
+        ? '<option value="" disabled>暂无可选群聊</option>'
+        : targets.map((target) => {
+            const formatted = formatSubscriptionSubject(target);
+            const selected = item?.groups?.includes(target) ? " selected" : "";
+            return `<option value="${escapeHtml(target)}"${selected}>${escapeHtml(formatted.value)}</option>`;
+        }).join("");
+    subscriptionEditActionPanel.innerHTML = `
+        <form class="subscription-config-form" data-config-form="atall">
+            <input type="hidden" name="key" value="${escapeHtml(item?.key || "")}">
+            <label class="field">
+                <span>at类型</span>
+                <select name="type">
+                    ${["全部", "全部动态", "直播", "视频", "音乐", "专栏"].map((label) => `<option value="${label}"${item?.type === label ? " selected" : ""}>${label}</option>`).join("")}
+                </select>
+            </label>
+            <label class="field">
+                <span>目标群聊</span>
+                <select name="targetGroups" multiple size="4">
+                    ${targetOptions}
+                </select>
+            </label>
+            <div class="modal-actions subscription-config-footer" data-config-footer>
+                <button class="btn btn-secondary" type="button" data-config-cancel="atall">取消</button>
+                <button class="btn btn-primary" type="submit">确认</button>
+            </div>
+        </form>
+    `;
+    attachSubscriptionEditStatus();
+    setSubscriptionEditStatus("");
+}
+
+/**
+ * 当前订阅的可选群聊直接从卡片列表快照里取，避免编辑页自己猜测 scope 来源。
+ */
+function getCurrentSubscriptionTargets() {
+    const item = subscriptionState.items.find((candidate) => candidate.id === subscriptionState.editingItemId);
+    return Array.isArray(item?.targets) ? item.targets : [];
+}
+
+/**
+ * 主题色页面直接读取当前颜色并展示 HEX 输入框，格式错误由前后端双重校验。
+ */
+async function loadThemeEditor() {
+    subscriptionState.editingAction = "theme";
+    renderConfigLoading("编辑主题色", "正在加载主题色");
+    const payload = await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/theme"), {headers: buildAuthHeaders()});
+    subscriptionEditActionPanel.innerHTML = `
+        <form class="subscription-config-form" data-config-form="theme">
+            <label class="field">
+                <span>HEX颜色</span>
+                <input name="color" type="text" autocomplete="off" placeholder="#AABBCC" value="${escapeHtml(payload?.color || "")}">
+            </label>
+            <div class="modal-actions subscription-config-footer" data-config-footer>
+                <button class="btn btn-secondary" type="button" data-editor-back>取消</button>
+                <button class="btn btn-primary" type="submit">确认</button>
+            </div>
+        </form>
+    `;
+    attachSubscriptionEditStatus();
+    setSubscriptionEditStatus("");
+}
+
+/**
+ * 配置页新增和编辑按钮按当前 action 分发到对应表单。
+ */
+function openConfigForm(action, key = "") {
+    if (action === "filter") {
+        renderFilterForm(subscriptionState.editingLists.filter.find((item) => item.key === key) || null);
+    } else if (action === "template") {
+        renderTemplateForm(subscriptionState.editingLists.template.find((item) => item.key === key) || null);
+    } else if (action === "atall") {
+        renderAtAllForm(subscriptionState.editingLists.atall.find((item) => item.key === key) || null);
+    }
+}
+
+/**
+ * 表单取消时返回当前配置列表，主题色取消则直接回到编辑菜单。
+ */
+function cancelConfigForm(action) {
+    if (action === "filter") {
+        loadFilterEditor().catch((error) => setSubscriptionEditStatus(error.message || "过滤器加载失败"));
+    } else if (action === "template") {
+        loadTemplateEditor().catch((error) => setSubscriptionEditStatus(error.message || "模板加载失败"));
+    } else if (action === "atall") {
+        loadAtAllEditor().catch((error) => setSubscriptionEditStatus(error.message || "at全体加载失败"));
+    } else {
+        renderSubscriptionEditMenu();
+    }
+}
+
+/**
+ * 过滤器保存前先做正则必填校验，避免明显错误请求打到后端。
+ */
+async function submitFilterForm(form) {
+    const kind = form.elements.kind.value;
+    const content = kind === "regex" ? form.elements.regexContent.value.trim() : form.elements.typeContent.value;
+    if (kind === "regex" && !content) {
+        setSubscriptionEditStatus("正则内容必须填写");
+        return;
+    }
+    await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/filters"), {
+        method: "POST",
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({
+            key: form.elements.key.value,
+            kind,
+            mode: form.elements.mode.value,
+            content,
+        }),
+    });
+    setSubscriptionEditStatus("过滤器已保存", true);
+    await loadFilterEditor();
+    await refreshSubscriptions();
+}
+
+/**
+ * 模板保存要求名称存在，正文允许用户自行决定是否为空模板。
+ */
+async function submitTemplateForm(form) {
+    const name = form.elements.name.value.trim();
+    if (!name) {
+        setSubscriptionEditStatus("模板名称必须填写");
+        return;
+    }
+    await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/templates"), {
+        method: "POST",
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({
+            key: form.elements.key.value,
+            type: form.elements.type.value,
+            name,
+            content: form.elements.content.value,
+        }),
+    });
+    setSubscriptionEditStatus("模板已保存", true);
+    await loadTemplateEditor();
+    await refreshSubscriptions();
+}
+
+/**
+ * @全体保存提交类型和用户选择的目标群聊，后端负责处理互斥类型和旧群聊替换。
+ */
+async function submitAtAllForm(form) {
+    const oldKey = form.elements.key.value;
+    const oldItem = subscriptionState.editingLists.atall.find((item) => item.key === oldKey);
+    const targetGroups = Array.from(form.elements.targetGroups?.selectedOptions || []).map((option) => option.value);
+    if (targetGroups.length === 0) {
+        setSubscriptionEditStatus("目标群聊必须至少选择一个");
+        return;
+    }
+    if (oldItem && oldItem.type !== form.elements.type.value) {
+        await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl(`/atall/${encodeURIComponent(oldKey)}`), {
+            method: "DELETE",
+            headers: buildAuthHeaders(),
+        });
+    }
+    await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/atall"), {
+        method: "POST",
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({type: form.elements.type.value, targetGroups}),
+    });
+    setSubscriptionEditStatus("@全体已保存", true);
+    await loadAtAllEditor();
+    await refreshSubscriptions();
+}
+
+/**
+ * 主题色保存前先检查单个 HEX 格式，和后端校验保持同一输入边界。
+ */
+async function submitThemeForm(form) {
+    const color = form.elements.color.value.trim();
+    if (!/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.test(color)) {
+        setSubscriptionEditStatus("HEX颜色格式错误");
+        return;
+    }
+    await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/theme"), {
+        method: "POST",
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({color}),
+    });
+    setSubscriptionEditStatus("主题色已保存", true);
+    await refreshSubscriptions();
+}
+
+/**
+ * 删除配置项根据当前类型调用对应接口，删除完成后刷新当前列表和订阅卡片。
+ */
+async function deleteConfigItem(action, key) {
+    const path = action === "filter" ? `/filters/${encodeURIComponent(key)}`
+        : action === "template" ? `/templates/${encodeURIComponent(key)}`
+            : `/atall/${encodeURIComponent(key)}`;
+    await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl(path), {
+        method: "DELETE",
+        headers: buildAuthHeaders(),
+    });
+    if (action === "filter") {
+        await loadFilterEditor();
+    } else if (action === "template") {
+        await loadTemplateEditor();
+    } else {
+        await loadAtAllEditor();
+    }
+    await refreshSubscriptions();
+}
+
+/**
+ * 随机模板开关实时写入策略，失败时把 checkbox 恢复到原状态。
+ */
+async function toggleTemplateRandom(checkbox) {
+    const nextValue = checkbox.checked;
+    try {
+        await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/templates/random"), {
+            method: "POST",
+            headers: buildAuthHeaders(true),
+            body: JSON.stringify({enabled: nextValue}),
+        });
+        setSubscriptionEditStatus(nextValue ? "随机模板已开启" : "随机模板已关闭", true);
+        await refreshSubscriptions();
+    } catch (error) {
+        checkbox.checked = !nextValue;
+        setSubscriptionEditStatus(error.message || "随机模板保存失败");
     }
 }
 
@@ -1389,6 +1921,89 @@ if (closeSubscriptionEditButton) {
     closeSubscriptionEditButton.addEventListener("click", closeSubscriptionEditModal);
 }
 
+if (subscriptionEditModal) {
+    // 编辑弹窗内部使用事件代理，列表刷新和表单切换后不需要重新绑定按钮。
+    subscriptionEditModal.addEventListener("click", (event) => {
+        const actionButton = event.target.closest("[data-edit-action]");
+        if (actionButton) {
+            const action = actionButton.dataset.editAction;
+            const loaders = {
+                filter: loadFilterEditor,
+                template: loadTemplateEditor,
+                atall: loadAtAllEditor,
+                theme: loadThemeEditor,
+            };
+            loaders[action]?.().catch((error) => setSubscriptionEditStatus(error.message || "配置加载失败"));
+            return;
+        }
+        if (event.target.closest("[data-editor-back]")) {
+            renderSubscriptionEditMenu();
+            setSubscriptionEditStatus("");
+            return;
+        }
+        const addButton = event.target.closest("[data-config-add]");
+        if (addButton) {
+            openConfigForm(addButton.dataset.configAdd);
+            return;
+        }
+        const editButton = event.target.closest("[data-config-edit]");
+        if (editButton) {
+            openConfigForm(editButton.dataset.configEdit, editButton.dataset.configKey || "");
+            return;
+        }
+        const deleteButton = event.target.closest("[data-config-delete]");
+        if (deleteButton) {
+            deleteConfigItem(deleteButton.dataset.configDelete, deleteButton.dataset.configKey || "")
+                .catch((error) => setSubscriptionEditStatus(error.message || "删除失败"));
+            return;
+        }
+        const cancelButton = event.target.closest("[data-config-cancel]");
+        if (cancelButton) {
+            cancelConfigForm(cancelButton.dataset.configCancel);
+        }
+    });
+
+    // 表单提交统一从当前 form 的 data-config-form 分发到对应保存逻辑。
+    subscriptionEditModal.addEventListener("submit", (event) => {
+        const form = event.target.closest("[data-config-form]");
+        if (!form) {
+            return;
+        }
+        event.preventDefault();
+        const action = form.dataset.configForm;
+        const submitters = {
+            filter: submitFilterForm,
+            template: submitTemplateForm,
+            atall: submitAtAllForm,
+            theme: submitThemeForm,
+        };
+        submitters[action]?.(form).catch((error) => setSubscriptionEditStatus(error.message || "保存失败"));
+    });
+
+    // 选择过滤方式和模板类型时同步切换字段显隐和说明文案，避免用户保存前看到旧说明。
+    subscriptionEditModal.addEventListener("change", (event) => {
+        const filterKind = event.target.closest("[data-filter-kind]");
+        if (filterKind) {
+            const showRegex = filterKind.value === "regex";
+            subscriptionEditModal.querySelector("[data-filter-regex-field]")?.toggleAttribute("hidden", !showRegex);
+            subscriptionEditModal.querySelector("[data-filter-type-field]")?.toggleAttribute("hidden", showRegex);
+            return;
+        }
+        const templateType = event.target.closest("[data-template-type]");
+        if (templateType) {
+            const explain = subscriptionEditModal.querySelector("[data-template-explain]");
+            if (explain) {
+                explain.textContent = templateExplainText[templateType.value] || templateExplainText.dynamic;
+            }
+            return;
+        }
+        const randomToggle = event.target.closest("[data-template-random-toggle]");
+        if (randomToggle) {
+            toggleTemplateRandom(randomToggle);
+        }
+    });
+}
+
 if (closeSubscriptionDeleteButton) {
     closeSubscriptionDeleteButton.addEventListener("click", closeSubscriptionDeleteModal);
 }
@@ -1407,23 +2022,6 @@ if (confirmSubscriptionDeleteButton) {
         });
     });
 }
-
-document.querySelectorAll("[data-edit-action]").forEach((button) => {
-    // 编辑动作先提供可点击入口，具体配置弹窗后续接入对应业务 API。
-    button.addEventListener("click", () => {
-        if (!subscriptionEditStatus) {
-            return;
-        }
-        const labels = {
-            filter: "编辑过滤器",
-            template: "编辑模板",
-            atall: "编辑at全体",
-            theme: "编辑主题色",
-        };
-        subscriptionEditStatus.textContent = `${labels[button.dataset.editAction] || "编辑"}：配置入口已打开`;
-        subscriptionEditStatus.classList.add("is-success");
-    });
-});
 
 if (logAutoRefresh) {
     logAutoRefresh.addEventListener("change", () => {
