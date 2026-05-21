@@ -4,6 +4,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.Serializable
@@ -13,10 +14,12 @@ import top.bilibili.webui.model.WebUiBiliDataWriteRequestDto
 import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
 import top.bilibili.webui.model.WebUiSaveEffectLevel
+import top.bilibili.webui.model.WebUiSubscriptionCreateRequestDto
 import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiConfigFacade
 import top.bilibili.webui.service.WebUiConfigWriteFacade
 import top.bilibili.webui.service.WebUiRuntimeFacade
+import top.bilibili.webui.service.WebUiSubscriptionManagementFacade
 
 /**
  * WebUI API 路由统一暴露受认证保护的运行态查询和文件级配置读写接口。
@@ -26,6 +29,7 @@ fun Route.registerWebUiApiRoutes(
     runtimeFacade: WebUiRuntimeFacade,
     configFacade: WebUiConfigFacade,
     configWriteFacade: WebUiConfigWriteFacade,
+    subscriptionManagementFacade: WebUiSubscriptionManagementFacade,
     auditService: WebUiAuditService,
 ) {
     get("/api/health") {
@@ -56,6 +60,20 @@ fun Route.registerWebUiApiRoutes(
     get("/api/subscriptions") {
         call.requireWebUiSession(authService, auditService) ?: return@get
         call.respond(configFacade.readSubscriptions())
+    }
+
+    post("/api/subscriptions") {
+        call.requireWebUiSession(authService, auditService) ?: return@post
+        val request = call.receive<WebUiSubscriptionCreateRequestDto>()
+        val result = subscriptionManagementFacade.createSubscription(request)
+        call.respondSubscriptionMutation(result)
+    }
+
+    delete("/api/subscriptions/{id}") {
+        call.requireWebUiSession(authService, auditService) ?: return@delete
+        val id = call.parameters["id"].orEmpty()
+        val result = subscriptionManagementFacade.deleteSubscription(id)
+        call.respondSubscriptionMutation(result)
     }
 
     get("/api/config/bot") {
@@ -119,5 +137,15 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondSaveResult
         WebUiSaveEffectLevel.REJECTED_VALIDATION -> HttpStatusCode.BadRequest
         else -> HttpStatusCode.OK
     }
+    respond(status, result)
+}
+
+/**
+ * 订阅管理写操作使用 BadRequest 表达输入或业务校验失败，成功删除和新增都返回 OK。
+ */
+private suspend fun io.ktor.server.application.ApplicationCall.respondSubscriptionMutation(
+    result: top.bilibili.webui.model.WebUiSubscriptionMutationResultDto,
+) {
+    val status = if (result.success) HttpStatusCode.OK else HttpStatusCode.BadRequest
     respond(status, result)
 }

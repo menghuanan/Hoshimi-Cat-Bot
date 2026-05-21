@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>dynamic-bot WebUI Shell</title>
     <script src="/assets/theme.js"></script>
-    <link rel="stylesheet" href="/assets/app.css?v=subscriptions-card-flow-v4">
+    <link rel="stylesheet" href="/assets/app.css?v=subscriptions-card-flow-v5">
 </head>
 <body class="dashboard-page">
 <svg aria-hidden="true" focusable="false" class="svg-sprite">
@@ -536,13 +536,14 @@
                         <button class="tab is-active" type="button" data-subscription-filter="all" aria-pressed="true">全部</button>
                         <button class="tab" type="button" data-subscription-filter="dynamic" aria-pressed="false">直播与动态</button>
                         <button class="tab" type="button" data-subscription-filter="bangumi" aria-pressed="false">番剧</button>
+                        <button class="tab" type="button" data-subscription-filter="group" aria-pressed="false">分组</button>
                     </div>
                     <div class="subscription-controls">
                         <label class="subscription-search-field">
                             <svg viewBox="0 0 24 24" class="search-icon"><use href="#icon-search"></use></svg>
                             <input id="subscription-search-input" type="search" autocomplete="off" placeholder="搜索名称、UID 或推送目标" aria-label="搜索订阅">
                         </label>
-                        <button class="btn btn-primary btn-add" type="button">
+                        <button class="btn btn-primary btn-add" type="button" data-add-subscription-open>
                             <svg viewBox="0 0 24 24" class="btn-icon"><use href="#icon-plus"></use></svg>
                             添加订阅
                         </button>
@@ -603,6 +604,78 @@
         </main>
     </div>
 </div>
+<div id="subscription-modal" class="modal-backdrop" hidden>
+    <section class="subscription-modal-card" role="dialog" aria-modal="true" aria-labelledby="subscription-modal-title">
+        <div class="modal-head">
+            <h2 id="subscription-modal-title">添加订阅</h2>
+            <button id="close-subscription-modal" class="modal-close" type="button" aria-label="关闭添加订阅窗口">×</button>
+        </div>
+        <form id="subscription-create-form" class="modal-form">
+            <label class="field">
+                <span>添加类型</span>
+                <select id="subscription-create-type" name="type">
+                    <option value="dynamic">订阅</option>
+                    <option value="group">分组</option>
+                    <option value="bangumi">番剧</option>
+                </select>
+            </label>
+            <div class="subscription-form-fields" data-subscription-fields="dynamic">
+                <label class="field">
+                    <span>订阅UID</span>
+                    <input id="subscription-create-uid" name="uid" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+                <label class="field">
+                    <span>推送群组</span>
+                    <input id="subscription-create-target" name="targetGroup" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+            </div>
+            <div class="subscription-form-fields" data-subscription-fields="group" hidden>
+                <label class="field">
+                    <span>分组名</span>
+                    <input id="subscription-create-group-name" name="groupName" type="text" autocomplete="off">
+                </label>
+                <label class="field">
+                    <span>订阅UID</span>
+                    <input id="subscription-create-group-uid" name="groupUid" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+                <label class="field">
+                    <span>推送群组</span>
+                    <input id="subscription-create-group-target" name="groupTarget" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+            </div>
+            <div class="subscription-form-fields" data-subscription-fields="bangumi" hidden>
+                <label class="field">
+                    <span>番剧号</span>
+                    <input id="subscription-create-bangumi-id" name="bangumiId" type="text" autocomplete="off">
+                </label>
+                <label class="field">
+                    <span>推送群组</span>
+                    <input id="subscription-create-bangumi-target" name="bangumiTarget" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+            </div>
+            <p id="subscription-modal-status" class="modal-status" aria-live="polite"></p>
+            <div class="modal-actions">
+                <button id="cancel-subscription-modal" class="btn btn-secondary" type="button">取消</button>
+                <button class="btn btn-primary" type="submit">保存</button>
+            </div>
+        </form>
+    </section>
+</div>
+<div id="subscription-edit-modal" class="modal-backdrop" hidden>
+    <section class="subscription-modal-card subscription-modal-card--compact" role="dialog" aria-modal="true" aria-labelledby="subscription-edit-title">
+        <div class="modal-head">
+            <h2 id="subscription-edit-title">编辑订阅</h2>
+            <button id="close-subscription-edit" class="modal-close" type="button" aria-label="关闭编辑订阅窗口">×</button>
+        </div>
+        <div class="subscription-actions-row">
+            <button class="btn btn-secondary" type="button" data-edit-action="filter">添加过滤器</button>
+            <button class="btn btn-secondary" type="button" data-edit-action="template">添加模板</button>
+            <button class="btn btn-secondary" type="button" data-edit-action="atall">开启at全体</button>
+            <button class="btn btn-secondary" type="button" data-edit-action="theme">修改主题色</button>
+        </div>
+        <p id="subscription-edit-status" class="modal-status" aria-live="polite"></p>
+    </section>
+</div>
 <div id="change-password-modal" class="modal-backdrop" hidden>
     <section class="password-modal" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
         <div class="modal-head">
@@ -630,6 +703,6 @@
         </form>
     </section>
 </div>
-<script src="/assets/app.js?v=subscriptions-card-flow-v4"></script>
+<script src="/assets/app.js?v=subscriptions-card-flow-v5"></script>
 </body>
 </html>

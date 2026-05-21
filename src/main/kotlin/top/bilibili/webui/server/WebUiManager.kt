@@ -25,6 +25,7 @@ import top.bilibili.webui.service.WebUiConfigFacade
 import top.bilibili.webui.service.WebUiConfigWriteFacade
 import top.bilibili.webui.service.WebUiLogFacade
 import top.bilibili.webui.service.WebUiRuntimeFacade
+import top.bilibili.webui.service.WebUiSubscriptionManagementFacade
 
 /**
  * WebUI 管理器只拥有嵌入式服务器生命周期，不承载业务编排或配置写回职责。
@@ -70,6 +71,7 @@ class WebUiManager(
                 configWriteFacade = WebUiConfigWriteFacade(
                     configFacade = configFacade,
                 ),
+                subscriptionManagementFacade = WebUiSubscriptionManagementFacade(),
                 logFacade = WebUiLogFacade(),
                 actionFacade = WebUiActionFacade(),
                 auditService = WebUiAuditService(),
@@ -103,6 +105,7 @@ fun Application.installWebUiModule(
     runtimeFacade: WebUiRuntimeFacade,
     configFacade: WebUiConfigFacade,
     configWriteFacade: WebUiConfigWriteFacade,
+    subscriptionManagementFacade: WebUiSubscriptionManagementFacade = WebUiSubscriptionManagementFacade(),
     logFacade: WebUiLogFacade,
     actionFacade: WebUiActionFacade,
     auditService: WebUiAuditService,
@@ -113,7 +116,14 @@ fun Application.installWebUiModule(
     routing {
         registerWebUiStaticRoutes(settings, authService)
         registerWebUiAuthRoutes(authService, auditService)
-        registerWebUiApiRoutes(authService, runtimeFacade, configFacade, configWriteFacade, auditService)
+        registerWebUiApiRoutes(
+            authService,
+            runtimeFacade,
+            configFacade,
+            configWriteFacade,
+            subscriptionManagementFacade,
+            auditService,
+        )
         registerWebUiLogRoutes(authService, logFacade, auditService)
         registerWebUiActionRoutes(authService, actionFacade, auditService)
     }

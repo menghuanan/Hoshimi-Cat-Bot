@@ -634,8 +634,40 @@ class WebUiConfigFacadeTest {
         assertEquals("#112233", dynamicCard.themeColor)
         assertEquals(listOf("番剧"), bangumiCard.tags)
         assertEquals("#334455", bangumiCard.themeColor)
-        assertEquals("订阅UID", groupCard.targetSectionTitle)
-        assertEquals(listOf("123", "789"), groupCard.targets)
-        assertEquals("分组: team-a", groupCard.identifierLabel)
+        assertEquals("推送目标", groupCard.targetSectionTitle)
+        assertEquals(listOf("onebot11:group:1072150397", "onebot11:group:12344555"), groupCard.targets)
+        assertEquals("订阅UID: 123、789", groupCard.identifierLabel)
+    }
+
+    /**
+     * 分组卡片头部只展示前两个 UID，剩余数量用 +N 标记，避免卡片头部被长 UID 列表撑开。
+     */
+    @Test
+    fun `subscription overview should summarize extra group uids in card header`() {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(name = "Alice", sourceRefs = mutableSetOf("groupRef:team-a")),
+                456L to SubData(name = "Carol", sourceRefs = mutableSetOf("groupRef:team-a")),
+                789L to SubData(name = "Bob", sourceRefs = mutableSetOf("groupRef:team-a")),
+            )
+            group = mutableMapOf(
+                "team-a" to Group(
+                    name = "team-a",
+                    creator = 1L,
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                ),
+            )
+            bangumi = mutableMapOf()
+        }
+        val facade = WebUiConfigFacade(
+            biliConfigProvider = { BiliConfig() },
+            biliDataProvider = { BiliData },
+            botConfigProvider = { BotConfig() },
+        )
+
+        val groupCard = facade.readSubscriptions().items.first { it.id == "group:team-a" }
+
+        assertEquals("订阅UID: 123、456 +1", groupCard.identifierLabel)
+        assertEquals(listOf("onebot11:group:10001"), groupCard.targets)
     }
 }

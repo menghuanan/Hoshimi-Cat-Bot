@@ -102,11 +102,11 @@ private fun buildGroupSubscriptionItem(
         id = "group:$groupName",
         kind = "group",
         title = groupName,
-        identifierLabel = "分组: $groupName",
+        identifierLabel = summarizeGroupUids(uids),
         sourceId = 0L,
         tags = listOf("分组"),
-        targetSectionTitle = "订阅UID",
-        targets = uids.map(Long::toString),
+        targetSectionTitle = "推送目标",
+        targets = contacts.sorted(),
         filterInfo = "共 ${uids.sumOf { uid -> countFilters(data, uid) }} 个过滤器",
         filterCount = uids.sumOf { uid -> countFilters(data, uid) },
         templateNames = templateNames.toList(),
@@ -118,6 +118,18 @@ private fun buildGroupSubscriptionItem(
             maxOf(subscription.last, subscription.lastLive)
         } ?: 0L,
     )
+}
+
+/**
+ * 分组卡片头部最多展示两个订阅 UID，超出部分使用 +N 保持标题区域紧凑。
+ */
+private fun summarizeGroupUids(uids: List<Long>): String {
+    if (uids.isEmpty()) {
+        return "订阅UID: 暂无"
+    }
+    val head = uids.take(2).joinToString("、")
+    val more = if (uids.size > 2) " +${uids.size - 2}" else ""
+    return "订阅UID: $head$more"
 }
 
 /**

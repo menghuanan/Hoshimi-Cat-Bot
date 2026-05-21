@@ -135,8 +135,8 @@ class WebUiFoundationSourceRegressionTest {
     fun `frontend shell should version account control assets`() {
         val shellPage = read("src/main/resources/webui/index.html")
 
-        assertTrue(shellPage.contains("""/assets/app.css?v=subscriptions-card-flow-v4"""))
-        assertTrue(shellPage.contains("""/assets/app.js?v=subscriptions-card-flow-v4"""))
+        assertTrue(shellPage.contains("""/assets/app.css?v=subscriptions-card-flow-v5"""))
+        assertTrue(shellPage.contains("""/assets/app.js?v=subscriptions-card-flow-v5"""))
     }
 
     /**
@@ -239,9 +239,16 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellPage.contains("""data-subscription-filter="all""""))
         assertTrue(shellPage.contains("""data-subscription-filter="dynamic""""))
         assertTrue(shellPage.contains("""data-subscription-filter="bangumi""""))
+        assertTrue(shellPage.contains("""data-subscription-filter="group""""))
+        assertTrue(shellPage.contains("""id="subscription-modal""""))
+        assertTrue(shellPage.contains("""id="subscription-edit-modal""""))
+        assertTrue(shellPage.contains("""data-add-subscription-open"""))
         assertTrue(shellPage.contains("""id="subscription-search-input""""))
         assertTrue(shellPage.contains("""data-subscription-list"""))
         assertTrue(shellScript.contains("/api/subscriptions"))
+        assertTrue(shellScript.contains("createSubscription"))
+        assertTrue(shellScript.contains("deleteSubscription"))
+        assertTrue(shellScript.contains("openSubscriptionEditModal"))
         assertTrue(shellScript.contains("renderSubscriptions"))
         assertTrue(shellScript.contains("filteredSubscriptions"))
         assertTrue(shellScript.contains("formatSubscriptionSubject"))
@@ -259,6 +266,8 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellStyle.contains("flex: 1;"))
         assertTrue(shellStyle.contains("min-height: calc(100vh - 168px);"))
         assertTrue(shellStyle.contains("place-content: center;"))
+        assertTrue(shellStyle.contains(".subscription-modal-card"))
+        assertTrue(shellStyle.contains(".subscription-actions-row"))
         assertFalse(shellStyle.contains("aspect-ratio: 1 / 1;"))
         assertFalse(shellStyle.contains("justify-self: center;"))
         assertFalse(shellPage.contains("全部 (56)"))

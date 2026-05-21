@@ -3,6 +3,7 @@ package top.bilibili.webui
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.request.delete
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -45,6 +46,8 @@ import top.bilibili.webui.model.WebUiResourceUsageDto
 import top.bilibili.webui.model.WebUiRuntimeSummaryDto
 import top.bilibili.webui.model.WebUiSessionDto
 import top.bilibili.webui.model.WebUiChangePasswordRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionCreateRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionMutationResultDto
 import top.bilibili.tasker.DailyPushStatsSnapshot
 import top.bilibili.tasker.PushDeliveryRecordSnapshot
 import top.bilibili.webui.server.installWebUiModule
@@ -187,6 +190,48 @@ class WebUiRouteSmokeTest {
         assertEquals("已发送", runtimeBody.recentPushRecords.first().statusLabel)
         assertEquals("米哈游Official 正在直播：4.7版本前瞻特别节目", runtimeBody.recentPushRecords.first().summary)
         assertEquals("bot.yml", configResponse.body<WebUiConfigFileDto>().sourceFile)
+    }
+
+    /**
+     * 订阅写接口必须挂在受认证 API 下，并把业务校验失败映射成可读的 400 响应。
+     */
+    @Test
+    fun `subscription mutation routes should require auth and expose validation failures`() = testApplication {
+        val authService = buildAuthService()
+        val bootstrapPassword = authService.bootstrapCredentials().initialPassword!!
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(sink = {}),
+            )
+        }
+
+        val client = createWebUiClient()
+        val token = reloginForPhase3(authService, bootstrapPassword)
+        val unauthenticated = client.post("/api/subscriptions") {
+            contentType(ContentType.Application.Json)
+            setBody(WebUiSubscriptionCreateRequestDto(type = "dynamic"))
+        }
+        val invalidCreate = client.post("/api/subscriptions") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "md12345", targetGroup = "10001"))
+        }
+        val invalidDelete = client.delete("/api/subscriptions/missing") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+
+        assertEquals(HttpStatusCode.Unauthorized, unauthenticated.status)
+        assertEquals(HttpStatusCode.BadRequest, invalidCreate.status)
+        assertTrue(invalidCreate.body<WebUiSubscriptionMutationResultDto>().message.contains("ep 或 ss"))
+        assertEquals(HttpStatusCode.BadRequest, invalidDelete.status)
     }
 
     /**

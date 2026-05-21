@@ -49,6 +49,16 @@ const logList = document.querySelector("[data-log-list]");
 const subscriptionFilterButtons = Array.from(document.querySelectorAll("[data-subscription-filter]"));
 const subscriptionSearchInput = document.getElementById("subscription-search-input");
 const subscriptionList = document.querySelector("[data-subscription-list]");
+const addSubscriptionButton = document.querySelector("[data-add-subscription-open]");
+const subscriptionModal = document.getElementById("subscription-modal");
+const closeSubscriptionModalButton = document.getElementById("close-subscription-modal");
+const cancelSubscriptionModalButton = document.getElementById("cancel-subscription-modal");
+const subscriptionCreateForm = document.getElementById("subscription-create-form");
+const subscriptionCreateType = document.getElementById("subscription-create-type");
+const subscriptionModalStatus = document.getElementById("subscription-modal-status");
+const subscriptionEditModal = document.getElementById("subscription-edit-modal");
+const closeSubscriptionEditButton = document.getElementById("close-subscription-edit");
+const subscriptionEditStatus = document.getElementById("subscription-edit-status");
 const themePreferenceCookieName = window.WebUiTheme?.cookieName || "dynamic_bot_webui_theme";
 const runtimeRefreshIntervalMs = 30_000;
 const logRefreshIntervalMs = 5_000;
@@ -66,6 +76,7 @@ const subscriptionState = {
     search: "",
     items: [],
     loaded: false,
+    editingItemId: "",
 };
 let logRefreshTimer = null;
 let logRequestSequence = 0;
@@ -310,10 +321,6 @@ function renderSubscriptionTargets(item) {
     if (items.length === 0) {
         return '<span class="mini-chip mini-chip--muted">暂无目标</span>';
     }
-    if (item?.targetSectionTitle === "订阅UID") {
-        const text = items.join("、");
-        return `<span class="mini-chip" title="${escapeHtml(text)}">${escapeHtml(text)}</span>`;
-    }
     const grouped = new Map();
     items.forEach((target) => {
         const formatted = formatSubscriptionSubject(target);
@@ -392,6 +399,7 @@ function syncSubscriptionFilters() {
         all: "全部",
         dynamic: "直播与动态",
         bangumi: "番剧",
+        group: "分组",
     };
     subscriptionFilterButtons.forEach((button) => {
         const filter = button.dataset.subscriptionFilter || "all";
@@ -420,7 +428,7 @@ function renderSubscriptions(summary = null) {
             return `<span class="pill ${subscriptionTagClass(tag)}">${escapeHtml(tag)}</span>`;
         }).join("");
         return `
-            <article class="subscription-card">
+            <article class="subscription-card" data-subscription-id="${escapeHtml(item.id)}">
                 <div class="subscription-head">
                     <div class="subscription-profile">
                         <span class="subscription-avatar ${subscriptionAvatarClass(index)}">${escapeHtml(subscriptionAvatarText(item))}</span>
@@ -455,11 +463,157 @@ function renderSubscriptions(summary = null) {
                 </div>
                 <div class="subscription-footer">
                     <span class="subscription-time">${escapeHtml(formatSubscriptionUpdatedTime(item.lastUpdatedEpochMillis))}</span>
-                    <button class="btn btn-secondary btn-small subscription-edit" type="button">编辑</button>
+                    <div class="subscription-card-actions">
+                        <button class="btn btn-secondary btn-small subscription-edit" type="button" data-subscription-edit="${escapeHtml(item.id)}">编辑</button>
+                        <button class="btn btn-secondary btn-small subscription-delete" type="button" data-subscription-delete="${escapeHtml(item.id)}">删除</button>
+                    </div>
                 </div>
             </article>
         `;
     }).join("");
+}
+
+/**
+ * 添加订阅弹窗每次打开都重置状态，避免上次失败文案干扰新的提交。
+ */
+function openSubscriptionModal() {
+    if (!subscriptionModal || !subscriptionCreateForm) {
+        return;
+    }
+    subscriptionCreateForm.reset();
+    updateSubscriptionCreateFields();
+    setSubscriptionModalStatus("");
+    subscriptionModal.hidden = false;
+    subscriptionCreateType?.focus();
+}
+
+/**
+ * 关闭添加订阅弹窗时只隐藏浮层，不改变当前列表筛选和搜索条件。
+ */
+function closeSubscriptionModal() {
+    if (subscriptionModal) {
+        subscriptionModal.hidden = true;
+    }
+}
+
+/**
+ * 添加类型决定表单字段组显隐，确保订阅、分组、番剧三类只提交各自需要的输入。
+ */
+function updateSubscriptionCreateFields() {
+    const selected = subscriptionCreateType?.value || "dynamic";
+    document.querySelectorAll("[data-subscription-fields]").forEach((group) => {
+        group.hidden = group.dataset.subscriptionFields !== selected;
+    });
+}
+
+/**
+ * 添加订阅状态文案复用 modal-status 成功态，失败时保持默认红色。
+ */
+function setSubscriptionModalStatus(message, success = false) {
+    if (!subscriptionModalStatus) {
+        return;
+    }
+    subscriptionModalStatus.textContent = message || "";
+    subscriptionModalStatus.classList.toggle("is-success", Boolean(success));
+}
+
+/**
+ * 根据当前类型收集表单值，字段名保持与后端 DTO 一致。
+ */
+function buildSubscriptionCreatePayload() {
+    const type = subscriptionCreateType?.value || "dynamic";
+    if (type === "group") {
+        return {
+            type,
+            groupName: document.getElementById("subscription-create-group-name")?.value || "",
+            uid: document.getElementById("subscription-create-group-uid")?.value || "",
+            targetGroup: document.getElementById("subscription-create-group-target")?.value || "",
+        };
+    }
+    if (type === "bangumi") {
+        return {
+            type,
+            bangumiId: document.getElementById("subscription-create-bangumi-id")?.value || "",
+            targetGroup: document.getElementById("subscription-create-bangumi-target")?.value || "",
+        };
+    }
+    return {
+        type,
+        uid: document.getElementById("subscription-create-uid")?.value || "",
+        targetGroup: document.getElementById("subscription-create-target")?.value || "",
+    };
+}
+
+/**
+ * 新增订阅走后端业务 facade，成功后刷新卡片列表以展示真实写入结果。
+ */
+async function createSubscription() {
+    const response = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify(buildSubscriptionCreatePayload()),
+    });
+    if (response.status === 401 || response.status === 403) {
+        location.href = "/login";
+        return;
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+        const message = payload.message || `添加失败：HTTP ${response.status}`;
+        setSubscriptionModalStatus(message);
+        return;
+    }
+    setSubscriptionModalStatus(payload.message || "添加成功", true);
+    await refreshSubscriptions();
+    closeSubscriptionModal();
+}
+
+/**
+ * 删除订阅前保留浏览器确认，避免误触时直接移除订阅及其附属配置。
+ */
+async function deleteSubscription(itemId) {
+    if (!itemId || !window.confirm("确认删除这个订阅及其关联配置吗？")) {
+        return;
+    }
+    const response = await fetch(`/api/subscriptions/${encodeURIComponent(itemId)}`, {
+        method: "DELETE",
+        headers: buildAuthHeaders(),
+    });
+    if (response.status === 401 || response.status === 403) {
+        location.href = "/login";
+        return;
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+        setSubscriptionError(payload.message || `删除失败：HTTP ${response.status}`);
+        return;
+    }
+    await refreshSubscriptions();
+}
+
+/**
+ * 编辑弹窗当前提供动作入口，具体配置表单后续可复用同一个 itemId 延展。
+ */
+function openSubscriptionEditModal(itemId) {
+    if (!subscriptionEditModal) {
+        return;
+    }
+    subscriptionState.editingItemId = itemId || "";
+    if (subscriptionEditStatus) {
+        subscriptionEditStatus.textContent = "";
+        subscriptionEditStatus.classList.remove("is-success");
+    }
+    subscriptionEditModal.hidden = false;
+}
+
+/**
+ * 关闭编辑弹窗时清空当前 itemId，避免后续动作误用上一次卡片。
+ */
+function closeSubscriptionEditModal() {
+    subscriptionState.editingItemId = "";
+    if (subscriptionEditModal) {
+        subscriptionEditModal.hidden = true;
+    }
 }
 
 /**
@@ -1144,6 +1298,67 @@ if (subscriptionSearchInput) {
     });
 }
 
+if (addSubscriptionButton) {
+    addSubscriptionButton.addEventListener("click", openSubscriptionModal);
+}
+
+if (closeSubscriptionModalButton) {
+    closeSubscriptionModalButton.addEventListener("click", closeSubscriptionModal);
+}
+
+if (cancelSubscriptionModalButton) {
+    cancelSubscriptionModalButton.addEventListener("click", closeSubscriptionModal);
+}
+
+if (subscriptionCreateType) {
+    subscriptionCreateType.addEventListener("change", updateSubscriptionCreateFields);
+}
+
+if (subscriptionCreateForm) {
+    // 表单提交只走新增订阅接口，校验错误留在弹窗底部反馈。
+    subscriptionCreateForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        createSubscription().catch((error) => setSubscriptionModalStatus(error.message || "添加失败"));
+    });
+}
+
+if (subscriptionList) {
+    // 卡片按钮由列表容器代理，避免每次刷新后重新绑定全部按钮。
+    subscriptionList.addEventListener("click", (event) => {
+        const editButton = event.target.closest("[data-subscription-edit]");
+        if (editButton) {
+            openSubscriptionEditModal(editButton.dataset.subscriptionEdit || "");
+            return;
+        }
+        const deleteButton = event.target.closest("[data-subscription-delete]");
+        if (deleteButton) {
+            deleteSubscription(deleteButton.dataset.subscriptionDelete || "")
+                .catch((error) => setSubscriptionError(error.message || "删除失败"));
+        }
+    });
+}
+
+if (closeSubscriptionEditButton) {
+    closeSubscriptionEditButton.addEventListener("click", closeSubscriptionEditModal);
+}
+
+document.querySelectorAll("[data-edit-action]").forEach((button) => {
+    // 编辑动作先提供可点击入口，具体配置弹窗后续接入对应业务 API。
+    button.addEventListener("click", () => {
+        if (!subscriptionEditStatus) {
+            return;
+        }
+        const labels = {
+            filter: "添加过滤器",
+            template: "添加模板",
+            atall: "开启at全体",
+            theme: "修改主题色",
+        };
+        subscriptionEditStatus.textContent = `${labels[button.dataset.editAction] || "编辑"}：配置入口已打开`;
+        subscriptionEditStatus.classList.add("is-success");
+    });
+});
+
 if (logAutoRefresh) {
     logAutoRefresh.addEventListener("change", () => {
         if (logAutoRefresh.checked && !views.get("logs")?.hidden) {
@@ -1228,6 +1443,13 @@ document.addEventListener("keydown", (event) => {
     setAdminMenuOpen(false);
     if (changePasswordModal && !changePasswordModal.hidden) {
         closeChangePasswordModal();
+    }
+    // Escape 同时关闭订阅相关弹窗，保持三个管理弹窗的键盘行为一致。
+    if (subscriptionModal && !subscriptionModal.hidden) {
+        closeSubscriptionModal();
+    }
+    if (subscriptionEditModal && !subscriptionEditModal.hidden) {
+        closeSubscriptionEditModal();
     }
 });
 

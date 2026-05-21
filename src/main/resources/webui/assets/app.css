@@ -162,7 +162,8 @@ p {
     font-size: 0.92rem;
 }
 
-input {
+input,
+select {
     width: 100%;
     padding: 12px 14px;
     border: 1px solid var(--line);
@@ -173,7 +174,8 @@ input {
     outline: none;
 }
 
-input:focus {
+input:focus,
+select:focus {
     border-color: rgba(45, 108, 246, 0.55);
     box-shadow: 0 0 0 3px rgba(45, 108, 246, 0.12);
 }
@@ -1124,12 +1126,17 @@ input:focus {
     backdrop-filter: blur(3px);
 }
 
-.password-modal {
+.password-modal,
+.subscription-modal-card {
     width: min(100%, 420px);
     border: 1px solid var(--line);
     border-radius: 16px;
     background: var(--surface-strong);
     box-shadow: var(--shadow-lg);
+}
+
+.subscription-modal-card--compact {
+    width: min(100%, 360px);
 }
 
 .modal-head {
@@ -1189,6 +1196,24 @@ input:focus {
 
 .modal-actions .btn-primary {
     border: 0;
+}
+
+/* 订阅弹窗字段按当前类型切换显示，保持弹窗居中且不挤占订阅卡片网格。 */
+.subscription-form-fields {
+    display: grid;
+    gap: 12px;
+}
+
+.subscription-actions-row {
+    display: grid;
+    gap: 8px;
+    padding: 10px 20px 4px;
+}
+
+.subscription-actions-row .btn {
+    justify-content: flex-start;
+    min-height: 36px;
+    cursor: pointer;
 }
 
 /* 功能开关页使用八宫格布局，右下角“更多功能”卡片只保留展示态。 */
@@ -1529,6 +1554,19 @@ input:focus {
 .subscription-edit {
     min-height: 28px;
     padding: 0 10px;
+}
+
+.subscription-delete {
+    min-height: 28px;
+    padding: 0 10px;
+    border-color: rgba(239, 68, 68, 0.28);
+    color: #ef4444;
+}
+
+.subscription-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .subscription-empty {
