@@ -1,16 +1,30 @@
 package top.bilibili.webui.service
 
-import top.bilibili.BiliAccountConfig
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
-import top.bilibili.TranslateConfig
+import top.bilibili.CacheConfig
+import top.bilibili.CheckConfig
+import top.bilibili.EnableConfig
+import top.bilibili.FooterConfig
+import top.bilibili.ImageConfig
+import top.bilibili.LinkResolveConfig
+import top.bilibili.ProxyConfig
+import top.bilibili.PushConfig
+import top.bilibili.TemplateConfig
+import top.bilibili.TimeDisplayMode
 import top.bilibili.config.BotConfig
 import top.bilibili.config.ConfigManager
+import top.bilibili.config.GroupAdminConfig
 import top.bilibili.config.NapCatConfig
 import top.bilibili.config.PlatformConfig
+import top.bilibili.config.QQOfficialConfig
+import top.bilibili.config.TargetConfig
 import top.bilibili.connector.PlatformType
+import top.bilibili.service.TriggerMode
 import top.bilibili.utils.normalizeContactSubject
+import top.bilibili.utils.CacheType
+import top.bilibili.webui.config.WebUiConfig
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiBiliDataWriteRequestDto
 import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
@@ -42,20 +56,92 @@ class WebUiConfigWriteFacade(
             return conflictResult(currentDto.snapshotToken, "configuration changed, refresh and retry")
         }
 
+        val validationErrors = validateBiliConfigRequest(request)
+        if (validationErrors.isNotEmpty()) {
+            return validationResult(validationErrors, currentDto.snapshotToken)
+        }
+
         val current = biliConfigProvider()
         val updatedConfig = current.copy(
+            admin = request.admin,
             adminContact = request.adminContact.trim(),
+            enableConfig = EnableConfig(
+                debugMode = request.debugMode,
+                drawEnable = request.drawEnable,
+                pushDrawEnable = request.pushDrawEnable,
+                notifyEnable = request.notifyEnable,
+                liveCloseNotifyEnable = request.liveCloseNotifyEnable,
+                lowSpeedEnable = request.lowSpeedEnable,
+                translateEnable = request.translateEnable,
+                proxyEnable = request.proxyEnable,
+                cacheClearEnable = request.cacheClearEnable,
+            ),
             accountConfig = current.accountConfig.copy(
                 cookie = preserveSecret(current.accountConfig.cookie, request.cookie),
+                autoFollow = request.autoFollow,
+                followGroup = request.followGroup.trim(),
+            ),
+            checkConfig = CheckConfig(
+                lowSpeedTime = request.lowSpeedTime.trim(),
+                lowSpeedRange = request.lowSpeedRange.trim(),
+                normalRange = request.normalRange.trim(),
+                checkReportInterval = request.checkReportInterval,
+                timeout = request.timeout,
+            ),
+            pushConfig = PushConfig(
+                messageInterval = request.messageInterval,
+                pushInterval = request.pushInterval,
+                toShortLink = request.toShortLink,
+            ),
+            imageConfig = ImageConfig(
+                quality = request.quality.trim(),
+                theme = request.theme.trim(),
+                font = request.font.trim(),
+                defaultColor = request.defaultColor.trim(),
+                cardOrnament = request.cardOrnament.trim(),
+                timeDisplayMode = parseEnum<TimeDisplayMode>(request.timeDisplayMode) ?: TimeDisplayMode.ABSOLUTE,
+                colorGenerator = ImageConfig.ColorGenerator(
+                    hueStep = request.hueStep,
+                    lockSB = request.lockSB,
+                    saturation = request.saturation,
+                    brightness = request.brightness,
+                ),
+                badgeEnable = ImageConfig.BadgeEnable(
+                    left = request.leftBadgeEnable,
+                    right = request.rightBadgeEnable,
+                ),
+            ),
+            templateConfig = TemplateConfig(
+                defaultDynamicPush = request.defaultDynamicPush.trim(),
+                defaultLivePush = request.defaultLivePush.trim(),
+                defaultLiveClose = request.defaultLiveClose.trim(),
+                dynamicPush = request.dynamicPush.ifEmpty { current.templateConfig.dynamicPush }.toMutableMap(),
+                livePush = request.livePush.ifEmpty { current.templateConfig.livePush }.toMutableMap(),
+                liveClose = request.liveClose.ifEmpty { current.templateConfig.liveClose }.toMutableMap(),
+                footer = FooterConfig(
+                    dynamicFooter = request.dynamicFooter,
+                    liveFooter = request.liveFooter,
+                    footerAlign = request.footerAlign.trim(),
+                ),
+            ),
+            cacheConfig = CacheConfig(
+                downloadOriginal = request.downloadOriginal,
+                expires = cacheExpiresFrom(request.cacheExpires, current.cacheConfig.expires),
+            ),
+            proxyConfig = ProxyConfig(
+                proxy = request.proxies.map { it.trim() }.filter { it.isNotBlank() },
             ),
             translateConfig = current.translateConfig.copy(
+                cutLine = request.cutLine,
                 baidu = current.translateConfig.baidu.copy(
                     APP_ID = request.baiduAppId.trim(),
                     SECURITY_KEY = preserveSecret(current.translateConfig.baidu.SECURITY_KEY, request.baiduSecurityKey),
                 ),
             ),
-            enableConfig = current.enableConfig.copy(
-                debugMode = request.debugMode,
+            linkResolveConfig = LinkResolveConfig(
+                triggerMode = parseTriggerMode(request.triggerMode) ?: TriggerMode.At,
+                drawEnable = request.linkResolveDrawEnable,
+                returnLink = request.linkResolveReturnLink,
             ),
         )
 
@@ -128,23 +214,58 @@ class WebUiConfigWriteFacade(
             return conflictResult(currentDto.snapshotToken, "configuration changed, refresh and retry")
         }
 
-        val validationErrors = validateBotRequest(request)
+        val current = botConfigProvider()
+        val validationErrors = validateBotRequest(request, current)
         if (validationErrors.isNotEmpty()) {
             return validationResult(validationErrors, currentDto.snapshotToken)
         }
 
-        val current = botConfigProvider()
         val selectedOneBot11 = current.selectedOneBot11Config()
         val updatedConfig = current.copy(
-            platform = current.platform.copy(
-                type = PlatformType.valueOf(request.platformType.trim().uppercase()),
+            platform = PlatformConfig(
+                type = parsePlatformType(request.platformType) ?: PlatformType.ONEBOT11,
                 adapter = request.adapter.trim().lowercase(),
-                onebot11 = selectedOneBot11.copy(
+                onebot11 = NapCatConfig(
                     host = request.oneBot11Host.trim(),
                     port = request.oneBot11Port,
                     token = preserveSecret(selectedOneBot11.token, request.oneBot11Token),
+                    useTls = request.oneBot11UseTls,
+                    heartbeatInterval = request.oneBot11HeartbeatInterval,
+                    reconnectInterval = request.oneBot11ReconnectInterval,
+                    messageFormat = request.oneBot11MessageFormat.trim().ifBlank { selectedOneBot11.messageFormat },
+                    sendMode = request.oneBot11SendMode.trim().lowercase(),
+                    maxReconnectAttempts = request.oneBot11MaxReconnectAttempts,
+                    connectTimeout = request.oneBot11ConnectTimeout,
+                ),
+                qqOfficial = QQOfficialConfig(
+                    appId = request.qqOfficialAppId.trim(),
+                    appSecret = preserveSecret(current.platform.qqOfficial.appSecret, request.qqOfficialAppSecret),
+                    botToken = preserveSecret(current.platform.qqOfficial.botToken, request.qqOfficialBotToken),
                 ),
             ),
+            webui = WebUiConfig(
+                enabled = request.webUiEnabled,
+                host = request.webUiHost.trim(),
+                port = request.webUiPort,
+                credentialFile = request.webUiCredentialFile.trim(),
+                tokenTtlSeconds = request.webUiTokenTtlSeconds,
+                staticDir = request.webUiStaticDir.trim(),
+            ).normalized(),
+            targets = request.targets.map { target ->
+                TargetConfig(
+                    type = target.type.trim(),
+                    id = target.id,
+                    contact = target.contact.trim(),
+                )
+            }.toMutableList(),
+            admins = request.admins.map { admin ->
+                GroupAdminConfig(
+                    groupId = admin.groupId,
+                    userIds = admin.userIds.toMutableList(),
+                    groupContact = admin.groupContact.trim(),
+                    userContacts = admin.userContacts.map { it.trim() }.filter { it.isNotBlank() }.toMutableList(),
+                )
+            }.toMutableList(),
         )
 
         return runCatching {
@@ -172,10 +293,13 @@ class WebUiConfigWriteFacade(
     /**
      * bot.yml 当前只接受项目已支持的平台和 OneBot11 端口范围，避免 WebUI 写出无效启动参数。
      */
-    private fun validateBotRequest(request: WebUiBotConfigWriteRequestDto): List<String> {
+    private fun validateBotRequest(
+        request: WebUiBotConfigWriteRequestDto,
+        current: BotConfig,
+    ): List<String> {
         val errors = mutableListOf<String>()
-        val platformType = request.platformType.trim().uppercase()
-        if (platformType !in PlatformType.entries.map { it.name }.toSet()) {
+        val platformType = parsePlatformType(request.platformType)
+        if (platformType == null) {
             errors += "platformType is invalid"
         }
         val normalizedAdapter = request.adapter.trim().lowercase()
@@ -188,7 +312,101 @@ class WebUiConfigWriteFacade(
         if (request.oneBot11Port !in 1..65535) {
             errors += "oneBot11Port is invalid"
         }
+        if (request.oneBot11HeartbeatInterval <= 0L ||
+            request.oneBot11ReconnectInterval <= 0L ||
+            request.oneBot11ConnectTimeout <= 0L
+        ) {
+            errors += "oneBot11 intervals are invalid"
+        }
+        if (request.oneBot11SendMode.trim().lowercase() !in setOf("base64", "file")) {
+            errors += "oneBot11SendMode is invalid"
+        }
+        if (request.webUiPort !in 1..65535) {
+            errors += "webUiPort is invalid"
+        }
+        if (request.webUiTokenTtlSeconds <= 0L) {
+            errors += "webUiTokenTtlSeconds is invalid"
+        }
+        if (platformType == PlatformType.QQ_OFFICIAL) {
+            if (request.qqOfficialAppId.isBlank()) {
+                errors += "qqOfficialAppId is invalid"
+            }
+            if (request.qqOfficialAppSecret.isBlank() && current.platform.qqOfficial.appSecret.isBlank()) {
+                errors += "qqOfficialAppSecret is invalid"
+            }
+        }
         return errors
+    }
+
+    /**
+     * BiliConfig 校验防止 WebUI 写入运行时代码无法解释的枚举、区间和缓存 key。
+     */
+    private fun validateBiliConfigRequest(request: WebUiBiliConfigWriteRequestDto): List<String> {
+        val errors = mutableListOf<String>()
+        if (request.checkReportInterval <= 0 || request.timeout <= 0) {
+            errors += "check intervals are invalid"
+        }
+        if (request.messageInterval <= 0L || request.pushInterval <= 0L) {
+            errors += "push intervals are invalid"
+        }
+        if (request.timeDisplayMode.isNotBlank() && parseEnum<TimeDisplayMode>(request.timeDisplayMode) == null) {
+            errors += "timeDisplayMode is invalid"
+        }
+        if (request.triggerMode.isNotBlank() && parseTriggerMode(request.triggerMode) == null) {
+            errors += "triggerMode is invalid"
+        }
+        if (request.footerAlign.trim().uppercase() !in setOf("LEFT", "CENTER", "RIGHT")) {
+            errors += "footerAlign is invalid"
+        }
+        if (request.cacheExpires.keys.any { key -> parseEnum<CacheType>(key) == null }) {
+            errors += "cacheExpires contains invalid cache type"
+        }
+        return errors
+    }
+
+    /**
+     * 缓存过期配置按 enum key 归一化；空提交保留当前映射，避免旧客户端清空整表。
+     */
+    private fun cacheExpiresFrom(
+        submitted: Map<String, Int>,
+        current: Map<CacheType, Int>,
+    ): Map<CacheType, Int> {
+        if (submitted.isEmpty()) {
+            return current
+        }
+        return submitted.mapNotNull { (key, value) ->
+            val cacheType = parseEnum<CacheType>(key) ?: return@mapNotNull null
+            cacheType to value
+        }.toMap()
+    }
+
+    /**
+     * 平台类型兼容序列化小写值和 enum 名称，避免前端必须关心 Kotlin enum 细节。
+     */
+    private fun parsePlatformType(value: String): PlatformType? {
+        return when (value.trim().lowercase()) {
+            "onebot11" -> PlatformType.ONEBOT11
+            "qq_official" -> PlatformType.QQ_OFFICIAL
+            else -> parseEnum<PlatformType>(value)
+        }
+    }
+
+    /**
+     * 链接解析触发方式支持 enum 名称和常见大小写输入，保存前统一回到运行态 enum。
+     */
+    private fun parseTriggerMode(value: String): TriggerMode? {
+        return TriggerMode.entries.firstOrNull { mode ->
+            mode.name.equals(value.trim(), ignoreCase = true)
+        }
+    }
+
+    /**
+     * 通用 enum 解析集中处理大小写差异，让字段校验的失败原因保持可预期。
+     */
+    private inline fun <reified T : Enum<T>> parseEnum(value: String): T? {
+        return enumValues<T>().firstOrNull { enumValue ->
+            enumValue.name.equals(value.trim(), ignoreCase = true)
+        }
     }
 
     /**

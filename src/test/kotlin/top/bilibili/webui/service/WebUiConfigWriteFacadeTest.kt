@@ -1,18 +1,36 @@
 package top.bilibili.webui.service
 
 import top.bilibili.BiliAccountConfig
+import top.bilibili.CacheConfig
+import top.bilibili.CheckConfig
 import top.bilibili.BiliConfig
 import top.bilibili.BiliData
+import top.bilibili.EnableConfig
+import top.bilibili.FooterConfig
+import top.bilibili.ImageConfig
+import top.bilibili.LinkResolveConfig
+import top.bilibili.ProxyConfig
+import top.bilibili.PushConfig
+import top.bilibili.TemplateConfig
+import top.bilibili.TimeDisplayMode
 import top.bilibili.TranslateConfig
 import top.bilibili.config.BotConfig
+import top.bilibili.config.GroupAdminConfig
 import top.bilibili.config.NapCatConfig
 import top.bilibili.config.PlatformConfig
+import top.bilibili.config.QQOfficialConfig
+import top.bilibili.config.TargetConfig
 import top.bilibili.connector.PlatformType
+import top.bilibili.service.TriggerMode
+import top.bilibili.utils.CacheType
+import top.bilibili.webui.config.WebUiConfig
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiBiliDataWriteRequestDto
 import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
+import top.bilibili.webui.model.WebUiGroupAdminConfigWriteDto
 import top.bilibili.webui.model.WebUiRecommendedAction
 import top.bilibili.webui.model.WebUiSaveEffectLevel
+import top.bilibili.webui.model.WebUiTargetConfigWriteDto
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -91,6 +109,109 @@ class WebUiConfigWriteFacadeTest {
         assertEquals("raw-security-key", savedBiliConfig?.translateConfig?.baidu?.SECURITY_KEY)
         assertEquals(0, savedBiliDataCalls)
         assertEquals(0, savedBotConfigCalls)
+    }
+
+    @Test
+    fun `bili config writes should persist all system settings fields and preserve secrets`() {
+        var currentConfig = BiliConfig(
+            admin = 1L,
+            adminContact = "onebot11:private:1",
+            accountConfig = BiliAccountConfig(cookie = "raw-cookie"),
+            translateConfig = TranslateConfig(
+                baidu = TranslateConfig.BaiduTranslateConfig(
+                    APP_ID = "raw-app-id",
+                    SECURITY_KEY = "raw-security-key",
+                ),
+            ),
+        )
+        var savedBiliConfig: BiliConfig? = null
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { currentConfig },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { BotConfig() },
+            ),
+            biliConfigProvider = { currentConfig },
+            saveBiliConfigAction = { configToSave ->
+                savedBiliConfig = configToSave
+                currentConfig = configToSave
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliConfigProvider = { currentConfig }).readBiliConfig().snapshotToken
+        val result = facade.saveBiliConfig(
+            WebUiBiliConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                admin = 42L,
+                adminContact = "onebot11:private:42",
+                debugMode = true,
+                drawEnable = false,
+                pushDrawEnable = false,
+                notifyEnable = false,
+                liveCloseNotifyEnable = false,
+                lowSpeedEnable = false,
+                translateEnable = true,
+                proxyEnable = true,
+                cacheClearEnable = false,
+                cookie = "",
+                autoFollow = false,
+                followGroup = "NewGroup",
+                proxies = listOf("http://proxy.local:8080"),
+                lowSpeedTime = "23-7",
+                lowSpeedRange = "80-180",
+                normalRange = "20-60",
+                checkReportInterval = 12,
+                timeout = 30,
+                quality = "1500w",
+                theme = "v4",
+                font = "Noto Sans",
+                defaultColor = "#112233",
+                cardOrnament = "QrCode",
+                timeDisplayMode = "RELATIVE",
+                hueStep = 45,
+                lockSB = false,
+                saturation = 0.4f,
+                brightness = 0.8f,
+                leftBadgeEnable = false,
+                rightBadgeEnable = true,
+                dynamicFooter = "dynamic footer",
+                liveFooter = "live footer",
+                footerAlign = "CENTER",
+                downloadOriginal = false,
+                cacheExpires = mapOf("DRAW" to 3, "IMAGES" to 4, "EMOJI" to 5, "USER" to 6, "OTHER" to 7),
+                messageInterval = 200L,
+                pushInterval = 800L,
+                toShortLink = true,
+                defaultDynamicPush = "TwoMsg",
+                defaultLivePush = "TextOnly",
+                defaultLiveClose = "ComplexMsg",
+                dynamicPush = mapOf("DrawOnly" to "{draw}", "TextOnly" to "{content}"),
+                livePush = mapOf("DrawOnly" to "{draw}", "TextOnly" to "{title}"),
+                liveClose = mapOf("SimpleMsg" to "{name} 直播结束啦!", "ComplexMsg" to "{duration}"),
+                triggerMode = "Always",
+                linkResolveDrawEnable = false,
+                linkResolveReturnLink = true,
+                cutLine = "\n\ntranslated\n",
+                baiduAppId = "new-app-id",
+                baiduSecurityKey = "",
+            ),
+        )
+
+        assertTrue(result.success)
+        assertEquals(42L, savedBiliConfig?.admin)
+        assertEquals("onebot11:private:42", savedBiliConfig?.adminContact)
+        assertEquals(false, savedBiliConfig?.enableConfig?.drawEnable)
+        assertEquals("raw-cookie", savedBiliConfig?.accountConfig?.cookie)
+        assertEquals(false, savedBiliConfig?.accountConfig?.autoFollow)
+        assertEquals(listOf("http://proxy.local:8080"), savedBiliConfig?.proxyConfig?.proxy)
+        assertEquals("1500w", savedBiliConfig?.imageConfig?.quality)
+        assertEquals(TimeDisplayMode.RELATIVE, savedBiliConfig?.imageConfig?.timeDisplayMode)
+        assertEquals("CENTER", savedBiliConfig?.templateConfig?.footer?.footerAlign)
+        assertEquals(3, savedBiliConfig?.cacheConfig?.expires?.get(CacheType.DRAW))
+        assertEquals("Always", savedBiliConfig?.linkResolveConfig?.triggerMode?.name)
+        assertEquals("new-app-id", savedBiliConfig?.translateConfig?.baidu?.APP_ID)
+        assertEquals("raw-security-key", savedBiliConfig?.translateConfig?.baidu?.SECURITY_KEY)
     }
 
     @Test
@@ -267,6 +388,101 @@ class WebUiConfigWriteFacadeTest {
         assertEquals("raw-token", savedBotConfig?.selectedOneBot11Config()?.token)
         assertEquals(0, savedBiliConfigCalls)
         assertEquals(0, savedBiliDataCalls)
+    }
+
+    @Test
+    fun `bot config writes should persist platform webui targets and admins while preserving secrets`() {
+        var currentBotConfig = BotConfig(
+            platform = PlatformConfig(
+                type = PlatformType.ONEBOT11,
+                adapter = "onebot11",
+                onebot11 = NapCatConfig(
+                    host = "127.0.0.1",
+                    port = 3001,
+                    token = "raw-onebot-token",
+                ),
+                qqOfficial = QQOfficialConfig(
+                    appId = "raw-app-id",
+                    appSecret = "raw-app-secret",
+                    botToken = "raw-bot-token",
+                ),
+            ),
+            webui = WebUiConfig(
+                enabled = false,
+                host = "127.0.0.1",
+                port = 18080,
+                credentialFile = "webui-credentials.json",
+                tokenTtlSeconds = 3600L,
+                staticDir = "",
+            ),
+            targets = mutableListOf(TargetConfig("group", 1L, "onebot11:group:1")),
+            admins = mutableListOf(GroupAdminConfig(1L, mutableListOf(2L), "onebot11:group:1", mutableListOf("onebot11:private:2"))),
+            firstRunFlag = 1,
+        )
+        var savedBotConfig: BotConfig? = null
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { currentBotConfig },
+            ),
+            botConfigProvider = { currentBotConfig },
+            saveBotConfigAction = { botConfig ->
+                savedBotConfig = botConfig
+                currentBotConfig = botConfig
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(botConfigProvider = { currentBotConfig }).readBotConfig().snapshotToken
+        val result = facade.saveBotConfig(
+            WebUiBotConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                platformType = "qq_official",
+                adapter = "qq_official",
+                oneBot11Host = "10.0.0.2",
+                oneBot11Port = 3100,
+                oneBot11Token = "",
+                oneBot11UseTls = true,
+                oneBot11HeartbeatInterval = 45000L,
+                oneBot11ReconnectInterval = 6000L,
+                oneBot11MessageFormat = "array",
+                oneBot11SendMode = "file",
+                oneBot11MaxReconnectAttempts = 3,
+                oneBot11ConnectTimeout = 12000L,
+                qqOfficialAppId = "new-app-id",
+                qqOfficialAppSecret = "",
+                qqOfficialBotToken = "",
+                webUiEnabled = true,
+                webUiHost = "0.0.0.0",
+                webUiPort = 19080,
+                webUiCredentialFile = "custom-webui.json",
+                webUiTokenTtlSeconds = 7200L,
+                webUiStaticDir = "static",
+                targets = listOf(WebUiTargetConfigWriteDto("group", 10086L, "onebot11:group:10086")),
+                admins = listOf(
+                    WebUiGroupAdminConfigWriteDto(
+                        groupId = 10086L,
+                        userIds = listOf(7L),
+                        groupContact = "onebot11:group:10086",
+                        userContacts = listOf("onebot11:private:7"),
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(result.success)
+        assertEquals(PlatformType.QQ_OFFICIAL, savedBotConfig?.platform?.type)
+        assertEquals("qq_official", savedBotConfig?.platform?.adapter)
+        assertEquals("raw-onebot-token", savedBotConfig?.platform?.onebot11?.token)
+        assertEquals("raw-app-secret", savedBotConfig?.platform?.qqOfficial?.appSecret)
+        assertEquals("raw-bot-token", savedBotConfig?.platform?.qqOfficial?.botToken)
+        assertEquals(true, savedBotConfig?.webui?.enabled)
+        assertEquals("0.0.0.0", savedBotConfig?.webui?.host)
+        assertEquals(19080, savedBotConfig?.webui?.port)
+        assertEquals(1, savedBotConfig?.targets?.size)
+        assertEquals(1, savedBotConfig?.admins?.size)
+        assertEquals(1, savedBotConfig?.firstRunFlag)
     }
 
     /**

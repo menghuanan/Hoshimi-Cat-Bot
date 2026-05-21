@@ -170,8 +170,8 @@ class WebUiFoundationSourceRegressionTest {
     fun `frontend shell should version account control assets`() {
         val shellPage = read("src/main/resources/webui/index.html")
 
-        assertTrue(shellPage.contains("""/assets/app.css?v=settings-tabs-v1"""))
-        assertTrue(shellPage.contains("""/assets/app.js?v=settings-tabs-v1"""))
+        assertTrue(shellPage.contains("""/assets/app.css?v=settings-editor-v1"""))
+        assertTrue(shellPage.contains("""/assets/app.js?v=settings-editor-v1"""))
     }
 
     /**

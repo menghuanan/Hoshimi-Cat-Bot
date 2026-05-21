@@ -2,6 +2,7 @@ package top.bilibili.webui.service
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -17,6 +18,13 @@ import top.bilibili.webui.model.WebUiFieldCapability
 import top.bilibili.utils.json
 import top.bilibili.utils.md5
 import java.util.LinkedHashMap
+
+/**
+ * 配置快照需要包含默认值字段，系统配置页才能在空配置文件上渲染完整表单。
+ */
+private val snapshotJson = Json(json) {
+    encodeDefaults = true
+}
 
 /**
  * WebUI 配置快照支持层统一负责字段展开、能力标注和 snapshot token 生成，避免 facade 重复处理序列化细节。
@@ -100,7 +108,7 @@ private fun <T> buildSnapshot(
     serializer: KSerializer<T>,
     capabilityResolver: (String) -> WebUiFieldCapability,
 ): WebUiConfigSnapshot {
-    val element = json.encodeToJsonElement(serializer, root)
+    val element = snapshotJson.encodeToJsonElement(serializer, root)
     val rawSnapshot = LinkedHashMap<String, String>()
     flattenJsonElement(
         element = element,
@@ -207,18 +215,76 @@ private fun displayValue(
 }
 
 /**
- * `BiliConfig.yml` 的写入边界只开放当前 WebUI 已支持的安全编辑字段。
+ * `BiliConfig.yml` 的写入边界覆盖系统设置页分区字段，敏感值只允许 write-only 提交。
  */
 private fun biliConfigCapability(key: String): WebUiFieldCapability {
     return when (key) {
+        "admin",
         "adminContact",
-        "translateConfig.baidu.APP_ID",
-        "enableConfig.debugMode" -> WebUiFieldCapability.EDITABLE
+        "enableConfig.debugMode",
+        "enableConfig.drawEnable",
+        "enableConfig.pushDrawEnable",
+        "enableConfig.notifyEnable",
+        "enableConfig.liveCloseNotifyEnable",
+        "enableConfig.lowSpeedEnable",
+        "enableConfig.translateEnable",
+        "enableConfig.proxyEnable",
+        "enableConfig.cacheClearEnable",
+        "accountConfig.autoFollow",
+        "accountConfig.followGroup",
+        "proxyConfig.proxy",
+        "checkConfig.lowSpeedTime",
+        "checkConfig.lowSpeedRange",
+        "checkConfig.normalRange",
+        "checkConfig.checkReportInterval",
+        "checkConfig.timeout",
+        "pushConfig.messageInterval",
+        "pushConfig.pushInterval",
+        "pushConfig.toShortLink",
+        "imageConfig.quality",
+        "imageConfig.theme",
+        "imageConfig.font",
+        "imageConfig.defaultColor",
+        "imageConfig.cardOrnament",
+        "imageConfig.timeDisplayMode",
+        "imageConfig.colorGenerator.hueStep",
+        "imageConfig.colorGenerator.lockSB",
+        "imageConfig.colorGenerator.saturation",
+        "imageConfig.colorGenerator.brightness",
+        "imageConfig.badgeEnable.left",
+        "imageConfig.badgeEnable.right",
+        "templateConfig.defaultDynamicPush",
+        "templateConfig.defaultLivePush",
+        "templateConfig.defaultLiveClose",
+        "templateConfig.footer.dynamicFooter",
+        "templateConfig.footer.liveFooter",
+        "templateConfig.footer.footerAlign",
+        "cacheConfig.downloadOriginal",
+        "cacheConfig.expires",
+        "linkResolveConfig.triggerMode",
+        "linkResolveConfig.drawEnable",
+        "linkResolveConfig.returnLink",
+        "translateConfig.cutLine",
+        "translateConfig.baidu.APP_ID" -> WebUiFieldCapability.EDITABLE
         "accountConfig.cookie",
-        "translateConfig.baidu.SECURITY_KEY",
-        "platform.onebot11.token" -> WebUiFieldCapability.MASKED
-        else -> WebUiFieldCapability.READ_ONLY
+        "translateConfig.baidu.SECURITY_KEY" -> WebUiFieldCapability.MASKED
+        else -> when {
+            isTemplateMapField(key) || key.startsWith("cacheConfig.expires.") -> WebUiFieldCapability.EDITABLE
+            else -> WebUiFieldCapability.READ_ONLY
+        }
     }
+}
+
+/**
+ * 模板映射字段允许整表保存，也允许快照树中的具体模板项在 WebUI 中被标记为可编辑。
+ */
+private fun isTemplateMapField(key: String): Boolean {
+    return key == "templateConfig.dynamicPush" ||
+        key.startsWith("templateConfig.dynamicPush.") ||
+        key == "templateConfig.livePush" ||
+        key.startsWith("templateConfig.livePush.") ||
+        key == "templateConfig.liveClose" ||
+        key.startsWith("templateConfig.liveClose.")
 }
 
 /**
@@ -235,17 +301,38 @@ private fun biliDataCapability(key: String): WebUiFieldCapability {
 }
 
 /**
- * `bot.yml` 的写入边界只开放当前连接参数和平台选择，其余节点保持只读或系统维护。
+ * `bot.yml` 的写入边界覆盖平台接入、WebUI 启动参数和管理员列表，保留 firstRunFlag 由系统维护。
  */
 private fun botConfigCapability(key: String): WebUiFieldCapability {
     return when (key) {
         "platform.type",
         "platform.adapter",
         "platform.onebot11.host",
-        "platform.onebot11.port" -> WebUiFieldCapability.EDITABLE
-        "platform.onebot11.token" -> WebUiFieldCapability.MASKED
+        "platform.onebot11.port",
+        "platform.onebot11.useTls",
+        "platform.onebot11.heartbeatInterval",
+        "platform.onebot11.reconnectInterval",
+        "platform.onebot11.messageFormat",
+        "platform.onebot11.sendMode",
+        "platform.onebot11.maxReconnectAttempts",
+        "platform.onebot11.connectTimeout",
+        "platform.qqOfficial.appId",
+        "platform.qqOfficial.botToken",
+        "webui.enabled",
+        "webui.host",
+        "webui.port",
+        "webui.credentialFile",
+        "webui.tokenTtlSeconds",
+        "webui.staticDir",
+        "targets",
+        "admins" -> WebUiFieldCapability.EDITABLE
+        "platform.onebot11.token",
+        "platform.qqOfficial.appSecret" -> WebUiFieldCapability.MASKED
         "firstRunFlag" -> WebUiFieldCapability.SYSTEM_MANAGED
-        else -> WebUiFieldCapability.READ_ONLY
+        else -> when {
+            key.startsWith("targets.") || key.startsWith("admins.") -> WebUiFieldCapability.EDITABLE
+            else -> WebUiFieldCapability.READ_ONLY
+        }
     }
 }
 
@@ -263,6 +350,13 @@ private fun normalizeSnapshotSegment(segment: String): String {
         "app_id" -> "appId"
         "app_secret" -> "appSecret"
         "bot_token" -> "botToken"
+        "use_tls" -> "useTls"
+        "heartbeat_interval" -> "heartbeatInterval"
+        "reconnect_interval" -> "reconnectInterval"
+        "message_format" -> "messageFormat"
+        "send_mode" -> "sendMode"
+        "max_reconnect_attempts" -> "maxReconnectAttempts"
+        "connect_timeout" -> "connectTimeout"
         "group_contact" -> "groupContact"
         "user_contacts" -> "userContacts"
         else -> segment

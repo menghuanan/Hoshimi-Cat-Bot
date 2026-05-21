@@ -94,6 +94,15 @@ const subscriptionState = {
     },
     pendingDeleteItemId: "",
 };
+const settingsState = {
+    loaded: false,
+    activeTab: "integration",
+    files: {
+        biliConfig: {sourceFile: "BiliConfig.yml", snapshotToken: "", fieldsByKey: new Map()},
+        botConfig: {sourceFile: "bot.yml", snapshotToken: "", fieldsByKey: new Map()},
+    },
+    status: "",
+};
 let logRefreshTimer = null;
 let logRequestSequence = 0;
 const templateExplainText = {
@@ -1863,6 +1872,703 @@ async function refreshRuntimeSummary() {
 }
 
 /**
+ * 系统配置快照按文件保存 token，页面层按分类保存，避免跨文件 owner 被一次提交混写。
+ */
+async function loadSettingsFiles(force = false) {
+    if (settingsState.loaded && !force) {
+        return;
+    }
+    setSettingsStatus("正在加载系统配置");
+    const [biliConfig, botConfig] = await Promise.all([
+        fetchConfigFile("/api/config/bili-config"),
+        fetchConfigFile("/api/config/bot"),
+    ]);
+    applySettingsFile("biliConfig", biliConfig);
+    applySettingsFile("botConfig", botConfig);
+    settingsState.loaded = true;
+    setSettingsStatus("");
+}
+
+/**
+ * 配置接口统一处理认证失效跳转和 HTTP 错误，调用方只关心可用 JSON 快照。
+ */
+async function fetchConfigFile(url) {
+    const response = await fetch(url, {headers: buildAuthHeaders()});
+    if (response.status === 401 || response.status === 403) {
+        window.location.replace("/login");
+        throw new Error("请重新登录");
+    }
+    if (!response.ok) {
+        throw new Error(`配置加载失败：HTTP ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * 后端字段列表转换成 Map 后，渲染和 payload builder 可以按稳定字段路径读取值。
+ */
+function applySettingsFile(fileKey, payload) {
+    const fileState = settingsState.files[fileKey];
+    fileState.sourceFile = payload.sourceFile || fileState.sourceFile;
+    fileState.snapshotToken = payload.snapshotToken || "";
+    fileState.fieldsByKey = new Map((payload.fields || []).map((field) => [field.key, field]));
+}
+
+/**
+ * 字段读取统一降级，避免缺省配置未展开时让表单显示 undefined。
+ */
+function fieldValue(fileKey, key, fallback = "") {
+    const value = settingsState.files[fileKey]?.fieldsByKey?.get(key)?.value;
+    if (value === undefined || value === null) {
+        return fallback;
+    }
+    return String(value);
+}
+
+/**
+ * 页面状态只写入当前可见配置面板，避免多个 tab 同时出现过期提示。
+ */
+function setSettingsStatus(message, success = false) {
+    settingsState.status = message || "";
+    const status = document.querySelector(`[data-settings-panel="${settingsState.activeTab}"] .settings-status`);
+    if (status) {
+        status.textContent = settingsState.status;
+        status.classList.toggle("is-success", Boolean(success));
+    }
+}
+
+/**
+ * 每个设置分区声明自己触达的配置文件，保存时按文件独立提交 payload。
+ */
+function settingsSectionFileKeys(sectionName) {
+    const mapping = {
+        integration: ["botConfig"],
+        feature: ["biliConfig"],
+        bili: ["biliConfig"],
+        polling: ["biliConfig"],
+        render: ["biliConfig"],
+        message: ["biliConfig", "botConfig"],
+        admin: ["biliConfig", "botConfig"],
+        translate: ["biliConfig"],
+    };
+    return mapping[sectionName] || [];
+}
+
+/**
+ * 当前分区保存前收集表单字段，再由文件级 builder 合成完整写请求。
+ */
+async function saveSettingsSection(sectionName) {
+    const form = document.querySelector(`[data-settings-form="${sectionName}"]`);
+    if (!form) {
+        return;
+    }
+    const confirmationPassword = window.prompt("请输入 WebUI 密码确认保存") || "";
+    if (!confirmationPassword) {
+        setSettingsStatus("已取消保存");
+        return;
+    }
+    const values = collectSettingsForm(form);
+    const fileKeys = settingsSectionFileKeys(sectionName);
+    setSettingsStatus("正在保存");
+    for (const fileKey of fileKeys) {
+        if (fileKey === "biliConfig") {
+            await postBiliConfigSettings(buildBiliConfigSettingsPayload(sectionName, values, confirmationPassword));
+        }
+        if (fileKey === "botConfig") {
+            await postBotConfigSettings(buildBotConfigSettingsPayload(sectionName, values, confirmationPassword));
+        }
+    }
+    await loadSettingsFiles(true);
+    renderSettingsActiveTab();
+    setSettingsStatus("保存成功", true);
+}
+
+/**
+ * BiliConfig 保存接口只接收 BiliConfig.yml 字段，成功后刷新本地文件 token。
+ */
+async function postBiliConfigSettings(payload) {
+    const result = await postSettingsPayload("/api/config/bili-config", payload);
+    settingsState.files.biliConfig.snapshotToken = result.snapshotToken || settingsState.files.biliConfig.snapshotToken;
+    return result;
+}
+
+/**
+ * bot.yml 保存接口只接收平台和 WebUI 字段，成功后刷新本地文件 token。
+ */
+async function postBotConfigSettings(payload) {
+    const result = await postSettingsPayload("/api/config/bot", payload);
+    settingsState.files.botConfig.snapshotToken = result.snapshotToken || settingsState.files.botConfig.snapshotToken;
+    return result;
+}
+
+/**
+ * 配置保存统一解析后端保存结果，把冲突、确认失败和校验失败转成可读状态。
+ */
+async function postSettingsPayload(url, payload) {
+    const response = await fetch(url, {
+        method: "POST",
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify(payload),
+    });
+    if (response.status === 401 || response.status === 403) {
+        window.location.replace("/login");
+        throw new Error("请重新登录");
+    }
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.success === false) {
+        if (response.status === 409 || result.conflictDetected) {
+            throw new Error("配置已变化，请刷新后重试");
+        }
+        const detail = Array.isArray(result.validationErrors) && result.validationErrors.length > 0
+            ? result.validationErrors.join("；")
+            : (result.message || `保存失败：HTTP ${response.status}`);
+        throw new Error(detail);
+    }
+    return result;
+}
+
+/**
+ * BiliConfig payload 从当前快照补齐非本分区字段，确保文件级 DTO 不会被局部表单清空。
+ */
+function buildBiliConfigSettingsPayload(sectionName, values, confirmationPassword = "") {
+    const read = (key, fallback = "") => values[key] ?? fieldValue("biliConfig", key, fallback);
+    return {
+        snapshotToken: settingsState.files.biliConfig.snapshotToken,
+        admin: settingsLong(read("admin"), 0),
+        adminContact: read("adminContact"),
+        debugMode: settingsBool(read("enableConfig.debugMode")),
+        drawEnable: settingsBool(read("enableConfig.drawEnable", "true")),
+        pushDrawEnable: settingsBool(read("enableConfig.pushDrawEnable", "true")),
+        notifyEnable: settingsBool(read("enableConfig.notifyEnable", "true")),
+        liveCloseNotifyEnable: settingsBool(read("enableConfig.liveCloseNotifyEnable", "true")),
+        lowSpeedEnable: settingsBool(read("enableConfig.lowSpeedEnable", "true")),
+        translateEnable: settingsBool(read("enableConfig.translateEnable")),
+        proxyEnable: settingsBool(read("enableConfig.proxyEnable")),
+        cacheClearEnable: settingsBool(read("enableConfig.cacheClearEnable", "true")),
+        cookie: values["accountConfig.cookie"] || "",
+        autoFollow: settingsBool(read("accountConfig.autoFollow", "true")),
+        followGroup: read("accountConfig.followGroup", "Bot关注"),
+        proxies: settingsLines(read("proxyConfig.proxy")),
+        lowSpeedTime: read("checkConfig.lowSpeedTime", "22-8"),
+        lowSpeedRange: read("checkConfig.lowSpeedRange", "60-240"),
+        normalRange: read("checkConfig.normalRange", "30-120"),
+        checkReportInterval: settingsInt(read("checkConfig.checkReportInterval"), 10),
+        timeout: settingsInt(read("checkConfig.timeout"), 10),
+        quality: read("imageConfig.quality", "1000w"),
+        theme: read("imageConfig.theme", "v3"),
+        font: read("imageConfig.font"),
+        defaultColor: read("imageConfig.defaultColor", "#d3edfa"),
+        cardOrnament: read("imageConfig.cardOrnament", "FanCard"),
+        timeDisplayMode: read("imageConfig.timeDisplayMode", "ABSOLUTE"),
+        hueStep: settingsInt(read("imageConfig.colorGenerator.hueStep"), 30),
+        lockSB: settingsBool(read("imageConfig.colorGenerator.lockSB", "true")),
+        saturation: settingsFloat(read("imageConfig.colorGenerator.saturation"), 0.25),
+        brightness: settingsFloat(read("imageConfig.colorGenerator.brightness"), 1),
+        leftBadgeEnable: settingsBool(read("imageConfig.badgeEnable.left", "true")),
+        rightBadgeEnable: settingsBool(read("imageConfig.badgeEnable.right")),
+        dynamicFooter: read("templateConfig.footer.dynamicFooter"),
+        liveFooter: read("templateConfig.footer.liveFooter"),
+        footerAlign: read("templateConfig.footer.footerAlign", "LEFT"),
+        downloadOriginal: settingsBool(read("cacheConfig.downloadOriginal", "true")),
+        cacheExpires: {
+            DRAW: settingsInt(read("cacheConfig.expires.DRAW"), 7),
+            IMAGES: settingsInt(read("cacheConfig.expires.IMAGES"), 7),
+            EMOJI: settingsInt(read("cacheConfig.expires.EMOJI"), 7),
+            USER: settingsInt(read("cacheConfig.expires.USER"), 7),
+            OTHER: settingsInt(read("cacheConfig.expires.OTHER"), 7),
+        },
+        messageInterval: settingsLong(read("pushConfig.messageInterval"), 100),
+        pushInterval: settingsLong(read("pushConfig.pushInterval"), 500),
+        toShortLink: settingsBool(read("pushConfig.toShortLink")),
+        defaultDynamicPush: read("templateConfig.defaultDynamicPush", "OneMsg"),
+        defaultLivePush: read("templateConfig.defaultLivePush", "OneMsg"),
+        defaultLiveClose: read("templateConfig.defaultLiveClose", "SimpleMsg"),
+        dynamicPush: settingsKeyValueMap(read("templateConfig.dynamicPush")),
+        livePush: settingsKeyValueMap(read("templateConfig.livePush")),
+        liveClose: settingsKeyValueMap(read("templateConfig.liveClose")),
+        triggerMode: read("linkResolveConfig.triggerMode", "At"),
+        linkResolveDrawEnable: settingsBool(read("linkResolveConfig.drawEnable", "true")),
+        linkResolveReturnLink: settingsBool(read("linkResolveConfig.returnLink")),
+        cutLine: read("translateConfig.cutLine"),
+        baiduAppId: read("translateConfig.baidu.APP_ID"),
+        baiduSecurityKey: values["translateConfig.baidu.SECURITY_KEY"] || "",
+        confirmationPassword,
+    };
+}
+
+/**
+ * bot.yml payload 同样从快照补齐非当前表单字段，并保留空 secret 的 write-only 语义。
+ */
+function buildBotConfigSettingsPayload(sectionName, values, confirmationPassword = "") {
+    const read = (key, fallback = "") => values[key] ?? fieldValue("botConfig", key, fallback);
+    return {
+        snapshotToken: settingsState.files.botConfig.snapshotToken,
+        platformType: read("platform.type", "onebot11"),
+        adapter: read("platform.adapter", "onebot11"),
+        oneBot11Host: read("platform.onebot11.host", "127.0.0.1"),
+        oneBot11Port: settingsInt(read("platform.onebot11.port"), 3001),
+        oneBot11Token: values["platform.onebot11.token"] || "",
+        oneBot11UseTls: settingsBool(read("platform.onebot11.useTls")),
+        oneBot11HeartbeatInterval: settingsLong(read("platform.onebot11.heartbeatInterval"), 30000),
+        oneBot11ReconnectInterval: settingsLong(read("platform.onebot11.reconnectInterval"), 5000),
+        oneBot11MessageFormat: read("platform.onebot11.messageFormat", "array"),
+        oneBot11SendMode: read("platform.onebot11.sendMode", "base64"),
+        oneBot11MaxReconnectAttempts: settingsInt(read("platform.onebot11.maxReconnectAttempts"), -1),
+        oneBot11ConnectTimeout: settingsLong(read("platform.onebot11.connectTimeout"), 10000),
+        qqOfficialAppId: read("platform.qqOfficial.appId"),
+        qqOfficialAppSecret: values["platform.qqOfficial.appSecret"] || "",
+        qqOfficialBotToken: values["platform.qqOfficial.botToken"] || "",
+        webUiEnabled: settingsBool(read("webui.enabled")),
+        webUiHost: read("webui.host", "127.0.0.1"),
+        webUiPort: settingsInt(read("webui.port"), 18080),
+        webUiCredentialFile: read("webui.credentialFile", "webui-credentials.json"),
+        webUiTokenTtlSeconds: settingsLong(read("webui.tokenTtlSeconds"), 3600),
+        webUiStaticDir: read("webui.staticDir"),
+        targets: settingsJsonList(read("targets")),
+        admins: settingsJsonList(read("admins")),
+        confirmationPassword,
+    };
+}
+
+/**
+ * 选择框和 checkbox 的布尔值统一收敛，避免字符串 false 在 JS 中被误判为 truthy。
+ */
+function settingsBool(value) {
+    return value === true || String(value).toLowerCase() === "true" || String(value) === "1";
+}
+
+/**
+ * 数字字段转换失败时回退到后端默认值，保持 payload 结构稳定。
+ */
+function settingsInt(value, fallback) {
+    const number = Number.parseInt(value, 10);
+    return Number.isFinite(number) ? number : fallback;
+}
+
+/**
+ * Long 字段在浏览器中按安全整数提交，当前配置值都位于安全范围内。
+ */
+function settingsLong(value, fallback) {
+    return settingsInt(value, fallback);
+}
+
+/**
+ * 浮点字段只接受有限数字，避免 NaN 被 JSON 序列化成 null。
+ */
+function settingsFloat(value, fallback) {
+    const number = Number.parseFloat(value);
+    return Number.isFinite(number) ? number : fallback;
+}
+
+/**
+ * 多行列表去除空白行后提交，代理地址和联系人列表共享这一规则。
+ */
+function settingsLines(value) {
+    const text = jsonArrayToLines(value);
+    return String(text || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+}
+
+/**
+ * JSON 数组字段用于 textarea 展示时转成逐行文本，解析失败则保留原文本。
+ */
+function jsonArrayToLines(value) {
+    const text = String(value || "");
+    try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+            return parsed.join("\n");
+        }
+    } catch (_) {
+        return text;
+    }
+    return text;
+}
+
+/**
+ * 模板映射用 key=value 的多行文本编辑，保存时恢复成对象。
+ */
+function settingsKeyValueMap(value) {
+    const raw = String(value || "");
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return parsed;
+        }
+    } catch (_) {
+        // 继续按 key=value 文本解析。
+    }
+    return raw.split(/\r?\n/).reduce((acc, line) => {
+        const index = line.indexOf("=");
+        if (index > 0) {
+            acc[line.slice(0, index).trim()] = line.slice(index + 1);
+        }
+        return acc;
+    }, {});
+}
+
+/**
+ * targets/admins 高级字段以 JSON 保存，解析失败时提交空列表交由后端校验。
+ */
+function settingsJsonList(value) {
+    try {
+        const parsed = JSON.parse(String(value || "[]"));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+/**
+ * 当前表单字段按 name 收集，checkbox 使用 checked，其余控件使用 value。
+ */
+function collectSettingsForm(form) {
+    return Array.from(form.elements).reduce((values, element) => {
+        if (!element.name || element.disabled) {
+            return values;
+        }
+        values[element.name] = element.type === "checkbox" ? String(element.checked) : element.value;
+        return values;
+    }, {});
+}
+
+/**
+ * 当前选中 tab 由对应 renderer 接管，未加载时显示稳定加载态。
+ */
+function renderSettingsActiveTab() {
+    const renderers = {
+        integration: renderIntegrationSettings,
+        feature: renderFeatureSettings,
+        bili: renderBiliSettings,
+        polling: renderPollingSettings,
+        render: renderRenderSettings,
+        message: renderMessageSettings,
+        log: renderLogSettings,
+        admin: renderAdminSettings,
+        translate: renderTranslateSettings,
+    };
+    const panel = settingsPanel(settingsState.activeTab);
+    if (!panel) {
+        return;
+    }
+    if (!settingsState.loaded) {
+        panel.innerHTML = '<div class="settings-panel"><p class="settings-status">正在加载系统配置</p></div>';
+        return;
+    }
+    renderers[settingsState.activeTab]?.();
+}
+
+/**
+ * 面板查找固定走 data-settings-panel，避免后续调整 HTML id 时破坏渲染。
+ */
+function settingsPanel(tabName) {
+    return document.querySelector(`[data-settings-panel="${tabName}"]`);
+}
+
+/**
+ * 每个配置分区共享标题、状态栏和保存按钮，只替换中间表单内容。
+ */
+function renderSettingsShell(tabName, bodyHtml, options = {}) {
+    const panel = settingsPanel(tabName);
+    if (!panel) {
+        return;
+    }
+    const sourceFiles = (settingsSectionFileKeys(tabName) || [])
+        .map((key) => settingsState.files[key]?.sourceFile)
+        .filter(Boolean)
+        .join(" / ");
+    const readonly = options.readonly === true;
+    panel.className = "settings-panel";
+    panel.innerHTML = `
+        <div class="settings-panel-head">
+            <div>
+                <h2>${escapeHtml(options.title || "系统配置")}</h2>
+                <p>${escapeHtml(sourceFiles || "只读信息")}</p>
+            </div>
+            <span class="settings-status" role="status">${escapeHtml(settingsState.status)}</span>
+        </div>
+        ${readonly ? bodyHtml : `<form data-settings-form="${escapeHtml(tabName)}">${bodyHtml}
+            <div class="settings-actions">
+                <button class="btn btn-secondary btn-small" type="button" data-settings-refresh>刷新本分类</button>
+                <button class="btn btn-primary btn-small" type="submit">保存本分类</button>
+            </div>
+        </form>`}
+    `;
+}
+
+/**
+ * 普通输入字段统一渲染标签、控件和当前值，长字段由 wide 控制跨列。
+ */
+function renderSettingField(field) {
+    const value = field.value ?? fieldValue(field.file, field.key, field.fallback || "");
+    const wide = field.wide ? " settings-field--wide" : "";
+    return `<label class="settings-field${wide}">
+        <span>${escapeHtml(field.label)}</span>
+        <input name="${escapeHtml(field.key)}" type="${escapeHtml(field.type || "text")}" value="${escapeHtml(value)}" autocomplete="off">
+    </label>`;
+}
+
+/**
+ * 枚举字段使用 select 保持候选值稳定，避免用户输入运行时不认识的文本。
+ */
+function renderSettingSelect(field) {
+    const value = field.value ?? fieldValue(field.file, field.key, field.fallback || "");
+    const options = (field.options || []).map((option) => {
+        const selected = String(option.value) === String(value) ? " selected" : "";
+        return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label)}</option>`;
+    }).join("");
+    return `<label class="settings-field">
+        <span>${escapeHtml(field.label)}</span>
+        <select name="${escapeHtml(field.key)}">${options}</select>
+    </label>`;
+}
+
+/**
+ * 长文本字段使用 textarea 并固定最小高度，避免模板内容撑动布局。
+ */
+function renderSettingTextarea(field) {
+    const value = field.value ?? fieldValue(field.file, field.key, field.fallback || "");
+    const wide = field.wide === false ? "" : " settings-field--wide";
+    return `<label class="settings-field${wide}">
+        <span>${escapeHtml(field.label)}</span>
+        <textarea name="${escapeHtml(field.key)}" rows="${field.rows || 4}">${escapeHtml(value)}</textarea>
+    </label>`;
+}
+
+/**
+ * 敏感字段只提交用户本次输入，placeholder 提示空值会保留原配置。
+ */
+function renderSecretField(field) {
+    return `<label class="settings-field settings-secret">
+        <span>${escapeHtml(field.label)}</span>
+        <input name="${escapeHtml(field.key)}" type="password" value="" placeholder="留空则保留原值" autocomplete="new-password">
+    </label>`;
+}
+
+/**
+ * 列表编辑器复用 textarea，每行一个值，保存前由 settingsLines 规整。
+ */
+function renderListTextarea(field) {
+    return renderSettingTextarea({
+        ...field,
+        value: jsonArrayToLines(field.value ?? fieldValue(field.file, field.key, "")),
+        rows: field.rows || 5,
+    });
+}
+
+/**
+ * 对接配置按平台切换展示连接字段，WebUI 启动参数同表保存到 bot.yml。
+ */
+function renderIntegrationSettings() {
+    const platform = fieldValue("botConfig", "platform.type", "onebot11");
+    const oneBotFields = platform !== "qq_official" ? [
+        renderSettingSelect({file: "botConfig", key: "platform.adapter", label: "OneBot11 适配器", options: [
+            {value: "onebot11", label: "通用"},
+            {value: "napcat", label: "NapCat"},
+            {value: "llbot", label: "llbot"},
+        ]}),
+        renderSettingField({file: "botConfig", key: "platform.onebot11.host", label: "OneBot11 主机"}),
+        renderSettingField({file: "botConfig", key: "platform.onebot11.port", label: "OneBot11 端口", type: "number"}),
+        renderSecretField({key: "platform.onebot11.token", label: "OneBot11 Token"}),
+        renderSettingSelect({file: "botConfig", key: "platform.onebot11.useTls", label: "TLS", options: boolOptions()}),
+        renderSettingField({file: "botConfig", key: "platform.onebot11.heartbeatInterval", label: "心跳间隔", type: "number"}),
+        renderSettingField({file: "botConfig", key: "platform.onebot11.reconnectInterval", label: "重连间隔", type: "number"}),
+        renderSettingSelect({file: "botConfig", key: "platform.onebot11.sendMode", label: "图片发送方式", options: [
+            {value: "base64", label: "转为文本编码"},
+            {value: "file", label: "文件路径"},
+        ]}),
+        renderSettingField({file: "botConfig", key: "platform.onebot11.maxReconnectAttempts", label: "最大重连次数", type: "number"}),
+        renderSettingField({file: "botConfig", key: "platform.onebot11.connectTimeout", label: "连接超时", type: "number"}),
+    ].join("") : "";
+    const qqFields = platform === "qq_official" ? [
+        renderSettingField({file: "botConfig", key: "platform.qqOfficial.appId", label: "QQ App ID"}),
+        renderSecretField({key: "platform.qqOfficial.appSecret", label: "QQ App Secret"}),
+        renderSecretField({key: "platform.qqOfficial.botToken", label: "QQ Bot Token"}),
+    ].join("") : "";
+    renderSettingsShell("integration", `
+        <div class="settings-section-grid">
+            ${renderSettingSelect({file: "botConfig", key: "platform.type", label: "对接平台", options: [
+                {value: "onebot11", label: "通用机器人协议"},
+                {value: "qq_official", label: "QQ 官方机器人"},
+            ]})}
+            ${oneBotFields}
+            ${qqFields}
+            ${renderSettingSelect({file: "botConfig", key: "webui.enabled", label: "启用 WebUI", options: boolOptions()})}
+            ${renderSettingField({file: "botConfig", key: "webui.host", label: "WebUI 主机"})}
+            ${renderSettingField({file: "botConfig", key: "webui.port", label: "WebUI 端口", type: "number"})}
+            ${renderSettingTextarea({file: "botConfig", key: "webui.credentialFile", label: "凭据文件", wide: true, rows: 2})}
+            ${renderSettingField({file: "botConfig", key: "webui.tokenTtlSeconds", label: "会话有效秒数", type: "number"})}
+            ${renderSettingField({file: "botConfig", key: "webui.staticDir", label: "外部静态目录", wide: true})}
+        </div>`, {title: "对接配置"});
+}
+
+/**
+ * 功能开关全部落在 BiliConfig.yml 的 enableConfig 下。
+ */
+function renderFeatureSettings() {
+    renderSettingsShell("feature", `<div class="settings-section-grid">
+        ${[
+            ["enableConfig.debugMode", "调试模式"],
+            ["enableConfig.drawEnable", "启用绘图"],
+            ["enableConfig.pushDrawEnable", "推送绘图"],
+            ["enableConfig.notifyEnable", "开播通知"],
+            ["enableConfig.liveCloseNotifyEnable", "下播通知"],
+            ["enableConfig.lowSpeedEnable", "低频轮询"],
+            ["enableConfig.translateEnable", "翻译"],
+            ["enableConfig.proxyEnable", "代理"],
+            ["enableConfig.cacheClearEnable", "缓存清理"],
+        ].map(([key, label]) => renderSettingSelect({file: "biliConfig", key, label, options: boolOptions()})).join("")}
+    </div>`, {title: "功能开关"});
+}
+
+/**
+ * B 站配置集中账号、关注分组和代理列表。
+ */
+function renderBiliSettings() {
+    renderSettingsShell("bili", `<div class="settings-section-grid">
+        ${renderSecretField({key: "accountConfig.cookie", label: "B站 Cookie"})}
+        ${renderSettingSelect({file: "biliConfig", key: "accountConfig.autoFollow", label: "自动关注", options: boolOptions()})}
+        ${renderSettingField({file: "biliConfig", key: "accountConfig.followGroup", label: "关注分组"})}
+        ${renderListTextarea({file: "biliConfig", key: "proxyConfig.proxy", label: "代理地址", wide: true})}
+    </div>`, {title: "B站配置"});
+}
+
+/**
+ * 轮询配置保留原有区间文本格式，由后端和运行期共同解释。
+ */
+function renderPollingSettings() {
+    renderSettingsShell("polling", `<div class="settings-section-grid">
+        ${renderSettingField({file: "biliConfig", key: "checkConfig.lowSpeedTime", label: "低频时段"})}
+        ${renderSettingField({file: "biliConfig", key: "checkConfig.lowSpeedRange", label: "低频间隔"})}
+        ${renderSettingField({file: "biliConfig", key: "checkConfig.normalRange", label: "正常间隔"})}
+        ${renderSettingField({file: "biliConfig", key: "checkConfig.checkReportInterval", label: "状态报告间隔", type: "number"})}
+        ${renderSettingField({file: "biliConfig", key: "checkConfig.timeout", label: "请求超时", type: "number"})}
+    </div>`, {title: "轮询配置"});
+}
+
+/**
+ * 渲染配置覆盖图片、页脚和缓存过期时间，部分字段可能需要重启后完全生效。
+ */
+function renderRenderSettings() {
+    renderSettingsShell("render", `<div class="settings-section-grid">
+        ${renderSettingField({file: "biliConfig", key: "imageConfig.quality", label: "图片质量"})}
+        ${renderSettingField({file: "biliConfig", key: "imageConfig.theme", label: "主题"})}
+        ${renderSettingField({file: "biliConfig", key: "imageConfig.font", label: "字体"})}
+        ${renderSettingField({file: "biliConfig", key: "imageConfig.defaultColor", label: "默认颜色"})}
+        ${renderSettingSelect({file: "biliConfig", key: "imageConfig.cardOrnament", label: "右侧装饰", options: [
+            {value: "FanCard", label: "粉丝卡"},
+            {value: "QrCode", label: "二维码"},
+            {value: "", label: "留空不绘制"},
+        ]})}
+        ${renderSettingSelect({file: "biliConfig", key: "imageConfig.timeDisplayMode", label: "时间显示", options: [
+            {value: "ABSOLUTE", label: "绝对时间"},
+            {value: "RELATIVE", label: "相对时间"},
+        ]})}
+        ${renderSettingField({file: "biliConfig", key: "imageConfig.colorGenerator.hueStep", label: "色相步进", type: "number"})}
+        ${renderSettingSelect({file: "biliConfig", key: "imageConfig.colorGenerator.lockSB", label: "锁定明度饱和", options: boolOptions()})}
+        ${renderSettingField({file: "biliConfig", key: "imageConfig.colorGenerator.saturation", label: "饱和度", type: "number"})}
+        ${renderSettingField({file: "biliConfig", key: "imageConfig.colorGenerator.brightness", label: "亮度", type: "number"})}
+        ${renderSettingSelect({file: "biliConfig", key: "imageConfig.badgeEnable.left", label: "左徽章", options: boolOptions()})}
+        ${renderSettingSelect({file: "biliConfig", key: "imageConfig.badgeEnable.right", label: "右徽章", options: boolOptions()})}
+        ${renderSettingTextarea({file: "biliConfig", key: "templateConfig.footer.dynamicFooter", label: "动态页脚"})}
+        ${renderSettingTextarea({file: "biliConfig", key: "templateConfig.footer.liveFooter", label: "直播页脚"})}
+        ${renderSettingSelect({file: "biliConfig", key: "templateConfig.footer.footerAlign", label: "页脚对齐", options: [
+            {value: "LEFT", label: "左"},
+            {value: "CENTER", label: "中"},
+            {value: "RIGHT", label: "右"},
+        ]})}
+        ${renderSettingSelect({file: "biliConfig", key: "cacheConfig.downloadOriginal", label: "下载原图", options: boolOptions()})}
+        ${["DRAW", "IMAGES", "EMOJI", "USER", "OTHER"].map((key) => renderSettingField({file: "biliConfig", key: `cacheConfig.expires.${key}`, label: `缓存 ${key}`, type: "number"})).join("")}
+    </div>`, {title: "渲染配置"});
+}
+
+/**
+ * 消息配置覆盖推送节流、模板默认值、模板表和链接解析策略。
+ */
+function renderMessageSettings() {
+    renderSettingsShell("message", `<div class="settings-section-grid">
+        ${renderSettingField({file: "biliConfig", key: "pushConfig.messageInterval", label: "消息间隔", type: "number"})}
+        ${renderSettingField({file: "biliConfig", key: "pushConfig.pushInterval", label: "推送间隔", type: "number"})}
+        ${renderSettingSelect({file: "biliConfig", key: "pushConfig.toShortLink", label: "转短链", options: boolOptions()})}
+        ${renderSettingSelect({file: "biliConfig", key: "templateConfig.defaultDynamicPush", label: "动态默认模板", options: templateOptions()})}
+        ${renderSettingSelect({file: "biliConfig", key: "templateConfig.defaultLivePush", label: "直播默认模板", options: templateOptions()})}
+        ${renderSettingSelect({file: "biliConfig", key: "templateConfig.defaultLiveClose", label: "下播默认模板", options: [
+            {value: "SimpleMsg", label: "简洁下播"},
+            {value: "ComplexMsg", label: "详细下播"},
+        ]})}
+        ${renderSettingTextarea({file: "biliConfig", key: "templateConfig.dynamicPush", label: "动态模板表", wide: true})}
+        ${renderSettingTextarea({file: "biliConfig", key: "templateConfig.livePush", label: "直播模板表", wide: true})}
+        ${renderSettingTextarea({file: "biliConfig", key: "templateConfig.liveClose", label: "下播模板表", wide: true})}
+        ${renderSettingSelect({file: "biliConfig", key: "linkResolveConfig.triggerMode", label: "链接解析触发", options: [
+            {value: "At", label: "被提及时"},
+            {value: "Always", label: "总是"},
+            {value: "Never", label: "关闭"},
+        ]})}
+        ${renderSettingSelect({file: "biliConfig", key: "linkResolveConfig.drawEnable", label: "链接解析绘图", options: boolOptions()})}
+        ${renderSettingSelect({file: "biliConfig", key: "linkResolveConfig.returnLink", label: "返回链接", options: boolOptions()})}
+        ${renderSettingTextarea({file: "botConfig", key: "targets", label: "预置推送目标 JSON", wide: true, rows: 6})}
+    </div>`, {title: "消息配置"});
+}
+
+/**
+ * 日志配置当前只展示说明，日志级别仍由功能开关的调试模式控制。
+ */
+function renderLogSettings() {
+    renderSettingsShell("log", `
+        <div class="settings-advanced">
+            <strong>日志配置</strong>
+            <p>日志级别由“功能开关”的调试模式控制。日志文件查看、清空和导出请使用左侧“日志”页面。</p>
+        </div>`, {title: "日志配置", readonly: true});
+}
+
+/**
+ * 管理员配置横跨 BiliConfig 管理员和 bot.yml 群管理员映射，保存时按文件拆分提交。
+ */
+function renderAdminSettings() {
+    renderSettingsShell("admin", `<div class="settings-section-grid">
+        ${renderSettingField({file: "biliConfig", key: "admin", label: "超级管理员 QQ", type: "number"})}
+        ${renderSettingField({file: "biliConfig", key: "adminContact", label: "超级管理员联系人"})}
+        ${renderSettingTextarea({file: "botConfig", key: "admins", label: "群普通管理员 JSON", wide: true, rows: 8})}
+        <div class="settings-field"><span>首次运行状态</span><input value="${escapeHtml(fieldValue("botConfig", "firstRunFlag", "0"))}" disabled></div>
+    </div>`, {title: "管理员"});
+}
+
+/**
+ * 翻译配置保留 Baidu secret 的 write-only 行为，空提交不覆盖旧密钥。
+ */
+function renderTranslateSettings() {
+    renderSettingsShell("translate", `<div class="settings-section-grid">
+        ${renderSettingTextarea({file: "biliConfig", key: "translateConfig.cutLine", label: "翻译分隔线", wide: true})}
+        ${renderSettingField({file: "biliConfig", key: "translateConfig.baidu.APP_ID", label: "百度 APP ID"})}
+        ${renderSecretField({key: "translateConfig.baidu.SECURITY_KEY", label: "百度密钥"})}
+    </div>`, {title: "翻译配置"});
+}
+
+/**
+ * 开关选项固定使用 true/false 字符串，和后端 Boolean DTO 对齐。
+ */
+function boolOptions() {
+    return [
+        {value: "true", label: "开"},
+        {value: "false", label: "关"},
+    ];
+}
+
+/**
+ * 动态和直播模板默认值共享同一组选项。
+ */
+function templateOptions() {
+    return [
+        {value: "DrawOnly", label: "只发图片"},
+        {value: "TextOnly", label: "纯文本"},
+        {value: "OneMsg", label: "单条消息"},
+        {value: "TwoMsg", label: "双条消息"},
+    ];
+}
+
+/**
  * 系统配置页顶栏只维护当前分类的选中态和空白占位显隐，后续字段归类不需要改动导航骨架。
  */
 function activateSettingsTab(tabName) {
@@ -1878,6 +2584,8 @@ function activateSettingsTab(tabName) {
     settingsPanels.forEach((panel) => {
         panel.hidden = panel.dataset.settingsPanel !== targetName;
     });
+    settingsState.activeTab = targetName;
+    renderSettingsActiveTab();
 }
 
 /**
@@ -1912,6 +2620,9 @@ function activateView(viewName, replaceHash = false) {
     } else if (targetName === "subscriptions") {
         stopLogAutoRefresh();
         refreshSubscriptions().catch((error) => setSubscriptionError(error.message || "订阅加载失败"));
+    } else if (targetName === "settings") {
+        stopLogAutoRefresh();
+        loadSettingsFiles().then(renderSettingsActiveTab).catch((error) => setSettingsStatus(error.message || "配置加载失败"));
     } else {
         stopLogAutoRefresh();
     }
@@ -1930,6 +2641,34 @@ navItems.forEach((item) => {
 settingsTabButtons.forEach((button) => {
     button.addEventListener("click", () => {
         activateSettingsTab(button.dataset.settingsTab || "");
+    });
+});
+
+settingsPanels.forEach((panel) => {
+    panel.addEventListener("submit", (event) => {
+        const form = event.target.closest("[data-settings-form]");
+        if (!form) {
+            return;
+        }
+        event.preventDefault();
+        saveSettingsSection(form.dataset.settingsForm).catch((error) => {
+            setSettingsStatus(error.message || "保存失败");
+        });
+    });
+    panel.addEventListener("click", (event) => {
+        if (!event.target.closest("[data-settings-refresh]")) {
+            return;
+        }
+        loadSettingsFiles(true).then(renderSettingsActiveTab).catch((error) => setSettingsStatus(error.message || "刷新失败"));
+    });
+    panel.addEventListener("change", (event) => {
+        if (event.target.name === "platform.type") {
+            const field = settingsState.files.botConfig.fieldsByKey.get("platform.type");
+            if (field) {
+                settingsState.files.botConfig.fieldsByKey.set("platform.type", {...field, value: event.target.value});
+            }
+            renderIntegrationSettings();
+        }
     });
 });
 

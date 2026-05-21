@@ -36,6 +36,8 @@ import top.bilibili.utils.CacheType
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiBiliDataWriteRequestDto
 import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
+import top.bilibili.webui.model.WebUiGroupAdminConfigWriteDto
+import top.bilibili.webui.model.WebUiTargetConfigWriteDto
 import top.bilibili.webui.model.WebUiFieldCapability
 import top.bilibili.webui.model.WebUiRecommendedAction
 import top.bilibili.webui.model.WebUiSaveEffectLevel
@@ -216,11 +218,58 @@ class WebUiConfigFacadeTest {
     fun `config write requests should stay file scoped`() {
         val biliConfigRequest = WebUiBiliConfigWriteRequestDto(
             snapshotToken = "token-a",
-            adminContact = "onebot11:private:1",
+            admin = 42L,
+            adminContact = "onebot11:private:42",
+            debugMode = true,
+            drawEnable = true,
+            pushDrawEnable = true,
+            notifyEnable = true,
+            liveCloseNotifyEnable = true,
+            lowSpeedEnable = true,
+            translateEnable = true,
+            proxyEnable = true,
+            cacheClearEnable = false,
             cookie = "",
+            autoFollow = false,
+            followGroup = "Bot关注",
+            proxies = listOf("http://127.0.0.1:8080"),
+            lowSpeedTime = "22-8",
+            lowSpeedRange = "60-240",
+            normalRange = "30-120",
+            checkReportInterval = 10,
+            timeout = 10,
+            quality = "1000w",
+            theme = "v3",
+            font = "Noto Sans CJK SC",
+            defaultColor = "#d3edfa",
+            cardOrnament = "FanCard",
+            timeDisplayMode = "ABSOLUTE",
+            hueStep = 30,
+            lockSB = true,
+            saturation = 0.25f,
+            brightness = 1.0f,
+            leftBadgeEnable = true,
+            rightBadgeEnable = false,
+            dynamicFooter = "",
+            liveFooter = "",
+            footerAlign = "LEFT",
+            downloadOriginal = true,
+            cacheExpires = mapOf("DRAW" to 7, "IMAGES" to 7, "EMOJI" to 7, "USER" to 7, "OTHER" to 7),
+            messageInterval = 100L,
+            pushInterval = 500L,
+            toShortLink = false,
+            defaultDynamicPush = "OneMsg",
+            defaultLivePush = "OneMsg",
+            defaultLiveClose = "SimpleMsg",
+            dynamicPush = mapOf("DrawOnly" to "{draw}"),
+            livePush = mapOf("DrawOnly" to "{draw}"),
+            liveClose = mapOf("SimpleMsg" to "{name} 直播结束啦!"),
+            triggerMode = "At",
+            linkResolveDrawEnable = true,
+            linkResolveReturnLink = false,
+            cutLine = "\n\n翻译\n",
             baiduAppId = "app-id",
             baiduSecurityKey = "",
-            debugMode = true,
         )
         val biliDataRequest = WebUiBiliDataWriteRequestDto(
             snapshotToken = "token-b",
@@ -233,14 +282,59 @@ class WebUiConfigFacadeTest {
             oneBot11Host = "127.0.0.1",
             oneBot11Port = 3001,
             oneBot11Token = "",
+            oneBot11UseTls = false,
+            oneBot11HeartbeatInterval = 30000L,
+            oneBot11ReconnectInterval = 5000L,
+            oneBot11MessageFormat = "array",
+            oneBot11SendMode = "base64",
+            oneBot11MaxReconnectAttempts = -1,
+            oneBot11ConnectTimeout = 10000L,
+            qqOfficialAppId = "",
+            qqOfficialAppSecret = "",
+            qqOfficialBotToken = "",
+            webUiEnabled = true,
+            webUiHost = "127.0.0.1",
+            webUiPort = 18080,
+            webUiCredentialFile = "webui-credentials.json",
+            webUiTokenTtlSeconds = 3600L,
+            webUiStaticDir = "",
+            targets = listOf(WebUiTargetConfigWriteDto("group", 10086L, "onebot11:group:10086")),
+            admins = listOf(
+                WebUiGroupAdminConfigWriteDto(
+                    groupId = 10086L,
+                    userIds = listOf(7L),
+                    groupContact = "onebot11:group:10086",
+                    userContacts = listOf("onebot11:private:7"),
+                ),
+            ),
         )
 
         assertEquals("token-a", biliConfigRequest.snapshotToken)
         assertEquals("token-b", biliDataRequest.snapshotToken)
         assertEquals("token-c", botConfigRequest.snapshotToken)
-        assertEquals("onebot11:private:1", biliConfigRequest.adminContact)
+        assertEquals("onebot11:private:42", biliConfigRequest.adminContact)
         assertEquals(listOf("onebot11:group:2"), biliDataRequest.linkParseBlacklistContacts)
         assertEquals("127.0.0.1", botConfigRequest.oneBot11Host)
+    }
+
+    @Test
+    fun `system settings editable fields should expose expected capabilities`() {
+        val facade = WebUiConfigFacade(
+            biliConfigProvider = { BiliConfig() },
+            biliDataProvider = { BiliData },
+            botConfigProvider = { BotConfig() },
+        )
+
+        val biliFields = facade.readBiliConfig().fields.associateBy { it.key }
+        val botFields = facade.readBotConfig().fields.associateBy { it.key }
+
+        assertEquals(WebUiFieldCapability.EDITABLE, biliFields["enableConfig.drawEnable"]?.capability)
+        assertEquals(WebUiFieldCapability.EDITABLE, biliFields["imageConfig.quality"]?.capability)
+        assertEquals(WebUiFieldCapability.EDITABLE, biliFields["templateConfig.dynamicPush"]?.capability)
+        assertEquals(WebUiFieldCapability.MASKED, biliFields["accountConfig.cookie"]?.capability)
+        assertEquals(WebUiFieldCapability.EDITABLE, botFields["platform.onebot11.useTls"]?.capability)
+        assertEquals(WebUiFieldCapability.MASKED, botFields["platform.qqOfficial.appSecret"]?.capability)
+        assertEquals(WebUiFieldCapability.SYSTEM_MANAGED, botFields["firstRunFlag"]?.capability)
     }
 
     @Test
