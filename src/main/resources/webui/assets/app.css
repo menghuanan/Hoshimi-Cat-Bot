@@ -899,7 +899,7 @@ select:focus {
     font-size: 0.78rem;
 }
 
-/* 系统配置页保留左侧 QQ 配置和右侧 WebSocket 配置两块并列面板。 */
+/* 系统配置页先保留分类切换骨架，具体字段归类由后续配置实现补齐。 */
 .page-head {
     display: flex;
     align-items: center;
@@ -974,6 +974,17 @@ select:focus {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 12px;
+}
+
+.config-grid--settings-tabs {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.settings-placeholder {
+    min-height: 320px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: var(--surface);
 }
 
 .config-panel {

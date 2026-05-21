@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>dynamic-bot WebUI Shell</title>
     <script src="/assets/theme.js"></script>
-    <link rel="stylesheet" href="/assets/app.css?v=subscriptions-config-editor-v10">
+    <link rel="stylesheet" href="/assets/app.css?v=settings-tabs-v1">
 </head>
 <body class="dashboard-page">
 <svg aria-hidden="true" focusable="false" class="svg-sprite">
@@ -348,115 +348,27 @@
 
             <section class="page page-settings" data-view="settings" hidden>
                 <div class="tabs-row">
-                    <span class="tab is-active">QQ 配置</span>
-                    <span class="tab">WebSocket</span>
-                    <span class="tab">代理设置</span>
-                    <span class="tab">推送规则</span>
-                    <span class="tab">其他设置</span>
+                    <button class="tab is-active" type="button" data-settings-tab="integration" aria-controls="settings-panel-integration" aria-pressed="true">对接配置</button>
+                    <button class="tab" type="button" data-settings-tab="feature" aria-controls="settings-panel-feature" aria-pressed="false">功能开关</button>
+                    <button class="tab" type="button" data-settings-tab="bili" aria-controls="settings-panel-bili" aria-pressed="false">B站配置</button>
+                    <button class="tab" type="button" data-settings-tab="polling" aria-controls="settings-panel-polling" aria-pressed="false">轮询配置</button>
+                    <button class="tab" type="button" data-settings-tab="render" aria-controls="settings-panel-render" aria-pressed="false">渲染配置</button>
+                    <button class="tab" type="button" data-settings-tab="message" aria-controls="settings-panel-message" aria-pressed="false">消息配置</button>
+                    <button class="tab" type="button" data-settings-tab="log" aria-controls="settings-panel-log" aria-pressed="false">日志配置</button>
+                    <button class="tab" type="button" data-settings-tab="admin" aria-controls="settings-panel-admin" aria-pressed="false">管理员</button>
+                    <button class="tab" type="button" data-settings-tab="translate" aria-controls="settings-panel-translate" aria-pressed="false">翻译配置</button>
                 </div>
 
-                <div class="config-grid">
-                    <section class="panel config-panel">
-                        <div class="panel-header">
-                            <h2>QQ 配置</h2>
-                            <p>配置 QQ 机器人账号，用于登录和基础连接。</p>
-                        </div>
-                        <div class="config-fields config-fields--two">
-                            <div class="field-block">
-                                <span class="field-label">QQ 账号</span>
-                                <div class="fake-input">请输入 QQ 账号</div>
-                            </div>
-                            <div class="field-block">
-                                <span class="field-label">QQ 密码</span>
-                                <div class="fake-secret">
-                                    <span>••••••••••</span>
-                                    <svg viewBox="0 0 24 24" class="secret-icon"><use href="#icon-eye-off"></use></svg>
-                                </div>
-                            </div>
-                            <div class="field-block">
-                                <span class="field-label">登录设备</span>
-                                <div class="fake-select">
-                                    <span>Android Phone</span>
-                                    <svg viewBox="0 0 24 24"><use href="#icon-chevron"></use></svg>
-                                </div>
-                            </div>
-                            <div class="field-block">
-                                <span class="field-label">设备信息</span>
-                                <div class="fake-select">
-                                    <span>默认设备</span>
-                                    <svg viewBox="0 0 24 24"><use href="#icon-chevron"></use></svg>
-                                </div>
-                            </div>
-                            <div class="toggle-row">
-                                <div>
-                                    <span class="field-label">自动登录</span>
-                                    <span class="field-help">开启后，启动时自动登录 QQ</span>
-                                </div>
-                                <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                            </div>
-                            <div class="toggle-row">
-                                <div>
-                                    <span class="field-label">开启心跳</span>
-                                    <span class="field-help">保持 QQ 在线，避免掉线</span>
-                                </div>
-                                <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                            </div>
-                            <div class="field-block field-block--small">
-                                <span class="field-label">重试间隔</span>
-                                <div class="fake-input fake-number">5</div>
-                            </div>
-                            <div class="action-row action-row--left">
-                                <span class="btn btn-primary">保存配置</span>
-                                <span class="btn btn-secondary">测试连接</span>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="panel config-panel">
-                        <div class="panel-header">
-                            <h2>WebSocket 配置</h2>
-                            <p>配置 WebSocket 监听参数，用于外部管理面接入。</p>
-                        </div>
-                        <div class="config-fields">
-                            <div class="toggle-row">
-                                <div>
-                                    <span class="field-label">启用 WebSocket</span>
-                                    <span class="field-help">开启监听并接受管理请求</span>
-                                </div>
-                                <span class="switch switch-on" aria-hidden="true"><span></span></span>
-                            </div>
-                            <div class="field-block">
-                                <span class="field-label">监听地址</span>
-                                <div class="fake-input">0.0.0.0</div>
-                            </div>
-                            <div class="field-block">
-                                <span class="field-label">监听端口</span>
-                                <div class="fake-input">8080</div>
-                            </div>
-                            <div class="field-block">
-                                <span class="field-label">访问路径</span>
-                                <div class="fake-input">/ws</div>
-                            </div>
-                            <div class="field-block">
-                                <span class="field-label">Token</span>
-                                <div class="fake-secret">
-                                    <span>••••••••••••••••</span>
-                                    <svg viewBox="0 0 24 24" class="secret-icon"><use href="#icon-eye-off"></use></svg>
-                                </div>
-                            </div>
-                            <div class="toggle-row">
-                                <div>
-                                    <span class="field-label">SSL/TLS</span>
-                                    <span class="field-help">开启加密连接</span>
-                                </div>
-                                <span class="switch" aria-hidden="true"><span></span></span>
-                            </div>
-                            <div class="action-row">
-                                <span class="btn btn-primary">保存配置</span>
-                                <span class="btn btn-secondary">重置</span>
-                            </div>
-                        </div>
-                    </section>
+                <div class="config-grid config-grid--settings-tabs">
+                    <section id="settings-panel-integration" class="settings-placeholder" data-settings-panel="integration" aria-label="对接配置"></section>
+                    <section id="settings-panel-feature" class="settings-placeholder" data-settings-panel="feature" aria-label="功能开关" hidden></section>
+                    <section id="settings-panel-bili" class="settings-placeholder" data-settings-panel="bili" aria-label="B站配置" hidden></section>
+                    <section id="settings-panel-polling" class="settings-placeholder" data-settings-panel="polling" aria-label="轮询配置" hidden></section>
+                    <section id="settings-panel-render" class="settings-placeholder" data-settings-panel="render" aria-label="渲染配置" hidden></section>
+                    <section id="settings-panel-message" class="settings-placeholder" data-settings-panel="message" aria-label="消息配置" hidden></section>
+                    <section id="settings-panel-log" class="settings-placeholder" data-settings-panel="log" aria-label="日志配置" hidden></section>
+                    <section id="settings-panel-admin" class="settings-placeholder" data-settings-panel="admin" aria-label="管理员" hidden></section>
+                    <section id="settings-panel-translate" class="settings-placeholder" data-settings-panel="translate" aria-label="翻译配置" hidden></section>
                 </div>
             </section>
 
@@ -650,6 +562,6 @@
         </form>
     </section>
 </div>
-<script src="/assets/app.js?v=subscriptions-config-editor-v10"></script>
+<script src="/assets/app.js?v=settings-tabs-v1"></script>
 </body>
 </html>

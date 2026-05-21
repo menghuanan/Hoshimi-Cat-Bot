@@ -66,6 +66,8 @@ const cancelSubscriptionDeleteButton = document.getElementById("cancel-subscript
 const confirmSubscriptionDeleteButton = document.getElementById("confirm-subscription-delete");
 const subscriptionDeleteSummary = document.getElementById("subscription-delete-summary");
 const subscriptionDeleteStatus = document.getElementById("subscription-delete-status");
+const settingsTabButtons = Array.from(document.querySelectorAll("[data-settings-tab]"));
+const settingsPanels = Array.from(document.querySelectorAll("[data-settings-panel]"));
 const themePreferenceCookieName = window.WebUiTheme?.cookieName || "dynamic_bot_webui_theme";
 const runtimeRefreshIntervalMs = 30_000;
 const logRefreshIntervalMs = 5_000;
@@ -1861,6 +1863,24 @@ async function refreshRuntimeSummary() {
 }
 
 /**
+ * 系统配置页顶栏只维护当前分类的选中态和空白占位显隐，后续字段归类不需要改动导航骨架。
+ */
+function activateSettingsTab(tabName) {
+    const fallbackName = settingsTabButtons[0]?.dataset.settingsTab || "";
+    const targetName = settingsTabButtons.some((button) => button.dataset.settingsTab === tabName)
+        ? tabName
+        : fallbackName;
+    settingsTabButtons.forEach((button) => {
+        const active = button.dataset.settingsTab === targetName;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+    });
+    settingsPanels.forEach((panel) => {
+        panel.hidden = panel.dataset.settingsPanel !== targetName;
+    });
+}
+
+/**
  * 页面壳负责在可见页面之间切换，运行态数据刷新由独立函数处理。
  */
 function activateView(viewName, replaceHash = false) {
@@ -1904,6 +1924,12 @@ navItems.forEach((item) => {
     item.addEventListener("click", () => {
         const target = item.dataset.navTarget || defaultView;
         location.hash = target;
+    });
+});
+
+settingsTabButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+        activateSettingsTab(button.dataset.settingsTab || "");
     });
 });
 

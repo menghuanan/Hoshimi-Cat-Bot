@@ -79,7 +79,7 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellPage.contains("data-nav-target=\"logs\""))
         assertTrue(shellPage.contains("class=\"metric-grid\""))
         assertTrue(shellPage.contains("class=\"dashboard-grid\""))
-        assertTrue(shellPage.contains("class=\"config-grid\""))
+        assertTrue(shellPage.contains("config-grid"))
         assertTrue(shellPage.contains("class=\"subscription-grid\""))
         assertTrue(shellPage.contains("class=\"log-list\""))
         assertTrue(shellPage.contains("Bot 运行状态"))
@@ -89,7 +89,6 @@ class WebUiFoundationSourceRegressionTest {
         assertFalse(shellPage.contains("data-nav-target=\"features\""))
         assertFalse(shellPage.contains("page-features"))
         assertFalse(shellPage.contains("feature-grid"))
-        assertFalse(shellPage.contains("功能开关"))
         assertTrue(shellPage.contains("""data-runtime-field="startedAt""""))
         assertTrue(shellPage.contains("""data-runtime-field="runtimeDuration""""))
         assertTrue(shellPage.contains("""data-runtime-field="systemTime""""))
@@ -130,14 +129,49 @@ class WebUiFoundationSourceRegressionTest {
     }
 
     /**
+     * 系统配置页的顶栏分类先提供可切换骨架，后续字段归类可以在各 panel 内逐步补齐。
+     */
+    @Test
+    fun `settings page should expose clickable category tabs with blank panels`() {
+        val shellPage = read("src/main/resources/webui/index.html")
+        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+
+        listOf(
+            "integration" to "对接配置",
+            "feature" to "功能开关",
+            "bili" to "B站配置",
+            "polling" to "轮询配置",
+            "render" to "渲染配置",
+            "message" to "消息配置",
+            "log" to "日志配置",
+            "admin" to "管理员",
+            "translate" to "翻译配置",
+        ).forEach { (key, label) ->
+            assertTrue(shellPage.contains("""data-settings-tab="$key""""))
+            assertTrue(shellPage.contains("""data-settings-panel="$key""""))
+            assertTrue(shellPage.contains(label))
+        }
+        assertTrue(shellPage.contains("""aria-pressed="true""""))
+        assertTrue(shellPage.contains("""class="settings-placeholder""""))
+        assertTrue(shellScript.contains("settingsTabButtons"))
+        assertTrue(shellScript.contains("activateSettingsTab"))
+        assertTrue(shellStyle.contains(".settings-placeholder"))
+        assertFalse(shellPage.contains("QQ 配置"))
+        assertFalse(shellPage.contains("WebSocket 配置"))
+        assertFalse(shellPage.contains("请输入 QQ 账号"))
+        assertFalse(shellPage.contains("启用 WebSocket"))
+    }
+
+    /**
      * 主壳页的交互脚本和样式必须带资源版本，避免 hash 页面复用旧缓存后管理员按钮没有事件绑定。
      */
     @Test
     fun `frontend shell should version account control assets`() {
         val shellPage = read("src/main/resources/webui/index.html")
 
-        assertTrue(shellPage.contains("""/assets/app.css?v=subscriptions-config-editor-v10"""))
-        assertTrue(shellPage.contains("""/assets/app.js?v=subscriptions-config-editor-v10"""))
+        assertTrue(shellPage.contains("""/assets/app.css?v=settings-tabs-v1"""))
+        assertTrue(shellPage.contains("""/assets/app.js?v=settings-tabs-v1"""))
     }
 
     /**
