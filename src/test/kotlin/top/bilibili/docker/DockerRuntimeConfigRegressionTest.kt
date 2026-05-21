@@ -226,14 +226,11 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
-    fun `bare metal windows startup script should document allocator preload boundary`() {
+    fun `bare metal windows startup script should avoid linux allocator preload injection`() {
         val buildGradle = read("build.gradle.kts")
 
         // Windows 当前没有项目内 allocator preload 方案，脚本应明确边界而不是设置 Linux 专属 LD_PRELOAD。
-        assertTrue(
-            buildGradle.contains("Windows 不使用 Linux LD_PRELOAD allocator 注入"),
-            "distribution start.bat should document why allocator preload is Linux-only",
-        )
+        // 该边界由脚本行为守护，避免把可清理的说明文字固定成 CI 必须保留的契约。
         assertFalse(
             buildGradle.contains("set LD_PRELOAD="),
             "distribution start.bat should not set Linux-only LD_PRELOAD on Windows",

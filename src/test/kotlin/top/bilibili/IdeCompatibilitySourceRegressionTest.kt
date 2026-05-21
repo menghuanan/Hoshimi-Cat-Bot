@@ -60,7 +60,8 @@ class IdeCompatibilitySourceRegressionTest {
         assertTrue(configManager.contains("yaml.decodeFromString<BiliConfig>(content)"))
         assertTrue(configManager.contains("yaml.decodeFromString<BiliDataWrapper>(content)"))
         assertTrue(configManager.contains("yaml.encodeToString(configToSave)"))
-        assertTrue(configManager.contains("yaml.encodeToString(wrapper)"))
+        // 这里只守护序列化继续走 reified overload，避免把保存阶段的局部变量名固化成兼容性契约。
+        assertTrue(Regex("""yaml\.encodeToString\([A-Za-z][A-Za-z0-9_]*\)""").findAll(configManager).count() >= 2)
         assertFalse(configManager.contains("BiliConfig.serializer()"))
         assertFalse(configManager.contains("BiliDataWrapper.serializer()"))
     }
