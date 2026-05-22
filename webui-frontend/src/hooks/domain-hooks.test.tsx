@@ -213,6 +213,36 @@ describe('webui domain hooks', () => {
     })
   })
 
+  /**
+   * 日志 hook 负责解析日志行并提供过滤、搜索和导出文本，页面不重复拆日志格式。
+   */
+  it('useLogs should parse and filter log rows for the logs page', async () => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/logs/sources')) {
+        return Promise.resolve(createJsonResponse(200, {sources: [{id: 'source-1'}, {id: 'source-2'}]}))
+      }
+      if (url.includes('/api/logs/source-1?tail=500')) {
+        return Promise.resolve(createJsonResponse(200, {text: '[INFO] [core] boot ok\n[WARN] [push] push slow\nplain line'}))
+      }
+      return Promise.resolve(createJsonResponse(200, {}))
+    })
+
+    const {result} = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+      result: {current: ReturnType<typeof useLogs>}
+    }
+
+    await waitFor(() => expect(result.current.levels).toEqual(['INFO', 'WARN']))
+    expect(result.current.modules).toEqual(['core', 'push'])
+
+    result.current.setLevelFilter('WARN')
+    result.current.setModuleFilter('push')
+    result.current.setKeyword('slow')
+
+    await waitFor(() => expect(result.current.filteredRows.map((row) => row.raw)).toEqual(['[WARN] [push] push slow']))
+    expect(result.current.exportFilteredRows()).toContain('[WARN] [push] push slow')
+  })
+
   it('useThemePreference should persist the selected preference locally', () => {
     const {result} = renderHook(() => useThemePreference())
 

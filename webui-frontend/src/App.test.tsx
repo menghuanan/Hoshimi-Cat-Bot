@@ -179,4 +179,19 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('WebUI 密码')).toBeInTheDocument()
     expect(screen.queryByRole('button', {name: '管理员菜单'})).not.toBeInTheDocument()
   })
+
+  /**
+   * 日志页需要提供旧 WebUI 等价的来源、过滤、搜索、自动刷新、导出和清空控件。
+   */
+  it('renders log filtering, auto-refresh, export, and clear controls', async () => {
+    renderAtPath('/#logs')
+
+    expect(await screen.findByLabelText('日志来源')).toBeInTheDocument()
+    expect(screen.getByLabelText('级别')).toBeInTheDocument()
+    expect(screen.getByLabelText('模块')).toBeInTheDocument()
+    expect(screen.getByLabelText('关键词')).toBeInTheDocument()
+    expect(screen.getByLabelText('自动刷新')).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '导出'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '清空'})).toBeInTheDocument()
+  })
 })
