@@ -8,6 +8,8 @@ import top.bilibili.service.TemplateSelectionService
 import top.bilibili.service.TemplateService
 import top.bilibili.service.AtAllService
 import top.bilibili.data.LiveMessage
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,6 +17,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BiliConfigManagerNamespaceMigrationTest {
+    private val configFile = Path.of("config", "BiliConfig.yml")
+
     @AfterTest
     fun cleanup() {
         BiliData.dataVersion = 0
@@ -227,6 +231,35 @@ class BiliConfigManagerNamespaceMigrationTest {
         assertTrue(AtAllService.shouldAtAll(runtimeSubject, uid, liveMessage(uid), now + 2 * 60 * 60 * 1000L + 1L), "冷却过期后应重新放行")
     }
 
+    /**
+     * WebUI 保存 BiliConfig 后会立即刷新配置快照，运行态必须同步到新配置，否则页面会继续读到旧值。
+     */
+    @Test
+    fun `saveConfig should update runtime config after successful persistence`() {
+        val originalFileBytes = if (Files.exists(configFile)) Files.readAllBytes(configFile) else null
+        val originalRuntimeConfig = currentRuntimeConfigOrNull()
+        val oldConfig = BiliConfig(adminContact = "onebot11:private:10001")
+        val newConfig = BiliConfig(adminContact = "onebot11:private:10002")
+        try {
+            setRuntimeConfig(oldConfig)
+
+            val saved = BiliConfigManager.saveConfig(newConfig)
+
+            assertTrue(saved)
+            assertEquals("onebot11:private:10002", BiliConfigManager.config.adminContact)
+        } finally {
+            if (originalRuntimeConfig != null) {
+                setRuntimeConfig(originalRuntimeConfig)
+            }
+            if (originalFileBytes != null) {
+                Files.createDirectories(configFile.parent)
+                Files.write(configFile, originalFileBytes)
+            } else {
+                Files.deleteIfExists(configFile)
+            }
+        }
+    }
+
     private fun migrateViaReflection(): Boolean {
         val method = BiliConfigManager::class.java.getDeclaredMethod("migrateDataIfNeeded", BiliData::class.java)
         method.isAccessible = true
@@ -237,6 +270,22 @@ class BiliConfigManagerNamespaceMigrationTest {
         val method = BiliConfigManager::class.java.getDeclaredMethod("loadDataFromContent", String::class.java, BiliData::class.java)
         method.isAccessible = true
         return method.invoke(BiliConfigManager, content, BiliData) as Boolean
+    }
+
+    /**
+     * 反射读取运行态配置用于测试恢复，兼容尚未初始化 BiliConfigManager 的测试进程。
+     */
+    private fun currentRuntimeConfigOrNull(): BiliConfig? {
+        return runCatching { BiliConfigManager.config }.getOrNull()
+    }
+
+    /**
+     * 反射写入运行态配置只用于隔离 saveConfig 回归测试，不绕过生产保存入口。
+     */
+    private fun setRuntimeConfig(config: BiliConfig) {
+        val field = BiliConfigManager::class.java.getDeclaredField("config")
+        field.isAccessible = true
+        field.set(BiliConfigManager, config)
     }
 
     /**

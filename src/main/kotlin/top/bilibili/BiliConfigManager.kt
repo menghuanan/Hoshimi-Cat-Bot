@@ -546,6 +546,8 @@ object BiliConfigManager {
     fun saveConfig(configToSave: BiliConfig = config): Boolean {
         return try {
             configFile.writeText(yaml.encodeToString(configToSave))
+            // WebUI 保存后会立即从运行态读取快照，写盘成功后必须同步内存态。
+            config = configToSave
             logger.debug("配置已保存")
             true
         } catch (e: Exception) {
