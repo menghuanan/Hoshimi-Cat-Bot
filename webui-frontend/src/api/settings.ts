@@ -1,5 +1,6 @@
 import { requestJson, type WebUiJsonRequestOptions } from './http'
 import type { WebUiSettingsSaveResult } from '../types/settings'
+import { buildSettingsSavePayload } from '../settings/settingsPayload'
 
 /**
  * BiliConfig 保存输入只保留 Task 2 需要的 proxy 和确认密码语义，其他字段后续页面再补齐。
@@ -50,29 +51,30 @@ export async function loadBotConfig(options: WebUiJsonRequestOptions = {}): Prom
  * 代理输入为空时保持 preserve，有明确文本时才替换为新列表。
  */
 export function buildBiliConfigSavePayload(input: WebUiBiliConfigSaveInput): Record<string, unknown> {
-  const proxies = String(input.proxyText || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-  return {
+  return buildSettingsSavePayload({
+    file: 'biliConfig',
     snapshotToken: input.snapshotToken,
     confirmationPassword: input.confirmationPassword,
-    proxies,
-    proxyUpdateMode: proxies.length > 0 ? 'replace' : 'preserve',
-    ...(input.fields || {}),
-  }
+    values: {
+      'proxyConfig.proxy': input.proxyText || '',
+      ...(input.fields || {}),
+    },
+  })
 }
 
 /**
  * bot.yml 保存 payload 只补当前需要的 token 字段，其余字段由页面后续扩展。
  */
 export function buildBotConfigSavePayload(input: WebUiBotConfigSaveInput): Record<string, unknown> {
-  return {
+  return buildSettingsSavePayload({
+    file: 'botConfig',
     snapshotToken: input.snapshotToken,
     confirmationPassword: input.confirmationPassword,
-    oneBot11Token: input.token || '',
-    ...(input.fields || {}),
-  }
+    values: {
+      'platform.onebot11.token': input.token || '',
+      ...(input.fields || {}),
+    },
+  })
 }
 
 /**
