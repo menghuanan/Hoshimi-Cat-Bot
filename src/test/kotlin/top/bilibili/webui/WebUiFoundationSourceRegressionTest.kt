@@ -373,6 +373,29 @@ class WebUiFoundationSourceRegressionTest {
     }
 
     /**
+     * 高风险确认必须使用 WebUI 居中弹窗，避免浏览器默认弹窗脱离当前视觉体系和输入状态。
+     */
+    @Test
+    fun `frontend shell should replace browser native dialogs with centered modal dialogs`() {
+        val shellPage = read("src/main/resources/webui/index.html")
+        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+
+        assertTrue(shellPage.contains("""id="high-risk-confirm-modal""""))
+        assertTrue(shellPage.contains("""id="high-risk-confirm-password""""))
+        assertTrue(shellPage.contains("""id="high-risk-confirm-message""""))
+        assertTrue(shellScript.contains("openHighRiskConfirmationModal"))
+        assertTrue(shellScript.contains("requestHighRiskConfirmation"))
+        assertTrue(shellScript.contains("requestCenteredConfirmation"))
+        assertFalse(shellScript.contains("window.confirm("))
+        assertFalse(shellScript.contains("window.prompt("))
+        assertFalse(shellScript.contains("window.alert("))
+        assertFalse(Regex("""\bnew\s+Notification\b|\bNotification\.""").containsMatchIn(shellScript))
+        assertTrue(shellStyle.contains(".high-risk-confirm-modal"))
+        assertTrue(shellStyle.contains(".high-risk-confirm-message"))
+    }
+
+    /**
      * 日志窗口需要自动轮询并保持可滚动尾部视图，避免只靠手动刷新才能看到新日志。
      */
     @Test

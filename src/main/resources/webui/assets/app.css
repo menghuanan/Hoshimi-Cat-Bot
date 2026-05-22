@@ -1345,6 +1345,7 @@ select:focus {
 
 .password-modal,
 .restart-required-modal,
+.high-risk-confirm-modal,
 .subscription-modal-card {
     width: min(100%, 420px);
     border: 1px solid var(--line);
@@ -1379,6 +1380,18 @@ select:focus {
 .restart-required-actions {
     display: flex;
     justify-content: flex-end;
+}
+
+.high-risk-confirm-body {
+    display: grid;
+    gap: 12px;
+    padding: 10px 20px 20px;
+}
+
+.high-risk-confirm-message {
+    color: var(--muted-strong);
+    font-size: 0.9rem;
+    line-height: 1.6;
 }
 
 .subscription-modal-card--compact {

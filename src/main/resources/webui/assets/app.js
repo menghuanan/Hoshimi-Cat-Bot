@@ -39,6 +39,15 @@ const modalConfirmPasswordInput = document.getElementById("modal-confirm-passwor
 const modalPasswordStatus = document.getElementById("modal-password-status");
 const restartRequiredModal = document.getElementById("restart-required-modal");
 const confirmRestartRequiredButton = document.getElementById("confirm-restart-required");
+const highRiskConfirmModal = document.getElementById("high-risk-confirm-modal");
+const highRiskConfirmTitle = document.getElementById("high-risk-confirm-title");
+const highRiskConfirmMessage = document.getElementById("high-risk-confirm-message");
+const highRiskConfirmPasswordField = document.getElementById("high-risk-confirm-password-field");
+const highRiskConfirmPasswordInput = document.getElementById("high-risk-confirm-password");
+const highRiskConfirmStatus = document.getElementById("high-risk-confirm-status");
+const closeHighRiskConfirmButton = document.getElementById("close-high-risk-confirm");
+const cancelHighRiskConfirmButton = document.getElementById("cancel-high-risk-confirm");
+const submitHighRiskConfirmButton = document.getElementById("submit-high-risk-confirm");
 const logSourceFilter = document.getElementById("log-source-filter");
 const logLevelFilter = document.getElementById("log-level-filter");
 const logModuleFilter = document.getElementById("log-module-filter");
@@ -105,6 +114,10 @@ const settingsState = {
         botConfig: {sourceFile: "bot.yml", snapshotToken: "", fieldsByKey: new Map()},
     },
     status: "",
+};
+const highRiskConfirmationState = {
+    resolve: null,
+    mode: "confirm",
 };
 let logRefreshTimer = null;
 let logRequestSequence = 0;
@@ -673,9 +686,9 @@ function setSubscriptionModalStatus(message, success = false) {
 /**
  * 根据当前类型收集表单值，字段名保持与后端 DTO 一致。
  */
-function buildSubscriptionCreatePayload() {
+async function buildSubscriptionCreatePayload() {
     const type = subscriptionCreateType?.value || "dynamic";
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认新增订阅");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认新增订阅");
     if (!confirmationPassword) {
         return null;
     }
@@ -708,7 +721,7 @@ function buildSubscriptionCreatePayload() {
  * 新增订阅走后端业务 facade，成功后刷新卡片列表以展示真实写入结果。
  */
 async function createSubscription() {
-    const payloadToSend = buildSubscriptionCreatePayload();
+    const payloadToSend = await buildSubscriptionCreatePayload();
     if (!payloadToSend) {
         setSubscriptionModalStatus("已取消添加");
         return;
@@ -777,7 +790,7 @@ async function confirmSubscriptionDelete() {
  * 删除订阅请求只负责调用后端和刷新列表，交互确认由页面弹窗提前完成。
  */
 async function deleteSubscription(itemId) {
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认删除订阅");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认删除订阅");
     if (!confirmationPassword) {
         setSubscriptionError("已取消删除");
         return;
@@ -1265,7 +1278,7 @@ async function submitFilterForm(form) {
         setSubscriptionEditStatus("正则内容必须填写");
         return;
     }
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认保存过滤器");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认保存过滤器");
     if (!confirmationPassword) {
         setSubscriptionEditStatus("已取消保存");
         return;
@@ -1295,7 +1308,7 @@ async function submitTemplateForm(form) {
         setSubscriptionEditStatus("模板名称必须填写");
         return;
     }
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认保存模板");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认保存模板");
     if (!confirmationPassword) {
         setSubscriptionEditStatus("已取消保存");
         return;
@@ -1327,7 +1340,7 @@ async function submitAtAllForm(form) {
         setSubscriptionEditStatus("目标群聊必须至少选择一个");
         return;
     }
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认保存at全体");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认保存at全体");
     if (!confirmationPassword) {
         setSubscriptionEditStatus("已取消保存");
         return;
@@ -1358,7 +1371,7 @@ async function submitThemeForm(form) {
         setSubscriptionEditStatus("HEX颜色格式错误");
         return;
     }
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认保存主题色");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认保存主题色");
     if (!confirmationPassword) {
         setSubscriptionEditStatus("已取消保存");
         return;
@@ -1376,7 +1389,7 @@ async function submitThemeForm(form) {
  * 删除配置项根据当前类型调用对应接口，删除完成后刷新当前列表和订阅卡片。
  */
 async function deleteConfigItem(action, key) {
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认删除配置项");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认删除配置项");
     if (!confirmationPassword) {
         setSubscriptionEditStatus("已取消删除");
         return;
@@ -1404,7 +1417,7 @@ async function deleteConfigItem(action, key) {
  */
 async function toggleTemplateRandom(checkbox) {
     const nextValue = checkbox.checked;
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认切换随机模板");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认切换随机模板");
     if (!confirmationPassword) {
         checkbox.checked = !nextValue;
         setSubscriptionEditStatus("已取消保存");
@@ -1829,10 +1842,10 @@ async function clearCurrentLog() {
         setLogStatus("暂无可清空的日志来源");
         return;
     }
-    if (!window.confirm("确认清空当前日志来源的内容？")) {
+    if (!await requestCenteredConfirmation("确认清空当前日志来源的内容？")) {
         return;
     }
-    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认清空日志");
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认清空日志");
     if (!confirmationPassword) {
         setLogStatus("已取消清空");
         return;
@@ -2128,10 +2141,87 @@ function settingsSectionFileKeys(sectionName) {
 }
 
 /**
+ * 高风险确认弹窗关闭时统一清理输入和 resolver，避免下一次打开继承旧密码或旧 Promise。
+ */
+function closeHighRiskConfirmationModal(value = highRiskConfirmationState.mode === "password" ? "" : false) {
+    const resolver = highRiskConfirmationState.resolve;
+    highRiskConfirmationState.resolve = null;
+    highRiskConfirmationState.mode = "confirm";
+    if (highRiskConfirmPasswordInput) {
+        highRiskConfirmPasswordInput.value = "";
+    }
+    if (highRiskConfirmStatus) {
+        highRiskConfirmStatus.textContent = "";
+    }
+    if (highRiskConfirmModal) {
+        highRiskConfirmModal.hidden = true;
+    }
+    resolver?.(value);
+}
+
+/**
+ * 通用居中确认窗口支持普通确认和密码确认两种模式，替代浏览器原生 confirm/prompt。
+ */
+function openHighRiskConfirmationModal(options = {}) {
+    if (!highRiskConfirmModal) {
+        return Promise.resolve(options.mode === "password" ? "" : false);
+    }
+    if (highRiskConfirmationState.resolve) {
+        closeHighRiskConfirmationModal();
+    }
+    highRiskConfirmationState.mode = options.mode === "password" ? "password" : "confirm";
+    if (highRiskConfirmTitle) {
+        highRiskConfirmTitle.textContent = options.title || "确认操作";
+    }
+    if (highRiskConfirmMessage) {
+        highRiskConfirmMessage.textContent = options.message || "请确认本次操作。";
+    }
+    if (submitHighRiskConfirmButton) {
+        submitHighRiskConfirmButton.textContent = options.confirmText || "确认";
+    }
+    if (highRiskConfirmPasswordField) {
+        highRiskConfirmPasswordField.hidden = highRiskConfirmationState.mode !== "password";
+    }
+    if (highRiskConfirmPasswordInput) {
+        highRiskConfirmPasswordInput.value = "";
+    }
+    if (highRiskConfirmStatus) {
+        highRiskConfirmStatus.textContent = "";
+    }
+    highRiskConfirmModal.hidden = false;
+    if (highRiskConfirmationState.mode === "password") {
+        highRiskConfirmPasswordInput?.focus();
+    } else {
+        submitHighRiskConfirmButton?.focus();
+    }
+    return new Promise((resolve) => {
+        highRiskConfirmationState.resolve = resolve;
+    });
+}
+
+/**
+ * 普通确认操作返回布尔值，供清空日志这类无密码前置确认继续保持二段确认语义。
+ */
+async function requestCenteredConfirmation(message = "请确认本次操作") {
+    return Boolean(await openHighRiskConfirmationModal({
+        mode: "confirm",
+        title: "确认操作",
+        message,
+        confirmText: "确认",
+    }));
+}
+
+/**
  * 高风险写操作统一二次输入当前密码，后端会继续执行服务端确认和短期确认缓存。
  */
-function requestHighRiskConfirmation(message = "请输入 WebUI 密码确认操作") {
-    return (window.prompt(message) || "").trim();
+async function requestHighRiskConfirmation(message = "请输入 WebUI 密码确认操作") {
+    const value = await openHighRiskConfirmationModal({
+        mode: "password",
+        title: "密码确认",
+        message,
+        confirmText: "确认",
+    });
+    return String(value || "").trim();
 }
 
 /**
@@ -2148,7 +2238,7 @@ async function saveSettingsSection(sectionName) {
         setSettingsStatus(validationErrors.join("；"));
         return;
     }
-    const confirmationPassword = window.prompt("请输入 WebUI 密码确认保存") || "";
+    const confirmationPassword = await requestHighRiskConfirmation("请输入 WebUI 密码确认保存");
     if (!confirmationPassword) {
         setSettingsStatus("已取消保存");
         return;
@@ -3530,6 +3620,51 @@ if (confirmRestartRequiredButton) {
     confirmRestartRequiredButton.addEventListener("click", closeRestartRequiredModal);
 }
 
+if (closeHighRiskConfirmButton) {
+    closeHighRiskConfirmButton.addEventListener("click", () => closeHighRiskConfirmationModal());
+}
+
+if (cancelHighRiskConfirmButton) {
+    cancelHighRiskConfirmButton.addEventListener("click", () => closeHighRiskConfirmationModal());
+}
+
+if (submitHighRiskConfirmButton) {
+    // 确认按钮按当前模式返回布尔值或密码文本，空密码保留在弹窗内提示用户补全。
+    submitHighRiskConfirmButton.addEventListener("click", () => {
+        if (highRiskConfirmationState.mode === "password") {
+            const password = highRiskConfirmPasswordInput?.value.trim() || "";
+            if (!password) {
+                if (highRiskConfirmStatus) {
+                    highRiskConfirmStatus.textContent = "请输入当前密码";
+                }
+                highRiskConfirmPasswordInput?.focus();
+                return;
+            }
+            closeHighRiskConfirmationModal(password);
+            return;
+        }
+        closeHighRiskConfirmationModal(true);
+    });
+}
+
+if (highRiskConfirmPasswordInput) {
+    // 密码确认框支持 Enter 提交，保持和普通表单一致的键盘操作。
+    highRiskConfirmPasswordInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            submitHighRiskConfirmButton?.click();
+        }
+    });
+}
+
+if (highRiskConfirmModal) {
+    highRiskConfirmModal.addEventListener("click", (event) => {
+        if (event.target === highRiskConfirmModal) {
+            closeHighRiskConfirmationModal();
+        }
+    });
+}
+
 if (changePasswordModal) {
     changePasswordModal.addEventListener("click", (event) => {
         if (event.target === changePasswordModal) {
@@ -3563,6 +3698,9 @@ document.addEventListener("keydown", (event) => {
     setAdminMenuOpen(false);
     if (changePasswordModal && !changePasswordModal.hidden) {
         closeChangePasswordModal();
+    }
+    if (highRiskConfirmModal && !highRiskConfirmModal.hidden) {
+        closeHighRiskConfirmationModal();
     }
     // Escape 同时关闭订阅相关弹窗，保持三个管理弹窗的键盘行为一致。
     if (subscriptionModal && !subscriptionModal.hidden) {
