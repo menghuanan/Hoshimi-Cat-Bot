@@ -1,0 +1,130 @@
+/* WebUI dialog styles own shared modal structure and account confirmation surfaces. */
+
+/* 修改密码弹窗居中覆盖当前工作区，底部状态专门承载旧密码和确认密码校验结果。 */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(3px);
+}
+
+.password-modal,
+.restart-required-modal,
+.high-risk-confirm-modal,
+.subscription-modal-card {
+    width: min(100%, 420px);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface-strong);
+    box-shadow: var(--shadow-lg);
+}
+
+.restart-required-modal {
+    display: grid;
+    gap: 18px;
+    padding: 20px;
+}
+
+.restart-required-body {
+    display: grid;
+    gap: 10px;
+}
+
+.restart-required-body h2 {
+    color: var(--text-strong);
+    font-size: 1.04rem;
+    font-weight: 800;
+}
+
+.restart-required-body p {
+    color: var(--muted-strong);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.restart-required-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.high-risk-confirm-body {
+    display: grid;
+    gap: 12px;
+    padding: 10px 20px 20px;
+}
+
+.high-risk-confirm-message {
+    color: var(--muted-strong);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.subscription-modal-card--compact {
+    width: min(100%, 360px);
+}
+
+.modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 10px;
+}
+
+.modal-head h2 {
+    color: var(--text-strong);
+    font-size: 1.02rem;
+    font-weight: 800;
+}
+
+.modal-close {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--muted-strong);
+    font: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modal-form {
+    display: grid;
+    gap: 12px;
+    padding: 10px 20px 20px;
+}
+
+.modal-status {
+    min-height: 20px;
+    color: #ef4444;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.modal-status.is-success {
+    color: var(--green);
+}
+
+.modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.modal-actions button {
+    cursor: pointer;
+}
+
+.modal-actions .btn-primary {
+    border: 0;
+}
+
+/* 订阅弹窗字段按当前类型切换显示，保持弹窗居中且不挤占订阅卡片网格。 */
