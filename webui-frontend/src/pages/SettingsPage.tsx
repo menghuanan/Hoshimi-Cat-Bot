@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { PageSection } from '../components/PageSection'
 import { StatusCard } from '../components/StatusCard'
 import { SettingsField } from '../components/settings/SettingsField'
@@ -19,7 +19,7 @@ type SettingsFormValues = Record<string, string | boolean>
 export function SettingsPage() {
   const {loading, biliConfig, botConfig, saveBili, saveBot, reload} = useSettingsFiles()
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
-  const [values, setValues] = useState<SettingsFormValues>({})
+  const [editedValues, setEditedValues] = useState<SettingsFormValues>({})
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const activeCategory = settingsCategories.find((category) => category.id === activeCategoryId) || settingsCategories[0]
@@ -30,19 +30,32 @@ export function SettingsPage() {
     botConfig: readFieldValues(botConfig),
   }), [biliConfig, botConfig])
 
-  useEffect(() => {
-    // 切换分区或刷新快照后重建当前表单，写入专用字段保持空值不回显。
-    setValues(Object.fromEntries(activeCategory.fields.map((field) => [
+  const initialValues = useMemo<SettingsFormValues>(() => {
+    // 初始值从快照派生，写入专用字段保持空值不回显。
+    return Object.fromEntries(activeCategory.fields.map((field) => [
       field.key,
       readInitialFieldValue(field, fieldValues[field.file].get(field.key)),
-    ])))
+    ]))
   }, [activeCategory, fieldValues])
+  // 当前表单值由快照初始值和用户编辑覆盖组成，避免 effect 中同步 setState。
+  const values = useMemo<SettingsFormValues>(() => ({
+    ...initialValues,
+    ...editedValues,
+  }), [editedValues, initialValues])
 
   /**
    * 字段变更只更新当前表单值，保存时再按文件边界拆分提交。
    */
   const updateValue = (key: string, value: string | boolean) => {
-    setValues((current) => ({...current, [key]: value}))
+    setEditedValues((current) => ({...current, [key]: value}))
+  }
+
+  /**
+   * 切换设置分区时丢弃未提交的本地编辑，下一屏重新使用当前快照派生值。
+   */
+  const selectCategory = (categoryId: SettingsCategoryId) => {
+    setEditedValues({})
+    setActiveCategoryId(categoryId)
   }
 
   /**
@@ -71,6 +84,7 @@ export function SettingsPage() {
         })
       }
       await reload()
+      setEditedValues({})
       setMessage('配置已提交')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '保存失败')
@@ -103,7 +117,7 @@ export function SettingsPage() {
           </button>
         )}
       >
-        <SettingsTabs categories={settingsCategories} activeCategoryId={activeCategoryId} onSelectCategory={setActiveCategoryId} />
+        <SettingsTabs categories={settingsCategories} activeCategoryId={activeCategoryId} onSelectCategory={selectCategory} />
         {restartRequired ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">当前分区包含需要重启后生效的配置。</p> : null}
         <div className="grid gap-4 xl:grid-cols-2">
           {activeCategory.fields.map((field) => (

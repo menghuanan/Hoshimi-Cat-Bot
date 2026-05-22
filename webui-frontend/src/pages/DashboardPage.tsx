@@ -104,7 +104,7 @@ export function DashboardPage() {
           <StatusCard label="运行状态" value={loading ? '同步中' : dashboard.lifecycleState} tone="sky" detail="Bot 运行状态" />
           <StatusCard label="B站账号信息" value={formatState(dashboard.accountLoggedIn, '已登录', '未登录')} tone="rose" detail={dashboard.accountUid ? `UID ${dashboard.accountUid}` : 'UID --'} />
           <StatusCard label="WebSocket 状态" value={formatState(dashboard.webSocketConnected, '已连接', '未连接')} tone="sky" detail={`会话：${summary?.webSocket?.activeSessionCount ?? '--'}`} />
-          <StatusCard label="今日推送" value={formatCount(dashboard.todayPushTotal, ' 条')} tone="amber" detail={`动态：${summary?.todayPushStats?.dynamic ?? '--'}　直播：${summary?.todayPushStats?.live ?? '--'}`} />
+          <StatusCard label="今日推送" value={formatCount(dashboard.todayPushTotal, ' 条')} tone="amber" detail={`动态：${summary?.todayPushStats?.dynamic ?? '--'} / 直播：${summary?.todayPushStats?.live ?? '--'}`} />
           <StatusCard label="最近推送" value={formatCount(dashboard.recentPushRecordsCount, ' 条')} tone="emerald" detail="保留最近推送摘要" />
           <StatusCard label="配置入口" value="系统配置" tone="amber" detail="保存时需要密码确认" />
           <StatusCard label="日志窗口" value="可轮询" tone="rose" detail="清空日志需要双重确认" />
