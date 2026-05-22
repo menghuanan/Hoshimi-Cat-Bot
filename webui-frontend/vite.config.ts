@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// React 产物先隔离到 bundled webui/react，后续等价迁移完成后再切换主 WebUI shell。
+// React 产物固定输出到 bundled webui/react，Ktor 静态路由以该目录作为运行时入口。
 export default defineConfig({
   root: 'src',
   base: './',

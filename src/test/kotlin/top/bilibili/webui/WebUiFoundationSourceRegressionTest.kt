@@ -90,6 +90,8 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(authRoutes.contains("/api/auth/change-password"))
         assertTrue(staticRoutes.contains("""get("/")"""))
         assertTrue(staticRoutes.contains("""get("/login")"""))
+        assertTrue(staticRoutes.contains("webui/react/index.html"))
+        assertTrue(staticRoutes.contains("webui/react/assets"))
     }
 
     /**
@@ -108,6 +110,10 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(reactShell.contains("webui-frontend"))
         assertTrue(reactShell.contains("./assets/app.js"))
         assertTrue(reactShell.contains("./assets/app.css"))
+
+        val staticRoutes = read("src/main/kotlin/top/bilibili/webui/routes/WebUiStaticRoutes.kt")
+        assertTrue(staticRoutes.contains("webui/react/index.html"))
+        assertTrue(staticRoutes.contains("webui/react/assets"))
     }
 
     @Test

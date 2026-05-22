@@ -139,7 +139,7 @@ val buildWebUiFrontend = tasks.register<Exec>("buildWebUiFrontend") {
     outputs.dir(bundledReactWebUiDir)
 }
 
-// 打包资源前先生成 React 产物；当前阶段隔离到 webui/react，避免提前替换旧业务 shell。
+// 打包资源前先生成 React 产物；Ktor 静态路由直接以 webui/react 作为运行时 WebUI shell。
 tasks.processResources {
     dependsOn(buildWebUiFrontend)
 }
