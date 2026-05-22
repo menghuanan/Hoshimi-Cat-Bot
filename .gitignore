@@ -147,6 +147,10 @@ src/test/resources/output/**
 .trae/
 .worktrees/
 
+# WebUI React frontend local dependencies and generated preview output
+webui-frontend/node_modules/
+webui-frontend/dist/
+
 # Exclude docs markdown files, keep only images
 AGENTS.md
 docs/**

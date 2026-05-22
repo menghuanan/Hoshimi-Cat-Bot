@@ -99,6 +99,51 @@ tasks.test {
     useJUnitPlatform()
 }
 
+val webUiFrontendDir = layout.projectDirectory.dir("webui-frontend")
+val webUiFrontendNodeModulesDir = webUiFrontendDir.dir("node_modules")
+val bundledReactWebUiDir = layout.projectDirectory.dir("src/main/resources/webui/react")
+val npmExecutableName = if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "npm.cmd" else "npm"
+
+// 前端依赖安装独立成任务，保证干净 checkout 只运行 Gradle 也能复现 React 构建。
+val installWebUiFrontendDependencies = tasks.register<Exec>("installWebUiFrontendDependencies") {
+    description = "Installs npm dependencies for the React WebUI frontend."
+    group = "build"
+    workingDir = webUiFrontendDir.asFile
+    commandLine(npmExecutableName, "install")
+    inputs.files(
+        webUiFrontendDir.file("package.json"),
+        webUiFrontendDir.file("package-lock.json"),
+    )
+    outputs.dir(webUiFrontendNodeModulesDir)
+}
+
+// React WebUI 构建保持在独立 npm 工程内，Gradle 只负责调用稳定入口并追踪源码输入。
+val buildWebUiFrontend = tasks.register<Exec>("buildWebUiFrontend") {
+    description = "Builds the React WebUI frontend into bundled static resources."
+    group = "build"
+    dependsOn(installWebUiFrontendDependencies)
+    workingDir = webUiFrontendDir.asFile
+    commandLine(npmExecutableName, "run", "build")
+    inputs.files(
+        fileTree(webUiFrontendDir) {
+            include("src/**")
+            include("package.json")
+            include("package-lock.json")
+            include("tsconfig*.json")
+            include("vite.config.ts")
+            include("eslint.config.js")
+            exclude("node_modules/**")
+            exclude("dist/**")
+        }
+    )
+    outputs.dir(bundledReactWebUiDir)
+}
+
+// 打包资源前先生成 React 产物；当前阶段隔离到 webui/react，避免提前替换旧业务 shell。
+tasks.processResources {
+    dependsOn(buildWebUiFrontend)
+}
+
 val skiaNativeMemoryEvidenceTest by tasks.registering(org.gradle.api.tasks.testing.Test::class) {
     description = "Runs the Skia native-memory evidence test with JVM native memory tracking enabled"
     group = "verification"

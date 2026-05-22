@@ -92,6 +92,24 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(staticRoutes.contains("""get("/login")"""))
     }
 
+    /**
+     * React 迁移必须由独立前端工程产出 WebUI 静态资源，避免继续只维护旧 plain script shell。
+     */
+    @Test
+    fun `webui react frontend workspace should be wired into bundled assets`() {
+        val buildSource = read("build.gradle.kts")
+        val reactShellPath = Path.of("src/main/resources/webui/react/index.html")
+
+        assertTrue(buildSource.contains("webui-frontend"))
+        assertTrue(buildSource.contains("buildWebUiFrontend"))
+        assertTrue(Files.exists(reactShellPath))
+
+        val reactShell = read(reactShellPath.toString())
+        assertTrue(reactShell.contains("webui-frontend"))
+        assertTrue(reactShell.contains("./assets/app.js"))
+        assertTrue(reactShell.contains("./assets/app.css"))
+    }
+
     @Test
     fun `webui server and route logic should stay out of core lifecycle wiring`() {
         val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
