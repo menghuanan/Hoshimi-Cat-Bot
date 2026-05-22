@@ -43,6 +43,66 @@ describe('webui shell routing', () => {
     expect(screen.getByText('写入设置')).toBeInTheDocument()
   })
 
+  /**
+   * 设置页必须按旧 WebUI 分区渲染，并保证敏感字段只作为空输入写入。
+   */
+  it('renders settings tabs and keeps sensitive readback values out of inputs', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-config')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'BiliConfig.yml',
+            snapshotToken: 'bili-token',
+            fields: [
+              {key: 'accountConfig.cookie', label: 'Cookie', value: 'SECRET_COOKIE', capability: 'MASKED', editable: true},
+              {key: 'proxyConfig.proxy', label: '代理地址', value: 'http://secret-proxy', capability: 'MASKED', editable: true},
+              {key: 'enableConfig.drawEnable', label: '动态渲染', value: 'true', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      if (url.includes('/api/config/bot')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token',
+            fields: [
+              {key: 'platform.onebot11.token', label: 'OneBot11 Token', value: 'SECRET_TOKEN', capability: 'MASKED', editable: true},
+              {key: 'platform.onebot11.host', label: 'OneBot11 主机', value: '127.0.0.1', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    renderAtPath('/#settings')
+
+    expect(await screen.findByRole('button', {name: '对接配置'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '功能开关'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: 'B站配置'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '轮询配置'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '渲染配置'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '消息配置'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '管理员'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '翻译配置'})).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', {name: 'B站配置'}))
+    expect(await screen.findByLabelText('Cookie')).toHaveValue('')
+    expect(screen.getByLabelText('代理地址')).toHaveValue('')
+    expect(screen.queryByDisplayValue('SECRET_COOKIE')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('http://secret-proxy')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', {name: '对接配置'}))
+    expect(await screen.findByLabelText('OneBot11 Token')).toHaveValue('')
+    expect(screen.queryByDisplayValue('SECRET_TOKEN')).not.toBeInTheDocument()
+  })
+
   it('keeps a dense React layout for dashboard cards and account modal', () => {
     renderAtPath('/')
 
