@@ -209,9 +209,6 @@
                                     <use href="#icon-robot"></use>
                                 </svg>
                             </span>
-                            <svg viewBox="0 0 24 24" class="metric-menu">
-                                <use href="#icon-more-vertical"></use>
-                            </svg>
                         </div>
                         <div class="metric-label">Bot 运行状态</div>
                         <div class="metric-value metric-value--status" data-runtime-field="botStatus">加载中</div>
@@ -224,9 +221,11 @@
                                     <use href="#icon-users"></use>
                                 </svg>
                             </span>
-                            <svg viewBox="0 0 24 24" class="metric-menu">
-                                <use href="#icon-chevron"></use>
-                            </svg>
+                            <button class="metric-nav" type="button" data-metric-nav="subscriptions" aria-label="打开订阅管理">
+                                <svg viewBox="0 0 24 24" class="metric-menu">
+                                    <use href="#icon-chevron"></use>
+                                </svg>
+                            </button>
                         </div>
                         <div class="metric-label">当前订阅数量</div>
                         <div class="metric-value metric-value--number" data-runtime-field="subscriptionTotal">--</div>
@@ -239,9 +238,11 @@
                                     <use href="#icon-tv"></use>
                                 </svg>
                             </span>
-                            <svg viewBox="0 0 24 24" class="metric-menu">
-                                <use href="#icon-chevron"></use>
-                            </svg>
+                            <button class="metric-nav" type="button" data-metric-nav="settings" data-settings-tab-target="bili" aria-label="打开 B站配置">
+                                <svg viewBox="0 0 24 24" class="metric-menu">
+                                    <use href="#icon-chevron"></use>
+                                </svg>
+                            </button>
                         </div>
                         <div class="metric-label">B站账号信息</div>
                         <div class="metric-value metric-value--status" data-runtime-field="biliAccountStatus">加载中</div>
@@ -254,9 +255,11 @@
                                     <use href="#icon-wifi"></use>
                                 </svg>
                             </span>
-                            <svg viewBox="0 0 24 24" class="metric-menu">
-                                <use href="#icon-chevron"></use>
-                            </svg>
+                            <button class="metric-nav" type="button" data-metric-nav="settings" data-settings-tab-target="integration" aria-label="打开对接配置">
+                                <svg viewBox="0 0 24 24" class="metric-menu">
+                                    <use href="#icon-chevron"></use>
+                                </svg>
+                            </button>
                         </div>
                         <div class="metric-label">WebSocket 状态</div>
                         <div class="metric-value metric-value--status metric-value--accent-purple" data-runtime-field="webSocketStatus">加载中</div>
@@ -269,9 +272,6 @@
                                     <use href="#icon-chart"></use>
                                 </svg>
                             </span>
-                            <svg viewBox="0 0 24 24" class="metric-menu">
-                                <use href="#icon-chevron"></use>
-                            </svg>
                         </div>
                         <div class="metric-label">今日推送统计</div>
                         <div class="metric-value metric-value--number" data-runtime-field="todayPushTotal">-- 条</div>

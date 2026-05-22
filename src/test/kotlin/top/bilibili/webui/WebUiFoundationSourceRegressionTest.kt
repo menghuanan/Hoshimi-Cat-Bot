@@ -21,6 +21,14 @@ class WebUiFoundationSourceRegressionTest {
         return pattern.find(source)?.groupValues?.get(1).orEmpty()
     }
 
+    /**
+     * 首页统计卡片按标题截取整段 HTML，避免只靠全局字符串误判某张卡片的右上角控件。
+     */
+    private fun metricCardBlock(source: String, title: String): String {
+        val pattern = Regex("""(?s)<article class="metric-card[^"]*">.*?</article>""")
+        return pattern.findAll(source).firstOrNull { match -> match.value.contains(title) }?.value.orEmpty()
+    }
+
     @Test
     fun `webui config should stay disabled by default and remain part of bot runtime config`() {
         val configSource = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
@@ -129,6 +137,34 @@ class WebUiFoundationSourceRegressionTest {
     }
 
     /**
+     * 首页统计卡只保留用户指定的三个跳转入口，Bot 状态和今日推送统计不再显示右上角符号。
+     */
+    @Test
+    fun `home metric cards should expose only requested navigation shortcuts`() {
+        val shellPage = read("src/main/resources/webui/index.html")
+        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+
+        val botCard = metricCardBlock(shellPage, "Bot 运行状态")
+        val subscriptionCard = metricCardBlock(shellPage, "当前订阅数量")
+        val biliCard = metricCardBlock(shellPage, "B站账号信息")
+        val websocketCard = metricCardBlock(shellPage, "WebSocket 状态")
+        val pushStatsCard = metricCardBlock(shellPage, "今日推送统计")
+
+        assertFalse(botCard.contains("""class="metric-menu""""))
+        assertFalse(pushStatsCard.contains("""class="metric-menu""""))
+        assertFalse(pushStatsCard.contains("""data-metric-nav"""))
+        assertTrue(subscriptionCard.contains("""data-metric-nav="subscriptions""""))
+        assertTrue(biliCard.contains("""data-metric-nav="settings""""))
+        assertTrue(biliCard.contains("""data-settings-tab-target="bili""""))
+        assertTrue(websocketCard.contains("""data-metric-nav="settings""""))
+        assertTrue(websocketCard.contains("""data-settings-tab-target="integration""""))
+        assertTrue(shellScript.contains("metricNavButtons"))
+        assertTrue(shellScript.contains("navigateMetricShortcut"))
+        assertTrue(shellStyle.contains(".metric-nav"))
+    }
+
+    /**
      * 系统配置页只保留 WebUI 允许编辑的八个分类，避免日志和内部文件路径混入设置入口。
      */
     @Test
@@ -156,12 +192,22 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellScript.contains("settingsTabButtons"))
         assertTrue(shellScript.contains("activateSettingsTab"))
         assertTrue(shellStyle.contains(".settings-placeholder"))
-        assertTrue(shellStyle.contains("max-width: 50%;"))
+        assertTrue(shellStyle.contains("max-width: none;"))
+        assertTrue(shellStyle.contains("width: 50%;"))
+        assertTrue(shellStyle.contains("justify-self: center;"))
+        assertTrue(shellStyle.contains("align-self: start;"))
         assertTrue(shellScript.contains("renderSettingFieldWithUnit"))
         assertTrue(shellScript.contains("""unit: "小时""""))
         assertTrue(shellScript.contains("""unit: "秒""""))
         assertTrue(shellScript.contains("""unit: "毫秒""""))
         assertTrue(shellScript.contains("""unit: "天""""))
+        assertTrue(shellScript.contains("""key: "platform.onebot11.heartbeatInterval", label: "心跳间隔", type: "number", unit: "毫秒""""))
+        assertTrue(shellScript.contains("""key: "platform.onebot11.reconnectInterval", label: "重连间隔", type: "number", unit: "毫秒""""))
+        assertTrue(shellScript.contains("""key: "platform.onebot11.connectTimeout", label: "连接超时", type: "number", unit: "毫秒""""))
+        assertTrue(shellScript.contains("""{value: "base64", label: "base64"}"""))
+        assertTrue(shellScript.contains("""{value: "file", label: "file"}"""))
+        assertFalse(shellScript.contains("""label: "转为文本编码""""))
+        assertFalse(shellScript.contains("""label: "文件路径""""))
         assertTrue(shellScript.contains("parseAdminLines"))
         assertTrue(shellScript.contains("formatAdminSummary"))
         assertTrue(shellScript.contains("adminContactQQ"))
@@ -366,7 +412,7 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(shellStyle.contains("aspect-ratio: 1 / 1;"))
         assertTrue(shellStyle.contains(".subscription-config-footer-left"))
         assertTrue(subscriptionActionsRowBlock.contains("padding: 10px 20px 20px;"))
-        assertFalse(shellStyle.contains("justify-self: center;"))
+        assertFalse(subscriptionGridBlock.contains("justify-self: center;"))
         assertFalse(shellPage.contains("全部 (56)"))
         assertFalse(shellPage.contains("icon-more-vertical\"></use></svg>\n                        </div>\n                        <div class=\"subscription-meta-title\">推送目标</div>"))
     }

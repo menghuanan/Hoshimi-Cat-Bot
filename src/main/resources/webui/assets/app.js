@@ -1,6 +1,7 @@
 const pageTitle = document.getElementById("page-title");
 const contentArea = document.querySelector(".content");
 const navItems = Array.from(document.querySelectorAll("[data-nav-target]"));
+const metricNavButtons = Array.from(document.querySelectorAll("[data-metric-nav]"));
 const views = new Map(
     Array.from(document.querySelectorAll("[data-view]"), (view) => [view.dataset.view, view]),
 );
@@ -2532,14 +2533,14 @@ function renderIntegrationSettings() {
         renderSettingField({file: "botConfig", key: "platform.onebot11.port", label: "OneBot11 端口", type: "number"}),
         renderSecretField({key: "platform.onebot11.token", label: "OneBot11 Token"}),
         renderSettingSelect({file: "botConfig", key: "platform.onebot11.useTls", label: "TLS", options: boolOptions()}),
-        renderSettingField({file: "botConfig", key: "platform.onebot11.heartbeatInterval", label: "心跳间隔", type: "number"}),
-        renderSettingField({file: "botConfig", key: "platform.onebot11.reconnectInterval", label: "重连间隔", type: "number"}),
+        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.heartbeatInterval", label: "心跳间隔", type: "number", unit: "毫秒"}),
+        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.reconnectInterval", label: "重连间隔", type: "number", unit: "毫秒"}),
         renderSettingSelect({file: "botConfig", key: "platform.onebot11.sendMode", label: "图片发送方式", options: [
-            {value: "base64", label: "转为文本编码"},
-            {value: "file", label: "文件路径"},
+            {value: "base64", label: "base64"},
+            {value: "file", label: "file"},
         ]}),
         renderSettingField({file: "botConfig", key: "platform.onebot11.maxReconnectAttempts", label: "最大重连次数", type: "number"}),
-        renderSettingField({file: "botConfig", key: "platform.onebot11.connectTimeout", label: "连接超时", type: "number"}),
+        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.connectTimeout", label: "连接超时", type: "number", unit: "毫秒"}),
     ].join("") : "";
     const qqFields = platform === "qq_official" ? [
         renderSettingField({file: "botConfig", key: "platform.qqOfficial.appId", label: "QQ App ID"}),
@@ -2745,6 +2746,22 @@ function activateSettingsTab(tabName) {
 }
 
 /**
+ * 首页统计卡快捷入口先同步设置子页，再切换 hash，确保从首页直达对应配置分类。
+ */
+function navigateMetricShortcut(button) {
+    const targetView = button.dataset.metricNav || defaultView;
+    const settingsTab = button.dataset.settingsTabTarget || "";
+    if (settingsTab) {
+        activateSettingsTab(settingsTab);
+    }
+    if (location.hash.replace(/^#/, "") === targetView) {
+        activateView(targetView);
+        return;
+    }
+    location.hash = targetView;
+}
+
+/**
  * 页面壳负责在可见页面之间切换，运行态数据刷新由独立函数处理。
  */
 function activateView(viewName, replaceHash = false) {
@@ -2791,6 +2808,12 @@ navItems.forEach((item) => {
     item.addEventListener("click", () => {
         const target = item.dataset.navTarget || defaultView;
         location.hash = target;
+    });
+});
+
+metricNavButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+        navigateMetricShortcut(button);
     });
 });
 

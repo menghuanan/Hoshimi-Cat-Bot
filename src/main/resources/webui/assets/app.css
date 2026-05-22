@@ -684,10 +684,30 @@ select:focus {
     height: 22px;
 }
 
+/* 首页卡片右上角只在可跳转卡片中显示为按钮，保持键盘焦点和悬停反馈一致。 */
+.metric-nav {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.metric-nav:hover,
+.metric-nav:focus-visible {
+    background: var(--surface-muted);
+    color: var(--accent);
+    outline: none;
+}
+
 .metric-menu {
     width: 16px;
     height: 16px;
-    color: var(--muted);
+    color: currentColor;
 }
 
 .metric-label {
@@ -980,18 +1000,23 @@ select:focus {
     grid-template-columns: minmax(0, 1fr);
 }
 
+/* 系统配置占位容器只负责承载当前分类，实际卡片宽度由内部面板统一控制。 */
 .settings-placeholder {
-    width: min(100%, 760px);
-    max-width: 50%;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
     min-height: 320px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--surface);
+    display: grid;
+    align-items: start;
+    justify-items: center;
 }
 
 .settings-panel {
+    width: 50%;
+    max-width: 760px;
     min-height: 320px;
+    margin: 0 auto;
+    align-self: start;
+    justify-self: center;
     padding: 16px;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -2211,6 +2236,7 @@ select:focus {
     }
 
     .settings-panel {
+        width: 100%;
         max-width: 100%;
         padding: 12px;
     }
