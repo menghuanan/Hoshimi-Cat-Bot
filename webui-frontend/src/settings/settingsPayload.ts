@@ -4,6 +4,7 @@ export type BuildSettingsSavePayloadInput = {
   file: SettingsFileId
   snapshotToken: string
   confirmationPassword: string
+  proxyUpdateMode?: 'preserve' | 'replace' | 'clear'
   values?: Record<string, unknown>
 }
 
@@ -48,7 +49,7 @@ export function buildSettingsSavePayload(input: BuildSettingsSavePayloadInput): 
     if (key === 'proxyConfig.proxy') {
       const proxies = readLines(value)
       payload.proxies = proxies
-      payload.proxyUpdateMode = proxies.length > 0 ? 'replace' : 'preserve'
+      payload.proxyUpdateMode = input.proxyUpdateMode || (proxies.length > 0 ? 'replace' : 'preserve')
       return
     }
     if (field.writeOnly && String(value || '').trim() === '') {
@@ -59,7 +60,7 @@ export function buildSettingsSavePayload(input: BuildSettingsSavePayloadInput): 
 
   if (input.file === 'biliConfig' && !('proxyUpdateMode' in payload)) {
     payload.proxies = []
-    payload.proxyUpdateMode = 'preserve'
+    payload.proxyUpdateMode = input.proxyUpdateMode || 'preserve'
   }
 
   return payload

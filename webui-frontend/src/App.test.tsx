@@ -46,6 +46,22 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * Ktor 直接服务 /settings、/subscriptions 和 /logs，React 路由也必须识别这些刷新入口。
+   */
+  it('renders protected direct path routes without requiring hash navigation', () => {
+    const settingsRender = renderAtPath('/settings')
+    expect(screen.getByText('写入设置')).toBeInTheDocument()
+    settingsRender.unmount()
+
+    const subscriptionsRender = renderAtPath('/subscriptions')
+    expect(screen.getByRole('button', {name: '新增订阅'})).toBeInTheDocument()
+    subscriptionsRender.unmount()
+
+    renderAtPath('/logs')
+    expect(screen.getAllByRole('heading', {name: '日志'}).length).toBeGreaterThan(0)
+  })
+
+  /**
    * 设置页必须按旧 WebUI 分区渲染，并保证敏感字段只作为空输入写入。
    */
   it('renders settings tabs and keeps sensitive readback values out of inputs', async () => {

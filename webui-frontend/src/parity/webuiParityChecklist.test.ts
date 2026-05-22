@@ -7,13 +7,17 @@ describe('webui parity checklist', () => {
    */
   it('tracks the required page and security parity groups', () => {
     expect(webuiParityChecklist.map((group) => group.id)).toEqual([
+      'login',
+      'shell',
       'dashboard',
       'settings',
       'subscriptions',
       'logs',
-      'auth-shell-security',
+      'security',
+      'packaging',
     ])
     expect(webuiParityChecklist.flatMap((group) => group.items)).toContain('proxy-write-only-preserve-replace')
     expect(webuiParityChecklist.flatMap((group) => group.items)).toContain('no-native-browser-dialogs')
+    expect(webuiParityChecklist.flatMap((group) => group.items)).toContain('plain-runtime-deleted')
   })
 })

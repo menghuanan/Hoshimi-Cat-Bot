@@ -48,5 +48,18 @@ describe('settings payload helpers', () => {
       proxyUpdateMode: 'replace',
       proxies: ['http://a.example', 'http://b.example'],
     })
+
+    const cleared = buildSettingsSavePayload({
+      file: 'biliConfig',
+      snapshotToken: 'bili-token',
+      confirmationPassword: 'pw-3',
+      proxyUpdateMode: 'clear',
+      values: {'proxyConfig.proxy': ''},
+    })
+
+    expect(cleared).toMatchObject({
+      proxyUpdateMode: 'clear',
+      proxies: [],
+    })
   })
 })

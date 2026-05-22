@@ -146,6 +146,17 @@ describe('webui api contracts', () => {
 
     expect(replaced.proxyUpdateMode).toBe('replace')
     expect(replaced.proxies).toEqual(['http://new-proxy'])
+
+    const cleared = buildBiliConfigSavePayload({
+      snapshotToken: 'snapshot-token',
+      confirmationPassword: 'pw-3',
+      proxyText: '',
+      proxyUpdateMode: 'clear',
+      currentProxies: ['http://old-proxy'],
+    })
+
+    expect(cleared.proxyUpdateMode).toBe('clear')
+    expect(cleared.proxies).toEqual([])
   })
 
   it('buildBotConfigSavePayload should keep confirmation password and snapshot token', () => {

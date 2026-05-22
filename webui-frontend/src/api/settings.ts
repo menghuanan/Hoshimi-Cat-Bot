@@ -9,6 +9,7 @@ export type WebUiBiliConfigSaveInput = {
   snapshotToken: string
   confirmationPassword: string
   proxyText?: string
+  proxyUpdateMode?: 'preserve' | 'replace' | 'clear'
   currentProxies?: string[]
   fields?: Record<string, unknown>
 }
@@ -48,13 +49,14 @@ export async function loadBotConfig(options: WebUiJsonRequestOptions = {}): Prom
 }
 
 /**
- * 代理输入为空时保持 preserve，有明确文本时才替换为新列表。
+ * 代理输入默认空值保留、有文本替换；显式 clear 模式用于清空现有代理。
  */
 export function buildBiliConfigSavePayload(input: WebUiBiliConfigSaveInput): Record<string, unknown> {
   return buildSettingsSavePayload({
     file: 'biliConfig',
     snapshotToken: input.snapshotToken,
     confirmationPassword: input.confirmationPassword,
+    proxyUpdateMode: input.proxyUpdateMode,
     values: {
       'proxyConfig.proxy': input.proxyText || '',
       ...(input.fields || {}),
