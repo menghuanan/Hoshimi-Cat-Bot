@@ -37,6 +37,8 @@ const modalCurrentPasswordInput = document.getElementById("modal-current-passwor
 const modalNewPasswordInput = document.getElementById("modal-new-password");
 const modalConfirmPasswordInput = document.getElementById("modal-confirm-password");
 const modalPasswordStatus = document.getElementById("modal-password-status");
+const restartRequiredModal = document.getElementById("restart-required-modal");
+const confirmRestartRequiredButton = document.getElementById("confirm-restart-required");
 const logSourceFilter = document.getElementById("log-source-filter");
 const logLevelFilter = document.getElementById("log-level-filter");
 const logModuleFilter = document.getElementById("log-module-filter");
@@ -131,6 +133,102 @@ const templateExplainText = {
         "使用 \\r 可把模板拆成多条消息。",
     ].join("\n"),
 };
+const restartRequiredSettingKeysByFile = {
+    biliConfig: new Set([
+        "enableConfig.debugMode",
+        "enableConfig.liveCloseNotifyEnable",
+        "enableConfig.lowSpeedEnable",
+        "enableConfig.cacheClearEnable",
+        "accountConfig.cookie",
+        "accountConfig.followGroup",
+        "proxyConfig.proxy",
+        "checkConfig.lowSpeedTime",
+        "checkConfig.lowSpeedRange",
+        "checkConfig.normalRange",
+        "checkConfig.checkReportInterval",
+        "checkConfig.timeout",
+        "imageConfig.quality",
+        "imageConfig.theme",
+        "imageConfig.font",
+        "cacheConfig.expires.DRAW",
+        "cacheConfig.expires.IMAGES",
+        "cacheConfig.expires.EMOJI",
+        "cacheConfig.expires.USER",
+        "cacheConfig.expires.OTHER",
+        "pushConfig.toShortLink",
+    ]),
+    botConfig: new Set([
+        "platform.type",
+        "platform.adapter",
+        "platform.onebot11.host",
+        "platform.onebot11.port",
+        "platform.onebot11.token",
+        "platform.onebot11.useTls",
+        "platform.onebot11.heartbeatInterval",
+        "platform.onebot11.reconnectInterval",
+        "platform.onebot11.sendMode",
+        "platform.onebot11.maxReconnectAttempts",
+        "platform.onebot11.connectTimeout",
+        "platform.qqOfficial.appId",
+        "platform.qqOfficial.appSecret",
+        "platform.qqOfficial.botToken",
+        "webui.enabled",
+        "webui.host",
+        "webui.port",
+        "webui.tokenTtlSeconds",
+    ]),
+};
+const restartRequiredPayloadKeyByFile = {
+    biliConfig: {
+        debugMode: "enableConfig.debugMode",
+        liveCloseNotifyEnable: "enableConfig.liveCloseNotifyEnable",
+        lowSpeedEnable: "enableConfig.lowSpeedEnable",
+        cacheClearEnable: "enableConfig.cacheClearEnable",
+        cookie: "accountConfig.cookie",
+        followGroup: "accountConfig.followGroup",
+        proxies: "proxyConfig.proxy",
+        lowSpeedTime: "checkConfig.lowSpeedTime",
+        lowSpeedRange: "checkConfig.lowSpeedRange",
+        normalRange: "checkConfig.normalRange",
+        checkReportInterval: "checkConfig.checkReportInterval",
+        timeout: "checkConfig.timeout",
+        quality: "imageConfig.quality",
+        theme: "imageConfig.theme",
+        font: "imageConfig.font",
+        "cacheExpires.DRAW": "cacheConfig.expires.DRAW",
+        "cacheExpires.IMAGES": "cacheConfig.expires.IMAGES",
+        "cacheExpires.EMOJI": "cacheConfig.expires.EMOJI",
+        "cacheExpires.USER": "cacheConfig.expires.USER",
+        "cacheExpires.OTHER": "cacheConfig.expires.OTHER",
+        toShortLink: "pushConfig.toShortLink",
+    },
+    botConfig: {
+        platformType: "platform.type",
+        adapter: "platform.adapter",
+        oneBot11Host: "platform.onebot11.host",
+        oneBot11Port: "platform.onebot11.port",
+        oneBot11Token: "platform.onebot11.token",
+        oneBot11UseTls: "platform.onebot11.useTls",
+        oneBot11HeartbeatInterval: "platform.onebot11.heartbeatInterval",
+        oneBot11ReconnectInterval: "platform.onebot11.reconnectInterval",
+        oneBot11SendMode: "platform.onebot11.sendMode",
+        oneBot11MaxReconnectAttempts: "platform.onebot11.maxReconnectAttempts",
+        oneBot11ConnectTimeout: "platform.onebot11.connectTimeout",
+        qqOfficialAppId: "platform.qqOfficial.appId",
+        qqOfficialAppSecret: "platform.qqOfficial.appSecret",
+        qqOfficialBotToken: "platform.qqOfficial.botToken",
+        webUiEnabled: "webui.enabled",
+        webUiHost: "webui.host",
+        webUiPort: "webui.port",
+        webUiTokenTtlSeconds: "webui.tokenTtlSeconds",
+    },
+};
+const restartMaskedSettingKeys = new Set([
+    "accountConfig.cookie",
+    "platform.onebot11.token",
+    "platform.qqOfficial.appSecret",
+    "platform.qqOfficial.botToken",
+]);
 
 /**
  * 读取当前 WebUI token；没有 sessionStorage 时仍允许同源 cookie 完成认证。
@@ -1912,7 +2010,9 @@ function applySettingsFile(fileKey, payload) {
     const fileState = settingsState.files[fileKey];
     fileState.sourceFile = payload.sourceFile || fileState.sourceFile;
     fileState.snapshotToken = payload.snapshotToken || "";
-    fileState.fieldsByKey = new Map((payload.fields || []).map((field) => [field.key, field]));
+    fileState.fieldsByKey = new Map((payload.fields || []).map((field) => {
+        return [field.key, {...field, originalValue: field.value}];
+    }));
 }
 
 /**
@@ -1920,6 +2020,18 @@ function applySettingsFile(fileKey, payload) {
  */
 function fieldValue(fileKey, key, fallback = "") {
     const value = settingsState.files[fileKey]?.fieldsByKey?.get(key)?.value;
+    if (value === undefined || value === null) {
+        return fallback;
+    }
+    return String(value);
+}
+
+/**
+ * 重启字段比较固定读取加载时的原始值，避免平台切换重绘表单时覆盖变更基线。
+ */
+function previousRestartSettingValue(fileKey, key, fallback = "") {
+    const field = settingsState.files[fileKey]?.fieldsByKey?.get(key);
+    const value = field?.originalValue ?? field?.value;
     if (value === undefined || value === null) {
         return fallback;
     }
@@ -1975,18 +2087,30 @@ async function saveSettingsSection(sectionName) {
         return;
     }
     const fileKeys = settingsSectionFileKeys(sectionName);
+    const savePlans = fileKeys.map((fileKey) => ({
+        fileKey,
+        payload: fileKey === "biliConfig"
+            ? buildBiliConfigSettingsPayload(sectionName, values, confirmationPassword)
+            : buildBotConfigSettingsPayload(sectionName, values, confirmationPassword),
+    }));
+    const restartRequiredChanged = savePlans.some((plan) => {
+        return settingsPayloadHasRestartRequiredChanges(plan.fileKey, plan.payload);
+    });
     setSettingsStatus("正在保存");
-    for (const fileKey of fileKeys) {
-        if (fileKey === "biliConfig") {
-            await postBiliConfigSettings(buildBiliConfigSettingsPayload(sectionName, values, confirmationPassword));
+    for (const plan of savePlans) {
+        if (plan.fileKey === "biliConfig") {
+            await postBiliConfigSettings(plan.payload);
         }
-        if (fileKey === "botConfig") {
-            await postBotConfigSettings(buildBotConfigSettingsPayload(sectionName, values, confirmationPassword));
+        if (plan.fileKey === "botConfig") {
+            await postBotConfigSettings(plan.payload);
         }
     }
     await loadSettingsFiles(true);
     renderSettingsActiveTab();
     setSettingsStatus("保存成功", true);
+    if (restartRequiredChanged) {
+        showRestartRequiredModal();
+    }
 }
 
 /**
@@ -2031,6 +2155,86 @@ async function postSettingsPayload(url, payload) {
         throw new Error(detail);
     }
     return result;
+}
+
+/**
+ * 重启提示只比较 WebUI 当前暴露的重启字段，避免 bot.yml 文件级重启建议误伤热生效字段。
+ */
+function settingsPayloadHasRestartRequiredChanges(fileKey, payload) {
+    const keyMap = restartRequiredPayloadKeyByFile[fileKey] || {};
+    const restartKeys = restartRequiredSettingKeysByFile[fileKey] || new Set();
+    return Object.entries(keyMap).some(([payloadPath, settingsKey]) => {
+        if (!restartKeys.has(settingsKey)) {
+            return false;
+        }
+        const nextValue = readPayloadPath(payload, payloadPath);
+        if (nextValue === undefined) {
+            return false;
+        }
+        if (restartMaskedSettingKeys.has(settingsKey) && String(nextValue ?? "").trim() === "") {
+            return false;
+        }
+        const previousValue = previousRestartSettingValue(fileKey, settingsKey, "");
+        return normalizeRestartComparableValue(nextValue) !== normalizeRestartComparableValue(previousValue);
+    });
+}
+
+/**
+ * 读取 payload 中的点分路径，支持 cacheExpires.DRAW 这类嵌套字段比较。
+ */
+function readPayloadPath(payload, path) {
+    return String(path || "").split(".").reduce((current, segment) => {
+        if (current === undefined || current === null) {
+            return undefined;
+        }
+        return current[segment];
+    }, payload);
+}
+
+/**
+ * 重启字段比较需要把数组、JSON 字符串、布尔值和数字都收敛成稳定文本。
+ */
+function normalizeRestartComparableValue(value) {
+    if (value === undefined || value === null) {
+        return "";
+    }
+    if (Array.isArray(value)) {
+        return JSON.stringify(value.map((item) => String(item).trim()).filter(Boolean));
+    }
+    if (typeof value === "object") {
+        return JSON.stringify(Object.keys(value).sort().reduce((acc, key) => {
+            acc[key] = normalizeRestartComparableValue(value[key]);
+            return acc;
+        }, {}));
+    }
+    const text = String(value).trim();
+    try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed) || (parsed && typeof parsed === "object")) {
+            return normalizeRestartComparableValue(parsed);
+        }
+    } catch (_) {
+        // 非 JSON 字符串按普通配置值比较。
+    }
+    return text;
+}
+
+/**
+ * 重启提示弹窗只能通过确认按钮关闭，避免用户误以为保存失败或需要继续处理当前表单。
+ */
+function showRestartRequiredModal() {
+    if (restartRequiredModal) {
+        restartRequiredModal.hidden = false;
+    }
+}
+
+/**
+ * 确认按钮关闭重启提示，保留页面当前状态供用户继续检查配置。
+ */
+function closeRestartRequiredModal() {
+    if (restartRequiredModal) {
+        restartRequiredModal.hidden = true;
+    }
 }
 
 /**
@@ -3235,6 +3439,10 @@ if (closeChangePasswordButton) {
 
 if (cancelChangePasswordButton) {
     cancelChangePasswordButton.addEventListener("click", closeChangePasswordModal);
+}
+
+if (confirmRestartRequiredButton) {
+    confirmRestartRequiredButton.addEventListener("click", closeRestartRequiredModal);
 }
 
 if (changePasswordModal) {

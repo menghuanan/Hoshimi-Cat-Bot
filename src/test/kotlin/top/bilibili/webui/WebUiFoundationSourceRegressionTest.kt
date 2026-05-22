@@ -297,6 +297,82 @@ class WebUiFoundationSourceRegressionTest {
     }
 
     /**
+     * 保存配置后的重启提示必须只由实际变化的重启字段触发，避免管理员等热生效字段误报。
+     */
+    @Test
+    fun `settings save should warn only when changed fields require restart`() {
+        val shellPage = read("src/main/resources/webui/index.html")
+        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val restartKeyBlock = Regex("""(?s)const restartRequiredSettingKeysByFile = \{(.*?)\};""")
+            .find(shellScript)
+            ?.groupValues
+            ?.get(1)
+            .orEmpty()
+
+        assertTrue(shellPage.contains("""id="restart-required-modal""""))
+        assertTrue(shellPage.contains("""id="confirm-restart-required""""))
+        assertFalse(shellPage.contains("""id="close-restart-required""""))
+        assertTrue(shellScript.contains("restartRequiredSettingKeysByFile"))
+        assertTrue(shellScript.contains("settingsPayloadHasRestartRequiredChanges"))
+        assertTrue(shellScript.contains("previousRestartSettingValue"))
+        assertTrue(shellScript.contains("normalizeRestartComparableValue"))
+        assertTrue(shellScript.contains("showRestartRequiredModal"))
+        assertTrue(shellScript.contains("restartRequiredChanged"))
+        assertTrue(shellScript.contains("originalValue"))
+        listOf(
+            "platform.type",
+            "platform.adapter",
+            "platform.onebot11.host",
+            "platform.onebot11.port",
+            "platform.onebot11.token",
+            "platform.onebot11.useTls",
+            "platform.onebot11.heartbeatInterval",
+            "platform.onebot11.reconnectInterval",
+            "platform.onebot11.sendMode",
+            "platform.onebot11.maxReconnectAttempts",
+            "platform.onebot11.connectTimeout",
+            "platform.qqOfficial.appId",
+            "platform.qqOfficial.appSecret",
+            "platform.qqOfficial.botToken",
+            "webui.enabled",
+            "webui.host",
+            "webui.port",
+            "webui.tokenTtlSeconds",
+            "enableConfig.debugMode",
+            "enableConfig.liveCloseNotifyEnable",
+            "enableConfig.lowSpeedEnable",
+            "enableConfig.cacheClearEnable",
+            "accountConfig.cookie",
+            "accountConfig.followGroup",
+            "proxyConfig.proxy",
+            "checkConfig.lowSpeedTime",
+            "checkConfig.lowSpeedRange",
+            "checkConfig.normalRange",
+            "checkConfig.checkReportInterval",
+            "checkConfig.timeout",
+            "imageConfig.quality",
+            "imageConfig.theme",
+            "imageConfig.font",
+            "cacheConfig.expires.DRAW",
+            "cacheConfig.expires.IMAGES",
+            "cacheConfig.expires.EMOJI",
+            "cacheConfig.expires.USER",
+            "cacheConfig.expires.OTHER",
+            "pushConfig.toShortLink",
+        ).forEach { key ->
+            assertTrue(restartKeyBlock.contains(""""$key""""), key)
+        }
+        assertFalse(restartKeyBlock.contains(""""admins""""))
+        assertFalse(restartKeyBlock.contains(""""adminContact""""))
+        assertFalse(restartKeyBlock.contains(""""pushConfig.messageInterval""""))
+        assertFalse(restartKeyBlock.contains(""""pushConfig.pushInterval""""))
+        assertTrue(shellStyle.contains(".restart-required-modal"))
+        assertTrue(shellStyle.contains(".restart-required-actions"))
+        assertTrue(shellStyle.contains("justify-content: flex-end;"))
+    }
+
+    /**
      * 日志窗口需要自动轮询并保持可滚动尾部视图，避免只靠手动刷新才能看到新日志。
      */
     @Test
