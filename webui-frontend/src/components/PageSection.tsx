@@ -12,7 +12,7 @@ type PageSectionProps = {
  */
 export function PageSection({title, description, actions, children}: PageSectionProps) {
   return (
-    <section className="space-y-4">
+    <section className="min-w-0 space-y-4">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-base font-semibold text-slate-950">{title}</h3>

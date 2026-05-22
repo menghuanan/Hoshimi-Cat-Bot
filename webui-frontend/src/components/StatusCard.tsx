@@ -19,9 +19,9 @@ const toneClasses = {
  */
 export function StatusCard({label, value, tone = 'emerald', detail}: StatusCardProps) {
   return (
-    <article className={`min-h-28 rounded-lg border border-slate-200 border-l-4 ${toneClasses[tone]} bg-white p-4 shadow-sm`}>
+    <article className={`min-h-28 min-w-0 rounded-lg border border-slate-200 border-l-4 ${toneClasses[tone]} bg-white p-4 shadow-sm`}>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <div className="mt-3 text-2xl font-semibold text-slate-950">{value}</div>
+      <div className="mt-3 min-w-0 break-words text-xl font-semibold leading-tight text-slate-950 sm:text-2xl">{value}</div>
       {detail ? <div className="mt-2 text-sm text-slate-600">{detail}</div> : null}
     </article>
   )

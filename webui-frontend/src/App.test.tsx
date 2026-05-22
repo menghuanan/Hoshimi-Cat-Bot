@@ -94,6 +94,24 @@ describe('webui shell routing', () => {
     expect(screen.getByText('动态更新')).toBeInTheDocument()
   })
 
+  /**
+   * 首页布局需要恢复旧 WebUI 的运行信息密度，核心指标标签不能被折叠掉。
+   */
+  it('renders the dashboard runtime metric labels required for parity', async () => {
+    renderAtPath('/')
+
+    await waitFor(() => expect(screen.getByText('版本')).toBeInTheDocument())
+    expect(screen.getByText('启动时间')).toBeInTheDocument()
+    expect(screen.getByText('运行时长')).toBeInTheDocument()
+    expect(screen.getByText('系统负载')).toBeInTheDocument()
+    expect(screen.getByText('CPU')).toBeInTheDocument()
+    expect(screen.getByText('内存')).toBeInTheDocument()
+    expect(screen.getByText('存储')).toBeInTheDocument()
+    expect(screen.getByText('Docker')).toBeInTheDocument()
+    expect(screen.getByText('今日推送')).toBeInTheDocument()
+    expect(screen.getByText('最近推送')).toBeInTheDocument()
+  })
+
   it('renders the login screen for the login path', () => {
     renderAtPath('/login')
 
