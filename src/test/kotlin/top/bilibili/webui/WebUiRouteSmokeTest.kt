@@ -178,6 +178,9 @@ class WebUiRouteSmokeTest {
         val rootResponse = webUiClient.get("/") {
             header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
         }
+        val settingsPathResponse = webUiClient.get("/settings") {
+            header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
+        }
         val sessionProbe = webUiClient.get("/api/auth/session") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }.body<WebUiSessionDto>()
@@ -188,6 +191,8 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.OK, runtimeResponse.status)
         assertEquals(HttpStatusCode.OK, configResponse.status)
         assertEquals(HttpStatusCode.OK, rootResponse.status)
+        assertEquals(HttpStatusCode.OK, settingsPathResponse.status)
+        assertTrue(settingsPathResponse.bodyAsText().contains("""id="root""""))
         assertEquals(false, sessionProbe.mustChangePassword)
         assertEquals(true, sessionProbe.authenticated)
         val runtimeBody = runtimeResponse.body<WebUiRuntimeSummaryDto>()

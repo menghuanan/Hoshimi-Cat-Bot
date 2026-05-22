@@ -88,10 +88,14 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(runtimeFacade.contains("""appVersion = appVersionProvider()"""))
         assertTrue(authRoutes.contains("/api/auth/login"))
         assertTrue(authRoutes.contains("/api/auth/change-password"))
-        assertTrue(staticRoutes.contains("""get("/")"""))
         assertTrue(staticRoutes.contains("""get("/login")"""))
         assertTrue(staticRoutes.contains("webui/react/index.html"))
         assertTrue(staticRoutes.contains("webui/react/assets"))
+        assertTrue(staticRoutes.contains("reactShellRoutes"))
+        assertTrue(staticRoutes.contains(""""/""""))
+        assertTrue(staticRoutes.contains("settings"))
+        assertTrue(staticRoutes.contains("subscriptions"))
+        assertTrue(staticRoutes.contains("logs"))
     }
 
     /**
@@ -114,6 +118,35 @@ class WebUiFoundationSourceRegressionTest {
         val staticRoutes = read("src/main/kotlin/top/bilibili/webui/routes/WebUiStaticRoutes.kt")
         assertTrue(staticRoutes.contains("webui/react/index.html"))
         assertTrue(staticRoutes.contains("webui/react/assets"))
+    }
+
+    /**
+     * React 运行时和旧 plain baseline 分开断言，避免最终壳层来源和对照资源互相覆盖。
+     */
+    @Test
+    fun `webui should keep react runtime resources and retained plain baseline separate`() {
+        val reactShellPath = Path.of("src/main/resources/webui/react/index.html")
+        val reactScriptPath = Path.of("src/main/resources/webui/react/assets/app.js")
+        val plainShellPath = Path.of("src/main/resources/webui/index.html")
+        val plainLoginPath = Path.of("src/main/resources/webui/login.html")
+
+        assertTrue(Files.exists(reactShellPath))
+        assertTrue(Files.exists(reactScriptPath))
+        assertTrue(Files.exists(plainShellPath))
+        assertTrue(Files.exists(plainLoginPath))
+
+        val reactShell = read(reactShellPath.toString())
+        val reactScript = read(reactScriptPath.toString())
+        val plainShell = read(plainShellPath.toString())
+
+        assertTrue(reactShell.contains("""id="root""""))
+        assertTrue(reactShell.contains("./assets/app.js"))
+        assertTrue(plainShell.contains("""id="high-risk-confirm-modal""""))
+        assertFalse(reactShell.contains("""id="high-risk-confirm-modal""""))
+        assertFalse(reactScript.contains("window.confirm("))
+        assertFalse(reactScript.contains("window.prompt("))
+        assertFalse(reactScript.contains("window.alert("))
+        assertFalse(Regex("""\bnew\s+Notification\b|\bNotification\.""").containsMatchIn(reactScript))
     }
 
     @Test

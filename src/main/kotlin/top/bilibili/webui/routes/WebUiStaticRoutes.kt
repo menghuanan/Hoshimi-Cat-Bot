@@ -21,17 +21,22 @@ fun Route.registerWebUiStaticRoutes(
     authService: WebUiAuthService,
 ) {
     val externalStaticRoot = settings.staticDir.takeIf { it.isNotBlank() }?.let(::File)
-    get("/") {
-        val session = authService.resolveSession(call.extractWebUiToken())
-        if (session == null || session.mustChangePassword) {
-            call.respondRedirect("/login", permanent = false)
-            return@get
+    val reactShellRoutes = listOf("/", "/settings", "/subscriptions", "/logs")
+
+    // React 运行时支持直接路径刷新；API 和 assets 仍由各自路由独立处理。
+    reactShellRoutes.forEach { path ->
+        get(path) {
+            val session = authService.resolveSession(call.extractWebUiToken())
+            if (session == null || session.mustChangePassword) {
+                call.respondRedirect("/login", permanent = false)
+                return@get
+            }
+            call.respondManagedHtmlPage(
+                externalStaticRoot = externalStaticRoot,
+                externalFileNames = listOf("index.html"),
+                bundledResourcePath = "webui/react/index.html",
+            )
         }
-        call.respondManagedHtmlPage(
-            externalStaticRoot = externalStaticRoot,
-            externalFileNames = listOf("index.html"),
-            bundledResourcePath = "webui/react/index.html",
-        )
     }
 
     get("/login") {
