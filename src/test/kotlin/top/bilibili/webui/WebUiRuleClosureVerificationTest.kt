@@ -14,6 +14,21 @@ class WebUiRuleClosureVerificationTest {
     private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
 
     /**
+     * WebUI 脚本入口已拆成加载器与功能脚本，闭环控件断言需要读取真实功能脚本集合。
+     */
+    private fun readWebUiScriptBundle(): String {
+        val entry = read("src/main/resources/webui/assets/app.js")
+        val scriptPaths = Regex(""""(/assets/scripts/[^"]+)"""")
+            .findAll(entry)
+            .map { match -> "src/main/resources/webui${match.groupValues[1]}" }
+            .toList()
+        return buildString {
+            appendLine(entry)
+            scriptPaths.forEach { path -> appendLine(read(path)) }
+        }
+    }
+
+    /**
      * 路由层必须持续暴露本地调试闭环需要的认证、配置、日志和动作入口。
      */
     @Test
@@ -41,7 +56,7 @@ class WebUiRuleClosureVerificationTest {
     @Test
     fun `frontend shell should keep closure controls visible`() {
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellScript = readWebUiScriptBundle()
 
         assertTrue(shellPage.contains("data-nav-target=\"home\""))
         assertTrue(shellPage.contains("data-nav-target=\"settings\""))

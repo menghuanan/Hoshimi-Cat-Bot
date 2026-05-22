@@ -14,6 +14,38 @@ class WebUiFoundationSourceRegressionTest {
     private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
 
     /**
+     * WebUI 入口脚本只负责按顺序加载拆分后的脚本文件，源码回归断言需要检查真实逻辑脚本。
+     */
+    private fun readWebUiScriptBundle(): String {
+        val entry = read("src/main/resources/webui/assets/app.js")
+        val scriptPaths = Regex(""""(/assets/scripts/[^"]+)"""")
+            .findAll(entry)
+            .map { match -> "src/main/resources/webui${match.groupValues[1]}" }
+            .toList()
+        return buildString {
+            appendLine(entry)
+            scriptPaths.forEach { path -> appendLine(read(path)) }
+        }
+    }
+
+    /**
+     * WebUI 入口样式只声明 CSS import，布局断言需要跟随 import 读取实际样式块。
+     */
+    private fun readWebUiStyleBundle(): String {
+        val entryPath = Path.of("src/main/resources/webui/assets/app.css")
+        val entry = read(entryPath.toString())
+        val assetRoot = entryPath.parent
+        val stylePaths = Regex("""@import\s+url\("([^"]+)"\);""")
+            .findAll(entry)
+            .map { match -> assetRoot.resolve(match.groupValues[1]).normalize().toString() }
+            .toList()
+        return buildString {
+            appendLine(entry)
+            stylePaths.forEach { path -> appendLine(read(path)) }
+        }
+    }
+
+    /**
      * 样式块断言只检查目标选择器，避免全局同名属性让布局回归测试误判。
      */
     private fun cssBlock(source: String, selector: String): String {
@@ -75,7 +107,7 @@ class WebUiFoundationSourceRegressionTest {
     fun `frontend shell should expose the static dashboard sections`() {
         val loginPage = read("src/main/resources/webui/login.html")
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
+        val shellScript = readWebUiScriptBundle()
         val authScript = read("src/main/resources/webui/assets/auth.js")
 
         assertTrue(loginPage.contains("id=\"login-form\""))
@@ -142,8 +174,8 @@ class WebUiFoundationSourceRegressionTest {
     @Test
     fun `home metric cards should expose only requested navigation shortcuts`() {
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellScript = readWebUiScriptBundle()
+        val shellStyle = readWebUiStyleBundle()
 
         val botCard = metricCardBlock(shellPage, "Bot 运行状态")
         val subscriptionCard = metricCardBlock(shellPage, "当前订阅数量")
@@ -170,8 +202,8 @@ class WebUiFoundationSourceRegressionTest {
     @Test
     fun `settings page should expose refined category tabs and hide internal settings fields`() {
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellScript = readWebUiScriptBundle()
+        val shellStyle = readWebUiStyleBundle()
 
         listOf(
             "integration" to "对接配置",
@@ -250,7 +282,7 @@ class WebUiFoundationSourceRegressionTest {
      */
     @Test
     fun `frontend shell should keep admin menu above dashboard cards`() {
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellStyle = readWebUiStyleBundle()
 
         assertTrue(shellStyle.contains(".topbar {"))
         assertTrue(shellStyle.contains("position: relative;"))
@@ -262,7 +294,7 @@ class WebUiFoundationSourceRegressionTest {
      */
     @Test
     fun `frontend shell should keep the wider sidebar layout`() {
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellStyle = readWebUiStyleBundle()
 
         assertTrue(shellStyle.contains("""--sidebar-width: 235px;"""))
         assertTrue(shellStyle.contains("@media"))
@@ -276,8 +308,8 @@ class WebUiFoundationSourceRegressionTest {
     @Test
     fun `frontend shell should expose usable admin account controls`() {
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellScript = readWebUiScriptBundle()
+        val shellStyle = readWebUiStyleBundle()
 
         assertTrue(shellPage.contains("""id="admin-menu-button""""))
         assertTrue(shellPage.contains("""id="admin-menu""""))
@@ -302,8 +334,8 @@ class WebUiFoundationSourceRegressionTest {
     @Test
     fun `settings save should warn only when changed fields require restart`() {
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellScript = readWebUiScriptBundle()
+        val shellStyle = readWebUiStyleBundle()
         val restartKeyBlock = Regex("""(?s)const restartRequiredSettingKeysByFile = \{(.*?)\};""")
             .find(shellScript)
             ?.groupValues
@@ -378,8 +410,8 @@ class WebUiFoundationSourceRegressionTest {
     @Test
     fun `frontend shell should replace browser native dialogs with centered modal dialogs`() {
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellScript = readWebUiScriptBundle()
+        val shellStyle = readWebUiStyleBundle()
 
         assertTrue(shellPage.contains("""id="high-risk-confirm-modal""""))
         assertTrue(shellPage.contains("""id="high-risk-confirm-password""""))
@@ -401,8 +433,8 @@ class WebUiFoundationSourceRegressionTest {
     @Test
     fun `log list should stay scrollable within the static shell`() {
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellScript = readWebUiScriptBundle()
+        val shellStyle = readWebUiStyleBundle()
 
         assertTrue(shellPage.contains("""id="log-level-filter""""))
         assertTrue(shellPage.contains("""id="log-source-filter""""))
@@ -436,8 +468,8 @@ class WebUiFoundationSourceRegressionTest {
     @Test
     fun `subscription management should use interactive filters search and rendered cards`() {
         val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = read("src/main/resources/webui/assets/app.js")
-        val shellStyle = read("src/main/resources/webui/assets/app.css")
+        val shellScript = readWebUiScriptBundle()
+        val shellStyle = readWebUiStyleBundle()
         val subscriptionGridBlock = cssBlock(shellStyle, ".subscription-grid")
         val primaryButtonBlock = cssBlock(shellStyle, ".btn-primary")
         val subscriptionActionsRowBlock = cssBlock(shellStyle, ".subscription-actions-row")

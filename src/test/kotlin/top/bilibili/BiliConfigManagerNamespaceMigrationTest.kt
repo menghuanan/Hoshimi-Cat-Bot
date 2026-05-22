@@ -237,10 +237,13 @@ class BiliConfigManagerNamespaceMigrationTest {
     @Test
     fun `saveConfig should update runtime config after successful persistence`() {
         val originalFileBytes = if (Files.exists(configFile)) Files.readAllBytes(configFile) else null
+        val originalConfigDirExists = Files.exists(configFile.parent)
         val originalRuntimeConfig = currentRuntimeConfigOrNull()
         val oldConfig = BiliConfig(adminContact = "onebot11:private:10001")
         val newConfig = BiliConfig(adminContact = "onebot11:private:10002")
         try {
+            // saveConfig 的生产路径依赖 init 先建目录，用例只验证成功落盘后的运行态同步。
+            Files.createDirectories(configFile.parent)
             setRuntimeConfig(oldConfig)
 
             val saved = BiliConfigManager.saveConfig(newConfig)
@@ -256,6 +259,9 @@ class BiliConfigManagerNamespaceMigrationTest {
                 Files.write(configFile, originalFileBytes)
             } else {
                 Files.deleteIfExists(configFile)
+            }
+            if (!originalConfigDirExists) {
+                runCatching { Files.deleteIfExists(configFile.parent) }
             }
         }
     }
