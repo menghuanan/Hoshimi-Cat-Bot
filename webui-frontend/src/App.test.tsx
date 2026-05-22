@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -193,5 +194,95 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('自动刷新')).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '导出'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '清空'})).toBeInTheDocument()
+  })
+
+  /**
+   * 订阅页需要恢复旧 WebUI 的列表筛选、新增模式和嵌套编辑器入口。
+   */
+  it('renders subscription filters, create modes, and nested editor controls', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [{
+              id: 'sub-1',
+              kind: 'dynamic',
+              title: '测试订阅',
+              identifierLabel: 'UID: 123',
+              sourceId: 123,
+              tags: ['动态'],
+              targetSectionTitle: '推送目标',
+              targets: ['10001', '10002'],
+              filterInfo: '1 条过滤器',
+              filterCount: 1,
+              templateNames: ['默认模板'],
+              templateCount: 1,
+              atAllInfo: '全部动态',
+              themeColor: '#33aaff',
+              themeColorCount: 1,
+              lastUpdatedEpochMillis: 1_700_000_000_000,
+            }],
+          }),
+        }
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/filters')) {
+        return {ok: true, status: 200, json: async () => ({filters: [{key: 'filter-1', kind: 'regex', mode: 'black', content: '广告', label: '正则', prefix: '黑名单'}]})}
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/templates')) {
+        return {ok: true, status: 200, json: async () => ({templates: [{key: 'template-1', type: 'dynamic', typeLabel: '动态', name: '默认模板', content: '{{title}}'}], randomEnabled: true})}
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/atall')) {
+        return {ok: true, status: 200, json: async () => ({items: [{key: '全部动态', type: '全部动态', summary: '全部动态：10001', groups: ['10001']}]})}
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/theme')) {
+        return {ok: true, status: 200, json: async () => ({color: '#33aaff'})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('测试订阅')).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '全部'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '动态'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '番剧'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '分组'})).toBeInTheDocument()
+    expect(screen.getByLabelText('搜索订阅')).toBeInTheDocument()
+    expect(screen.getByText('过滤器信息')).toBeInTheDocument()
+    expect(screen.getByText('模板信息')).toBeInTheDocument()
+    expect(screen.getByText('at全体')).toBeInTheDocument()
+    expect(screen.getByText('主题色')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '新增订阅'}))
+    expect(screen.getByRole('dialog', {name: '新增订阅'})).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('订阅类型'), 'group')
+    expect(screen.getByLabelText('分组名称')).toBeInTheDocument()
+    expect(screen.getByLabelText('分组 UID')).toBeInTheDocument()
+    expect(screen.getByLabelText('分组目标群')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '取消'}))
+
+    await user.click(screen.getByRole('button', {name: '编辑'}))
+    expect(screen.getByRole('dialog', {name: '编辑订阅配置'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '编辑过滤器'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '编辑模板'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '编辑at全体'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '编辑主题色'})).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '编辑模板'}))
+    expect(await screen.findByLabelText('随机模板')).toBeChecked()
+    expect(screen.getByRole('button', {name: '添加模板'})).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '编辑at全体'}))
+    expect(await screen.findByRole('button', {name: '添加at全体'})).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '添加at全体'}))
+    expect(screen.getByLabelText('10001')).toBeInTheDocument()
+    expect(screen.getByLabelText('10002')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '编辑主题色'}))
+    expect(await screen.findByLabelText('主题颜色')).toHaveValue('#33aaff')
   })
 })

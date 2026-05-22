@@ -173,6 +173,58 @@ describe('webui domain hooks', () => {
     })
   })
 
+  /**
+   * 订阅嵌套编辑器的写入同样属于高风险操作，hook 必须统一补齐 confirmationPassword。
+   */
+  it('useSubscriptions should gate nested editor writes with confirmation passwords', async () => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
+        return Promise.resolve(createJsonResponse(200, {items: []}))
+      }
+      if (url.includes('/api/subscriptions/sub-1/')) {
+        return Promise.resolve(createJsonResponse(200, {success: true}))
+      }
+      return Promise.resolve(createJsonResponse(200, {}))
+    })
+
+    const user = userEvent.setup()
+    const {result} = renderWithConfirmationProvider(() => useSubscriptions({fetchImpl})) as {
+      result: {current: ReturnType<typeof useSubscriptions>}
+    }
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions', expect.any(Object)))
+    const saveFilterPromise = result.current.saveFilter('sub-1', {
+      key: '',
+      kind: 'regex',
+      mode: 'black',
+      content: '广告',
+    })
+
+    await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    await saveFilterPromise
+
+    const togglePromise = result.current.toggleRandomTemplate('sub-1', true)
+    await user.type(await screen.findByLabelText('确认密码'), 'random-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    await togglePromise
+
+    const filterCall = fetchImpl.mock.calls.find(([url, init]) => String(url).endsWith('/api/subscriptions/sub-1/filters') && init?.method === 'POST')
+    expect(JSON.parse(String(filterCall?.[1]?.body))).toMatchObject({
+      kind: 'regex',
+      mode: 'black',
+      content: '广告',
+      confirmationPassword: 'filter-password',
+    })
+
+    const randomCall = fetchImpl.mock.calls.find(([url, init]) => String(url).endsWith('/api/subscriptions/sub-1/templates/random') && init?.method === 'POST')
+    expect(JSON.parse(String(randomCall?.[1]?.body))).toEqual({
+      enabled: true,
+      confirmationPassword: 'random-password',
+    })
+  })
+
   it('useLogs should go through centered and high-risk confirmation when clearing logs', async () => {
     const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
