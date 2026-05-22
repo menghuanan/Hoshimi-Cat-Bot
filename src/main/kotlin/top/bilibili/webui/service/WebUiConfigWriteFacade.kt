@@ -22,6 +22,7 @@ import top.bilibili.config.QQOfficialConfig
 import top.bilibili.config.TargetConfig
 import top.bilibili.connector.PlatformType
 import top.bilibili.service.TriggerMode
+import top.bilibili.service.normalizeGradientColorInput
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.CacheType
 import top.bilibili.webui.config.WebUiConfig
@@ -337,11 +338,17 @@ class WebUiConfigWriteFacade(
      */
     private fun validateBiliConfigRequest(request: WebUiBiliConfigWriteRequestDto): List<String> {
         val errors = mutableListOf<String>()
-        if (request.checkReportInterval <= 0 || request.timeout <= 0) {
-            errors += "check intervals are invalid"
-        }
-        if (request.messageInterval <= 0L || request.pushInterval <= 0L) {
-            errors += "push intervals are invalid"
+        validateOptionalOneBot11PrivateContact("adminContact", request.adminContact, errors)
+        validateNonNegativeLong("admin", request.admin, errors)
+        validateHourRange("lowSpeedTime", request.lowSpeedTime, errors)
+        validateIntervalRange("lowSpeedRange", request.lowSpeedRange, errors)
+        validateIntervalRange("normalRange", request.normalRange, errors)
+        validatePositiveInt("checkReportInterval", request.checkReportInterval, errors)
+        validatePositiveInt("timeout", request.timeout, errors)
+        validatePositiveLong("messageInterval", request.messageInterval, errors)
+        validatePositiveLong("pushInterval", request.pushInterval, errors)
+        if (normalizeGradientColorInput(request.defaultColor.trim()) == null) {
+            errors += "defaultColor is invalid"
         }
         if (request.timeDisplayMode.isNotBlank() && parseEnum<TimeDisplayMode>(request.timeDisplayMode) == null) {
             errors += "timeDisplayMode is invalid"
@@ -355,7 +362,108 @@ class WebUiConfigWriteFacade(
         if (request.cacheExpires.keys.any { key -> parseEnum<CacheType>(key) == null }) {
             errors += "cacheExpires contains invalid cache type"
         }
+        if (request.cacheExpires.values.any { value -> value <= 0 }) {
+            errors += "cacheExpires contains invalid expire days"
+        }
         return errors
+    }
+
+    /**
+     * 可选 OneBot11 私聊联系人只在填写时校验 QQ 数字，保留空管理员的旧配置兼容性。
+     */
+    private fun validateOptionalOneBot11PrivateContact(
+        fieldName: String,
+        contact: String,
+        errors: MutableList<String>,
+    ) {
+        val normalized = contact.trim()
+        if (normalized.isBlank()) {
+            return
+        }
+        val prefix = "onebot11:private:"
+        if (normalized.startsWith(prefix)) {
+            val qq = normalized.removePrefix(prefix).toLongOrNull()
+            if (qq == null || qq <= 0L) {
+                errors += "$fieldName is invalid"
+            }
+        }
+    }
+
+    /**
+     * 低频时段采用 24 小时制闭区间端点，允许跨午夜但不允许 24 点或相同端点造成歧义。
+     */
+    private fun validateHourRange(
+        fieldName: String,
+        value: String,
+        errors: MutableList<String>,
+    ) {
+        val range = parseDashSeparatedRange(value)
+        if (range == null || range.first !in 0..23 || range.second !in 0..23 || range.first == range.second) {
+            errors += "$fieldName is invalid"
+        }
+    }
+
+    /**
+     * 轮询间隔统一按“最小-最大”解析，程序运行期要求最小值至少 30 秒。
+     */
+    private fun validateIntervalRange(
+        fieldName: String,
+        value: String,
+        errors: MutableList<String>,
+    ) {
+        val range = parseDashSeparatedRange(value)
+        if (range == null || range.first < 30 || range.second < 30 || range.first > range.second) {
+            errors += "$fieldName is invalid"
+        }
+    }
+
+    /**
+     * 区间文本只接受非负整数字面量，避免负号或小数在保存后被运行期 split 误解释。
+     */
+    private fun parseDashSeparatedRange(value: String): Pair<Int, Int>? {
+        val matched = Regex("""^\s*(\d+)\s*-\s*(\d+)\s*$""").matchEntire(value) ?: return null
+        val start = matched.groupValues[1].toIntOrNull() ?: return null
+        val end = matched.groupValues[2].toIntOrNull() ?: return null
+        return start to end
+    }
+
+    /**
+     * 正整数校验用于超时、状态报告和缓存等不可为零或负数的运行参数。
+     */
+    private fun validatePositiveInt(
+        fieldName: String,
+        value: Int,
+        errors: MutableList<String>,
+    ) {
+        if (value <= 0) {
+            errors += "$fieldName is invalid"
+        }
+    }
+
+    /**
+     * Long 型正整数校验覆盖毫秒级节流和 WebUI/OneBot11 长整型参数。
+     */
+    private fun validatePositiveLong(
+        fieldName: String,
+        value: Long,
+        errors: MutableList<String>,
+    ) {
+        if (value <= 0L) {
+            errors += "$fieldName is invalid"
+        }
+    }
+
+    /**
+     * 旧 admin 数字字段允许 0 表示未配置，但仍拒绝负数写入配置文件。
+     */
+    private fun validateNonNegativeLong(
+        fieldName: String,
+        value: Long,
+        errors: MutableList<String>,
+    ) {
+        if (value < 0L) {
+            errors += "$fieldName is invalid"
+        }
     }
 
     /**

@@ -2367,15 +2367,142 @@ function collectSettingsForm(form) {
  * 分类级前端校验只覆盖 WebUI 自己改变了展示格式的字段，后端仍负责最终配置合法性。
  */
 function validateSettingsSection(sectionName, values) {
+    const errors = [];
+    if (sectionName === "integration") {
+        const platformType = String(values["platform.type"] || "onebot11").trim();
+        if (platformType !== "qq_official") {
+            errors.push(...validatePortValue("OneBot11 端口", values["platform.onebot11.port"]));
+            errors.push(...validatePositiveIntegerValue("心跳间隔", values["platform.onebot11.heartbeatInterval"]));
+            errors.push(...validatePositiveIntegerValue("重连间隔", values["platform.onebot11.reconnectInterval"]));
+            errors.push(...validatePositiveIntegerValue("连接超时", values["platform.onebot11.connectTimeout"]));
+        }
+        errors.push(...validatePortValue("WebUI 端口", values["webui.port"]));
+        errors.push(...validatePositiveIntegerValue("会话有效秒数", values["webui.tokenTtlSeconds"]));
+    }
+    if (sectionName === "polling") {
+        errors.push(...validateHourRangeValue("低频时段", values["checkConfig.lowSpeedTime"]));
+        errors.push(...validateIntervalRangeValue("低频间隔", values["checkConfig.lowSpeedRange"]));
+        errors.push(...validateIntervalRangeValue("正常间隔", values["checkConfig.normalRange"]));
+        errors.push(...validatePositiveIntegerValue("状态报告间隔", values["checkConfig.checkReportInterval"]));
+        errors.push(...validatePositiveIntegerValue("请求超时", values["checkConfig.timeout"]));
+    }
+    if (sectionName === "render") {
+        errors.push(...validateGradientHexColorValue("默认颜色", values["imageConfig.defaultColor"]));
+        ["DRAW", "IMAGES", "EMOJI", "USER", "OTHER"].forEach((key) => {
+            errors.push(...validatePositiveIntegerValue(`缓存 ${key}`, values[`cacheConfig.expires.${key}`]));
+        });
+    }
+    if (sectionName === "message") {
+        errors.push(...validatePositiveIntegerValue("消息间隔", values["pushConfig.messageInterval"]));
+        errors.push(...validatePositiveIntegerValue("推送间隔", values["pushConfig.pushInterval"]));
+    }
+    if (sectionName === "admin") {
+        errors.push(...validateOptionalPositiveIntegerValue("超级管理员 QQ", values.adminContactQQ));
+    }
     if (sectionName !== "admin" || values.adminsText === undefined) {
-        return [];
+        return errors;
     }
     try {
         parseAdminLines(values.adminsText);
-        return [];
+        return errors;
     } catch (error) {
-        return [error.message || "群普通管理员格式错误"];
+        return errors.concat(error.message || "群普通管理员格式错误");
     }
+}
+
+/**
+ * 正整数校验用于 WebUI 可编辑的 Int/Long 配置，避免空值、小数或负数被隐式回退。
+ */
+function validatePositiveIntegerValue(label, value, minimum = 1) {
+    const text = String(value ?? "").trim();
+    if (!/^\d+$/.test(text)) {
+        return [`${label}必须是正整数`];
+    }
+    const number = BigInt(text);
+    if (number < BigInt(minimum)) {
+        return [`${label}不能小于 ${minimum}`];
+    }
+    return [];
+}
+
+/**
+ * 可选正整数用于超级管理员 QQ，允许清空配置但不允许保存 0、负数或非数字。
+ */
+function validateOptionalPositiveIntegerValue(label, value) {
+    const text = String(value ?? "").trim();
+    if (!text) {
+        return [];
+    }
+    return validatePositiveIntegerValue(label, text);
+}
+
+/**
+ * 端口号按计算机端口范围 1-65535 校验，前端先拦截明显不可启动的 WebUI/OneBot11 参数。
+ */
+function validatePortValue(label, value) {
+    const errors = validatePositiveIntegerValue(label, value);
+    if (errors.length > 0) {
+        return errors;
+    }
+    const port = Number.parseInt(String(value).trim(), 10);
+    if (port < 1 || port > 65535) {
+        return [`${label}必须在 1-65535 之间`];
+    }
+    return [];
+}
+
+/**
+ * 低频时段只接受 0-23 的“开始-结束”小时写法，允许 22-8 这种跨午夜时段。
+ */
+function validateHourRangeValue(label, value) {
+    const range = parseSettingsRange(value);
+    if (!range || range.min < 0 || range.max < 0 || range.min > 23 || range.max > 23 || range.min === range.max) {
+        return [`${label}必须是 0-23 的小时范围，例如 22-8`];
+    }
+    return [];
+}
+
+/**
+ * 低频和正常轮询间隔共享“最低-最大”格式，最低间隔必须满足程序内 30 秒下限。
+ */
+function validateIntervalRangeValue(label, value) {
+    const range = parseSettingsRange(value);
+    if (!range) {
+        return [`${label}必须是 最低-最大 的正整数范围`];
+    }
+    if (range.min < 30 || range.max < 30) {
+        return [`${label}最低间隔不能小于 30 秒`];
+    }
+    if (range.min > range.max) {
+        return [`${label}最低间隔不能大于最大间隔`];
+    }
+    return [];
+}
+
+/**
+ * 区间解析只接受非负整数字面量，避免负号、小数或额外字符进入后端配置。
+ */
+function parseSettingsRange(value) {
+    const matched = String(value ?? "").trim().match(/^(\d+)\s*-\s*(\d+)$/);
+    if (!matched) {
+        return null;
+    }
+    return {
+        min: Number.parseInt(matched[1], 10),
+        max: Number.parseInt(matched[2], 10),
+    };
+}
+
+/**
+ * 默认颜色沿用运行期渐变色格式：1-4 个 #RRGGBB HEX 色值，可用分号分隔。
+ */
+function validateGradientHexColorValue(label, value) {
+    const text = String(value ?? "").trim();
+    const segments = text.split(/[;；]/).map((segment) => segment.trim());
+    if (segments.length === 0 || segments.length > 4 || segments.some((segment) => !/^#[0-9A-Fa-f]{6}$/.test(segment))) {
+        return [`${label}必须是 #RRGGBB 格式，多个颜色最多 4 个并用分号分隔`];
+    }
+    return [];
 }
 
 /**
@@ -2448,9 +2575,10 @@ function renderSettingField(field) {
     const value = field.value ?? fieldValue(field.file, field.key, field.fallback || "");
     const wide = field.wide ? " settings-field--wide" : "";
     const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
+    const inputAttributes = settingInputAttributes(field);
     return `<label class="settings-field${wide}">
         <span>${escapeHtml(field.label)}</span>
-        <input name="${escapeHtml(field.key)}" type="${escapeHtml(field.type || "text")}" value="${escapeHtml(value)}"${placeholder} autocomplete="off">
+        <input name="${escapeHtml(field.key)}" type="${escapeHtml(field.type || "text")}" value="${escapeHtml(value)}"${placeholder}${inputAttributes} autocomplete="off">
     </label>`;
 }
 
@@ -2461,13 +2589,27 @@ function renderSettingFieldWithUnit(field) {
     const value = field.value ?? fieldValue(field.file, field.key, field.fallback || "");
     const wide = field.wide ? " settings-field--wide" : "";
     const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
+    const inputAttributes = settingInputAttributes(field);
     return `<label class="settings-field${wide}">
         <span>${escapeHtml(field.label)}</span>
         <span class="settings-input-unit">
-            <input name="${escapeHtml(field.key)}" type="${escapeHtml(field.type || "text")}" value="${escapeHtml(value)}"${placeholder} autocomplete="off">
+            <input name="${escapeHtml(field.key)}" type="${escapeHtml(field.type || "text")}" value="${escapeHtml(value)}"${placeholder}${inputAttributes} autocomplete="off">
             <span class="settings-unit" aria-hidden="true">${escapeHtml(field.unit)}</span>
         </span>
     </label>`;
+}
+
+/**
+ * 输入附加属性集中生成，给浏览器原生控件提供第一层范围和键盘提示。
+ */
+function settingInputAttributes(field) {
+    const attributes = [];
+    ["min", "max", "step", "pattern", "inputmode"].forEach((name) => {
+        if (field[name] !== undefined) {
+            attributes.push(`${name}="${escapeHtml(field[name])}"`);
+        }
+    });
+    return attributes.length > 0 ? ` ${attributes.join(" ")}` : "";
 }
 
 /**
@@ -2530,17 +2672,17 @@ function renderIntegrationSettings() {
             {value: "llbot", label: "llbot"},
         ]}),
         renderSettingField({file: "botConfig", key: "platform.onebot11.host", label: "OneBot11 主机"}),
-        renderSettingField({file: "botConfig", key: "platform.onebot11.port", label: "OneBot11 端口", type: "number"}),
+        renderSettingField({file: "botConfig", key: "platform.onebot11.port", label: "OneBot11 端口", type: "number", min: 1, max: 65535, step: 1}),
         renderSecretField({key: "platform.onebot11.token", label: "OneBot11 Token"}),
         renderSettingSelect({file: "botConfig", key: "platform.onebot11.useTls", label: "TLS", options: boolOptions()}),
-        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.heartbeatInterval", label: "心跳间隔", type: "number", unit: "毫秒"}),
-        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.reconnectInterval", label: "重连间隔", type: "number", unit: "毫秒"}),
+        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.heartbeatInterval", label: "心跳间隔", type: "number", unit: "毫秒", min: 1, step: 1}),
+        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.reconnectInterval", label: "重连间隔", type: "number", unit: "毫秒", min: 1, step: 1}),
         renderSettingSelect({file: "botConfig", key: "platform.onebot11.sendMode", label: "图片发送方式", options: [
             {value: "base64", label: "base64"},
             {value: "file", label: "file"},
         ]}),
         renderSettingField({file: "botConfig", key: "platform.onebot11.maxReconnectAttempts", label: "最大重连次数", type: "number"}),
-        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.connectTimeout", label: "连接超时", type: "number", unit: "毫秒"}),
+        renderSettingFieldWithUnit({file: "botConfig", key: "platform.onebot11.connectTimeout", label: "连接超时", type: "number", unit: "毫秒", min: 1, step: 1}),
     ].join("") : "";
     const qqFields = platform === "qq_official" ? [
         renderSettingField({file: "botConfig", key: "platform.qqOfficial.appId", label: "QQ App ID"}),
@@ -2565,8 +2707,8 @@ function renderIntegrationSettings() {
                 <div class="settings-section-grid">
                     ${renderSettingSelect({file: "botConfig", key: "webui.enabled", label: "启用 WebUI", options: boolOptions()})}
                     ${renderSettingField({file: "botConfig", key: "webui.host", label: "WebUI 主机"})}
-                    ${renderSettingField({file: "botConfig", key: "webui.port", label: "WebUI 端口", type: "number"})}
-                    ${renderSettingField({file: "botConfig", key: "webui.tokenTtlSeconds", label: "会话有效秒数", type: "number"})}
+                    ${renderSettingField({file: "botConfig", key: "webui.port", label: "WebUI 端口", type: "number", min: 1, max: 65535, step: 1})}
+                    ${renderSettingField({file: "botConfig", key: "webui.tokenTtlSeconds", label: "会话有效秒数", type: "number", min: 1, step: 1})}
                 </div>
             </section>
         </div>`, {title: "对接配置"});
@@ -2608,11 +2750,11 @@ function renderBiliSettings() {
  */
 function renderPollingSettings() {
     renderSettingsShell("polling", `<div class="settings-section-grid">
-        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.lowSpeedTime", label: "低频时段", unit: "小时"})}
-        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.lowSpeedRange", label: "低频间隔", unit: "秒"})}
-        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.normalRange", label: "正常间隔", unit: "秒"})}
-        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.checkReportInterval", label: "状态报告间隔", type: "number", unit: "秒"})}
-        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.timeout", label: "请求超时", type: "number", unit: "秒"})}
+        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.lowSpeedTime", label: "低频时段", unit: "小时", placeholder: "22-8", inputmode: "numeric"})}
+        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.lowSpeedRange", label: "低频间隔", unit: "秒", placeholder: "60-240", inputmode: "numeric"})}
+        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.normalRange", label: "正常间隔", unit: "秒", placeholder: "30-120", inputmode: "numeric"})}
+        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.checkReportInterval", label: "状态报告间隔", type: "number", min: 1, step: 1, unit: "秒"})}
+        ${renderSettingFieldWithUnit({file: "biliConfig", key: "checkConfig.timeout", label: "请求超时", type: "number", min: 1, step: 1, unit: "秒"})}
     </div>`, {title: "轮询配置"});
 }
 
@@ -2624,7 +2766,7 @@ function renderRenderSettings() {
         ${renderSettingField({file: "biliConfig", key: "imageConfig.quality", label: "图片质量"})}
         ${renderSettingField({file: "biliConfig", key: "imageConfig.theme", label: "主题"})}
         ${renderSettingField({file: "biliConfig", key: "imageConfig.font", label: "字体", placeholder: "留空则使用内置字体"})}
-        ${renderSettingField({file: "biliConfig", key: "imageConfig.defaultColor", label: "默认颜色"})}
+        ${renderSettingField({file: "biliConfig", key: "imageConfig.defaultColor", label: "默认颜色", placeholder: "#d3edfa"})}
         ${renderSettingSelect({file: "biliConfig", key: "imageConfig.cardOrnament", label: "右侧装饰", options: [
             {value: "FanCard", label: "粉丝卡"},
             {value: "QrCode", label: "二维码"},
@@ -2650,7 +2792,7 @@ function renderRenderSettings() {
             {value: "RIGHT", label: "右"},
         ]})}
         ${renderSettingSelect({file: "biliConfig", key: "cacheConfig.downloadOriginal", label: "下载原图", options: boolOptions()})}
-        ${["DRAW", "IMAGES", "EMOJI", "USER", "OTHER"].map((key) => renderSettingFieldWithUnit({file: "biliConfig", key: `cacheConfig.expires.${key}`, label: `缓存 ${key}`, type: "number", unit: "天"})).join("")}
+        ${["DRAW", "IMAGES", "EMOJI", "USER", "OTHER"].map((key) => renderSettingFieldWithUnit({file: "biliConfig", key: `cacheConfig.expires.${key}`, label: `缓存 ${key}`, type: "number", min: 1, step: 1, unit: "天"})).join("")}
     </div>`, {title: "渲染配置"});
 }
 
@@ -2659,8 +2801,8 @@ function renderRenderSettings() {
  */
 function renderMessageSettings() {
     renderSettingsShell("message", `<div class="settings-section-grid">
-        ${renderSettingFieldWithUnit({file: "biliConfig", key: "pushConfig.messageInterval", label: "消息间隔", type: "number", unit: "毫秒"})}
-        ${renderSettingFieldWithUnit({file: "biliConfig", key: "pushConfig.pushInterval", label: "推送间隔", type: "number", unit: "毫秒"})}
+        ${renderSettingFieldWithUnit({file: "biliConfig", key: "pushConfig.messageInterval", label: "消息间隔", type: "number", min: 1, step: 1, unit: "毫秒"})}
+        ${renderSettingFieldWithUnit({file: "biliConfig", key: "pushConfig.pushInterval", label: "推送间隔", type: "number", min: 1, step: 1, unit: "毫秒"})}
         ${renderSettingSelect({file: "biliConfig", key: "pushConfig.toShortLink", label: "转短链", options: boolOptions()})}
         ${renderSettingSelect({file: "biliConfig", key: "templateConfig.defaultDynamicPush", label: "动态默认模板", options: templateOptions()})}
         ${renderSettingSelect({file: "biliConfig", key: "templateConfig.defaultLivePush", label: "直播默认模板", options: templateOptions()})}
@@ -2683,7 +2825,7 @@ function renderMessageSettings() {
  */
 function renderAdminSettings() {
     renderSettingsShell("admin", `<div class="settings-section-grid">
-        ${renderSettingField({key: "adminContactQQ", label: "超级管理员 QQ", type: "number", value: qqFromAdminContact()})}
+        ${renderSettingField({key: "adminContactQQ", label: "超级管理员 QQ", type: "number", min: 1, step: 1, value: qqFromAdminContact()})}
         ${renderSettingTextarea({key: "adminsText", label: "群普通管理员", value: adminLinesFromSnapshot(), wide: true, rows: 8})}
         <div class="settings-readonly settings-field--wide">
             <span>当前已有配置</span>

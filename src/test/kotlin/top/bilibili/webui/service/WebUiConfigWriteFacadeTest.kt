@@ -160,7 +160,7 @@ class WebUiConfigWriteFacadeTest {
                 proxies = listOf("http://proxy.local:8080"),
                 lowSpeedTime = "23-7",
                 lowSpeedRange = "80-180",
-                normalRange = "20-60",
+                normalRange = "30-60",
                 checkReportInterval = 12,
                 timeout = 30,
                 quality = "1500w",
@@ -664,6 +664,104 @@ class WebUiConfigWriteFacadeTest {
         assertTrue(result.validationErrors.isNotEmpty())
         assertEquals(WebUiSaveEffectLevel.REJECTED_VALIDATION, result.effectiveLevel)
         assertEquals(WebUiRecommendedAction.FIX_VALIDATION_ERRORS, result.recommendedAction)
+        assertEquals(0, saveCalls)
+    }
+
+    /**
+     * 系统配置写入入口必须拒绝 WebUI 可编辑的非法数值、区间和颜色，避免无效运行参数落盘。
+     */
+    @Test
+    fun `bili config writes should reject invalid webui settings normalization values`() {
+        var saveCalls = 0
+        val currentConfig = BiliConfig(adminContact = "onebot11:private:1")
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { currentConfig },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { BotConfig() },
+            ),
+            biliConfigProvider = { currentConfig },
+            saveBiliConfigAction = {
+                saveCalls += 1
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliConfigProvider = { currentConfig }).readBiliConfig().snapshotToken
+        val result = facade.saveBiliConfig(
+            WebUiBiliConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                adminContact = "onebot11:private:-42",
+                lowSpeedTime = "24-8",
+                lowSpeedRange = "80-30",
+                normalRange = "20-60",
+                checkReportInterval = -1,
+                timeout = -1,
+                defaultColor = "d3edfa",
+                cacheExpires = mapOf("DRAW" to -1, "IMAGES" to 7, "EMOJI" to 7, "USER" to 7, "OTHER" to 7),
+                messageInterval = -1L,
+                pushInterval = -1L,
+            ),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.validationErrors.any { it.contains("lowSpeedTime") }, result.validationErrors.toString())
+        assertTrue(result.validationErrors.any { it.contains("lowSpeedRange") }, result.validationErrors.toString())
+        assertTrue(result.validationErrors.any { it.contains("normalRange") }, result.validationErrors.toString())
+        assertTrue(result.validationErrors.any { it.contains("defaultColor") }, result.validationErrors.toString())
+        assertTrue(result.validationErrors.any { it.contains("cacheExpires") }, result.validationErrors.toString())
+        assertTrue(result.validationErrors.any { it.contains("adminContact") }, result.validationErrors.toString())
+        assertEquals(0, saveCalls)
+    }
+
+    /**
+     * bot.yml 写入入口必须覆盖端口规范和 WebUI 数字字段，防止前端绕过时保存非法启动参数。
+     */
+    @Test
+    fun `bot config writes should reject invalid port and positive runtime settings`() {
+        var saveCalls = 0
+        val currentConfig = BotConfig(
+            platform = PlatformConfig(
+                type = PlatformType.ONEBOT11,
+                adapter = "onebot11",
+                onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001),
+            ),
+        )
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { currentConfig },
+            ),
+            botConfigProvider = { currentConfig },
+            saveBotConfigAction = {
+                saveCalls += 1
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(botConfigProvider = { currentConfig }).readBotConfig().snapshotToken
+        val result = facade.saveBotConfig(
+            WebUiBotConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                platformType = "ONEBOT11",
+                adapter = "onebot11",
+                oneBot11Host = "127.0.0.1",
+                oneBot11Port = 70000,
+                oneBot11Token = "",
+                oneBot11HeartbeatInterval = -1L,
+                oneBot11ReconnectInterval = -1L,
+                oneBot11ConnectTimeout = -1L,
+                webUiPort = 70000,
+                webUiTokenTtlSeconds = -1L,
+            ),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.validationErrors.any { it.contains("oneBot11Port") }, result.validationErrors.toString())
+        assertTrue(result.validationErrors.any { it.contains("oneBot11 intervals") }, result.validationErrors.toString())
+        assertTrue(result.validationErrors.any { it.contains("webUiPort") }, result.validationErrors.toString())
+        assertTrue(result.validationErrors.any { it.contains("webUiTokenTtlSeconds") }, result.validationErrors.toString())
         assertEquals(0, saveCalls)
     }
 
