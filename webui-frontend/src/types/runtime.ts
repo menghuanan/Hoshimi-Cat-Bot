@@ -1,6 +1,119 @@
 /**
- * 运行态摘要只保留页面会直接读取的顶层字段，后续页面再按需扩展。
+ * B 站账号摘要只保留展示登录状态需要的字段，避免前端接触 Cookie。
+ */
+export type WebUiBiliAccountStatus = {
+  loggedIn?: boolean
+  uid?: number | null
+  cookieConfigured?: boolean
+}
+
+/**
+ * 平台连接摘要聚合连接状态和 transport 观测值，页面不感知具体实现。
+ */
+export type WebUiWebSocketStatus = {
+  connected?: boolean
+  reconnectAttempts?: number
+  activeSessionCount?: number
+  transports?: string[]
+  note?: string | null
+}
+
+/**
+ * 今日推送统计与后端 DTO 对齐，首页只读取计数和最后成功时间。
+ */
+export type WebUiTodayPushStats = {
+  date?: string
+  total?: number
+  dynamic?: number
+  live?: number
+  liveClose?: number
+  failed?: number
+  lastSuccessAtEpochMillis?: number | null
+}
+
+/**
+ * 最近推送记录保持扁平结构，便于首页列表直接渲染。
+ */
+export type WebUiRecentPushRecord = {
+  timestampEpochMillis?: number
+  type?: string
+  typeLabel?: string
+  success?: boolean
+  statusLabel?: string
+  summary?: string
+  target?: string | null
+}
+
+/**
+ * 资源使用率统一表达内存和存储，百分比缺失时页面使用占位。
+ */
+export type WebUiResourceUsage = {
+  usedBytes?: number
+  totalBytes?: number
+  usagePercent?: number | null
+}
+
+/**
+ * Docker 状态只表示是否检测到容器环境和证据说明。
+ */
+export type WebUiDockerRuntimeStatus = {
+  detected?: boolean
+  evidence?: string | null
+}
+
+/**
+ * 宿主运行态包含旧 WebUI 首页展示的系统指标。
+ */
+export type WebUiHostRuntimeStatus = {
+  startedAtEpochMillis?: number
+  systemTimeEpochMillis?: number
+  systemLoadAverage?: number | null
+  cpuUsagePercent?: number | null
+  memory?: WebUiResourceUsage
+  storage?: WebUiResourceUsage
+  docker?: WebUiDockerRuntimeStatus
+}
+
+/**
+ * 运行态摘要映射后端 `/api/runtime/summary` DTO，字段保持可选以兼容旧响应。
  */
 export type WebUiRuntimeSummary = {
+  lifecycleState?: string
+  uptimeSeconds?: number
   appVersion?: string
+  platformAdapterInitialized?: boolean
+  platformReady?: boolean
+  webUiEnabled?: boolean
+  restartRequestMode?: string
+  subscriptionCount?: number
+  dynamicSubscriptionCount?: number
+  bangumiSubscriptionCount?: number
+  groupCount?: number
+  account?: WebUiBiliAccountStatus
+  webSocket?: WebUiWebSocketStatus
+  todayPushStats?: WebUiTodayPushStats
+  recentPushRecords?: WebUiRecentPushRecord[]
+  host?: WebUiHostRuntimeStatus
+}
+
+/**
+ * 首页视图模型收敛页面需要的关键指标，减少组件重复拆解 DTO。
+ */
+export type WebUiDashboardRuntimeFields = {
+  appVersion: string
+  lifecycleState: string
+  uptimeSeconds: number | null
+  startedAtEpochMillis: number | null
+  systemTimeEpochMillis: number | null
+  systemLoadAverage: number | null
+  cpuUsagePercent: number | null
+  memoryUsagePercent: number | null
+  storageUsagePercent: number | null
+  dockerDetected: boolean | null
+  accountLoggedIn: boolean | null
+  accountUid: number | null
+  platformReady: boolean | null
+  webSocketConnected: boolean | null
+  todayPushTotal: number | null
+  recentPushRecordsCount: number
 }

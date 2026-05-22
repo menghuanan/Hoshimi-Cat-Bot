@@ -34,6 +34,56 @@ describe('webui domain hooks', () => {
     }))
   })
 
+  /**
+   * 首页等价字段从原始 DTO 收敛成稳定视图模型，页面不重复理解后端结构。
+   */
+  it('useRuntimeSummary should expose dashboard parity fields from the runtime payload', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {
+      lifecycleState: 'RUNNING',
+      uptimeSeconds: 3661,
+      appVersion: '2.0.0',
+      platformReady: true,
+      subscriptionCount: 8,
+      dynamicSubscriptionCount: 5,
+      bangumiSubscriptionCount: 3,
+      groupCount: 2,
+      account: {loggedIn: true, uid: 12345, cookieConfigured: true},
+      webSocket: {connected: true, reconnectAttempts: 1, activeSessionCount: 2, transports: ['onebot11'], note: 'ready'},
+      todayPushStats: {date: '2026-05-23', total: 6, dynamic: 4, live: 1, liveClose: 1, failed: 0, lastSuccessAtEpochMillis: 1_700_000_300_000},
+      recentPushRecords: [{timestampEpochMillis: 1_700_000_000_000, type: 'dynamic', typeLabel: '动态', success: true, statusLabel: '成功', summary: '测试推送', target: '群 100'}],
+      host: {
+        startedAtEpochMillis: 1_700_000_000_000,
+        systemTimeEpochMillis: 1_700_000_300_000,
+        systemLoadAverage: 0.75,
+        cpuUsagePercent: 12.5,
+        memory: {usedBytes: 1024, totalBytes: 2048, usagePercent: 50},
+        storage: {usedBytes: 4096, totalBytes: 8192, usagePercent: 50},
+        docker: {detected: true, evidence: 'container'},
+      },
+    }))
+
+    const {result} = renderHook(() => useRuntimeSummary({fetchImpl, pollIntervalMs: 100_000}))
+
+    await waitFor(() => expect(result.current.dashboard).toMatchObject({
+      appVersion: '2.0.0',
+      lifecycleState: 'RUNNING',
+      uptimeSeconds: 3661,
+      startedAtEpochMillis: 1_700_000_000_000,
+      systemTimeEpochMillis: 1_700_000_300_000,
+      systemLoadAverage: 0.75,
+      cpuUsagePercent: 12.5,
+      memoryUsagePercent: 50,
+      storageUsagePercent: 50,
+      dockerDetected: true,
+      accountLoggedIn: true,
+      accountUid: 12345,
+      platformReady: true,
+      webSocketConnected: true,
+      todayPushTotal: 6,
+      recentPushRecordsCount: 1,
+    }))
+  })
+
   it('useSettingsFiles should keep snapshot tokens and proxyUpdateMode when saving BiliConfig', async () => {
     const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import App from './App'
 
 /**
@@ -8,6 +8,19 @@ import App from './App'
 function renderAtPath(path: string) {
   window.history.pushState({}, '', path)
   return render(<App />)
+}
+
+/**
+ * 组件测试用完整运行态响应覆盖默认 mock，验证首页真正消费后端摘要字段。
+ */
+function stubRuntimeSummary(payload: Record<string, unknown>) {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/api/runtime/summary')) {
+      return {ok: true, status: 200, json: async () => payload}
+    }
+    return {ok: true, status: 200, json: async () => ({success: true})}
+  }))
 }
 
 describe('webui shell routing', () => {
@@ -42,6 +55,43 @@ describe('webui shell routing', () => {
 
     expect(screen.getByRole('dialog', {name: '修改密码'})).toBeInTheDocument()
     expect(screen.getByLabelText('当前密码')).toBeInTheDocument()
+  })
+
+  /**
+   * 首页必须展示运行、账号、平台、推送和宿主指标，避免 React 壳层只剩版本卡片。
+   */
+  it('renders dashboard runtime summary fields from the API payload', async () => {
+    stubRuntimeSummary({
+      lifecycleState: 'RUNNING',
+      uptimeSeconds: 7200,
+      appVersion: '2.0.0',
+      platformReady: true,
+      subscriptionCount: 9,
+      dynamicSubscriptionCount: 6,
+      bangumiSubscriptionCount: 3,
+      groupCount: 4,
+      account: {loggedIn: true, uid: 12345, cookieConfigured: true},
+      webSocket: {connected: true, reconnectAttempts: 0, activeSessionCount: 2, transports: ['onebot11'], note: 'ready'},
+      todayPushStats: {date: '2026-05-23', total: 7, dynamic: 5, live: 1, liveClose: 1, failed: 0, lastSuccessAtEpochMillis: 1_700_000_000_000},
+      recentPushRecords: [{timestampEpochMillis: 1_700_000_000_000, type: 'dynamic', typeLabel: '动态', success: true, statusLabel: '成功', summary: '动态更新', target: '群 100'}],
+      host: {
+        startedAtEpochMillis: 1_700_000_000_000,
+        systemTimeEpochMillis: 1_700_007_200_000,
+        systemLoadAverage: 0.5,
+        cpuUsagePercent: 12,
+        memory: {usedBytes: 1024, totalBytes: 2048, usagePercent: 50},
+        storage: {usedBytes: 2048, totalBytes: 4096, usagePercent: 50},
+        docker: {detected: true, evidence: 'container'},
+      },
+    })
+
+    renderAtPath('/')
+
+    await waitFor(() => expect(screen.getByText('2.0.0')).toBeInTheDocument())
+    expect(screen.getByText('UID 12345')).toBeInTheDocument()
+    expect(screen.getByText('已连接')).toBeInTheDocument()
+    expect(screen.getByText('7 条')).toBeInTheDocument()
+    expect(screen.getByText('动态更新')).toBeInTheDocument()
   })
 
   it('renders the login screen for the login path', () => {
