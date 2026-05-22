@@ -4,7 +4,6 @@ import top.bilibili.connector.PlatformHttpClientSnapshot
 import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.webui.model.WebUiBiliAccountStatusDto
-import top.bilibili.webui.model.WebUiDockerRuntimeStatusDto
 import top.bilibili.webui.model.WebUiHostRuntimeStatusDto
 import top.bilibili.webui.model.WebUiResourceUsageDto
 import top.bilibili.tasker.DailyPushStatsSnapshot
@@ -85,10 +84,6 @@ class WebUiRuntimeFacadeTest {
                         totalBytes = 100L * 1024L * 1024L * 1024L,
                         usagePercent = 40.0,
                     ),
-                    docker = WebUiDockerRuntimeStatusDto(
-                        detected = true,
-                        evidence = ".dockerenv",
-                    ),
                 )
             },
         )
@@ -120,8 +115,6 @@ class WebUiRuntimeFacadeTest {
         assertEquals(23.5, snapshot.host.cpuUsagePercent)
         assertEquals(37.5, snapshot.host.memory.usagePercent)
         assertEquals(40.0, snapshot.host.storage.usagePercent)
-        assertTrue(snapshot.host.docker.detected)
-        assertEquals(".dockerenv", snapshot.host.docker.evidence)
         assertEquals("SUPERVISOR_CONTROLLED", snapshot.restartRequestMode)
         assertFalse(snapshot.platformAdapterInitialized.not())
     }
@@ -205,10 +198,6 @@ class WebUiRuntimeFacadeTest {
                         totalBytes = 100L * 1024L * 1024L * 1024L,
                         usagePercent = 40.0,
                     ),
-                    docker = WebUiDockerRuntimeStatusDto(
-                        detected = true,
-                        evidence = ".dockerenv",
-                    ),
                 )
             },
         )
@@ -229,15 +218,13 @@ class WebUiRuntimeFacadeTest {
     }
 
     @Test
-    fun `host runtime collector should detect docker and clamp usage percentages`() {
+    fun `host runtime collector should clamp usage percentages`() {
         val tempRoot = Files.createTempDirectory("webui-host-runtime").toFile()
         try {
             val snapshot = readHostRuntimeStatus(
                 startedAtEpochMillisProvider = { 1779250800000L },
                 systemTimeMillisProvider = { 1779254400000L },
                 rootFileProvider = { tempRoot },
-                dockerEnvExistsProvider = { true },
-                cgroupTextProvider = { "0::/docker/abcdef" },
                 cpuLoadProvider = { 1.25 },
                 systemLoadAverageProvider = { 0.75 },
                 memoryUsageProvider = {
@@ -256,8 +243,6 @@ class WebUiRuntimeFacadeTest {
             assertNotNull(snapshot.storage.usagePercent)
             assertTrue(snapshot.storage.usagePercent!! in 0.0..100.0)
             assertEquals(100.0, snapshot.memory.usagePercent)
-            assertTrue(snapshot.docker.detected)
-            assertEquals(".dockerenv", snapshot.docker.evidence)
         } finally {
             tempRoot.deleteRecursively()
         }

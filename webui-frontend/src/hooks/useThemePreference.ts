@@ -6,7 +6,7 @@ const themePreferenceStorageKey = 'dynamic_bot_webui_theme'
 const themeClassNames = ['theme-system', 'theme-light', 'theme-dark']
 
 /**
- * 主题偏好需要同步到 html 节点和 cookie，保证刷新前后壳层表现一致。
+ * 主题模式需要同步到 html 节点和 cookie，保证刷新前后壳层表现一致。
  */
 function applyThemePreference(preference: ThemePreference) {
   document.documentElement.dataset.theme = preference
@@ -16,7 +16,7 @@ function applyThemePreference(preference: ThemePreference) {
 }
 
 /**
- * 主题偏好由前端本地状态管理，并即时写入 DOM、localStorage 和 cookie。
+ * 主题模式由前端本地状态管理，并即时写入 DOM、localStorage 和 cookie。
  */
 export function useThemePreference() {
   const [preference, setPreference] = useState<ThemePreference>(() => {

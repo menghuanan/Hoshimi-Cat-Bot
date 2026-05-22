@@ -15,15 +15,24 @@ type UseLogsOptions = WebUiJsonRequestOptions & {
  */
 function parseLogRow(raw: string): WebUiParsedLogRow {
   const match = raw.match(/^\[([A-Z]+)]\s+\[([^\]]+)]\s*(.*)$/)
-  if (!match) {
-    return {raw, level: 'PLAIN', module: 'default', message: raw}
+  if (match) {
+    return {
+      raw,
+      level: match[1],
+      module: match[2],
+      message: match[3],
+    }
   }
-  return {
-    raw,
-    level: match[1],
-    module: match[2],
-    message: match[3],
+  const timestampedMatch = raw.match(/\b(TRACE|DEBUG|INFO|WARN|ERROR)\b\s+\[([^\]]+)]\s*(.*)$/)
+  if (timestampedMatch) {
+    return {
+      raw,
+      level: timestampedMatch[1],
+      module: timestampedMatch[2],
+      message: timestampedMatch[3],
+    }
   }
+  return {raw, level: 'PLAIN', module: 'default', message: raw}
 }
 
 /**
@@ -75,10 +84,11 @@ export function useLogs(options: UseLogsOptions = {}) {
 
   const reload = useCallback(async () => {
     setLoading(true)
-    await reloadSources()
-    await reloadWindow()
+    const nextSources = await reloadSources()
+    const nextSourceId = sourceId || nextSources[0]?.id || ''
+    await reloadWindow(nextSourceId)
     setLoading(false)
-  }, [reloadSources, reloadWindow])
+  }, [reloadSources, reloadWindow, sourceId])
 
   useEffect(() => {
     // 日志初始加载异步排队，避免 effect 同步触发多段 state 更新。

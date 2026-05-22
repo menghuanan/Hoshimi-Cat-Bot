@@ -21,7 +21,7 @@ export async function listLogSources(options: WebUiJsonRequestOptions = {}): Pro
 }
 
 /**
- * 日志窗口按 sourceId 拉取固定 tail，保持与旧脚本一致的查询形态。
+ * 日志内容按 sourceId 拉取固定 tail，保持与旧脚本一致的查询形态。
  */
 export async function readLogWindow(
   sourceId: string,

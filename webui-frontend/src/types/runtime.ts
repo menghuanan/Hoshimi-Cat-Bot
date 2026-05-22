@@ -54,14 +54,6 @@ export type WebUiResourceUsage = {
 }
 
 /**
- * Docker 状态只表示是否检测到容器环境和证据说明。
- */
-export type WebUiDockerRuntimeStatus = {
-  detected?: boolean
-  evidence?: string | null
-}
-
-/**
  * 宿主运行态包含旧 WebUI 首页展示的系统指标。
  */
 export type WebUiHostRuntimeStatus = {
@@ -71,7 +63,6 @@ export type WebUiHostRuntimeStatus = {
   cpuUsagePercent?: number | null
   memory?: WebUiResourceUsage
   storage?: WebUiResourceUsage
-  docker?: WebUiDockerRuntimeStatus
 }
 
 /**
@@ -109,7 +100,8 @@ export type WebUiDashboardRuntimeFields = {
   cpuUsagePercent: number | null
   memoryUsagePercent: number | null
   storageUsagePercent: number | null
-  dockerDetected: boolean | null
+  storageUsedBytes: number | null
+  storageTotalBytes: number | null
   accountLoggedIn: boolean | null
   accountUid: number | null
   platformReady: boolean | null

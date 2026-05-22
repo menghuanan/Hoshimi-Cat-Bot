@@ -99,6 +99,6 @@ class WebUiRuleClosureVerificationTest {
         assertTrue(runtimeDtos.contains("recentPushRecords"))
         assertTrue(runtimeDtos.contains("webSocket"))
         assertTrue(runtimeDtos.contains("WebUiHostRuntimeStatusDto"))
-        assertTrue(runtimeDtos.contains("WebUiDockerRuntimeStatusDto"))
+        assertFalse(runtimeDtos.contains("WebUiDockerRuntimeStatusDto"))
     }
 }

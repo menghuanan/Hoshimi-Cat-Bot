@@ -141,7 +141,7 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(reactSource.contains("运行概览"))
         assertTrue(reactSource.contains("系统配置"))
         assertTrue(reactSource.contains("订阅管理"))
-        assertTrue(reactSource.contains("日志窗口"))
+        assertTrue(reactSource.contains("日志"))
         assertTrue(reactSource.contains("管理员菜单"))
         assertTrue(reactSource.contains("修改密码"))
         assertTrue(reactSource.contains("requestHighRiskConfirmation"))

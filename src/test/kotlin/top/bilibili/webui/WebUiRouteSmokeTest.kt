@@ -40,7 +40,6 @@ import top.bilibili.webui.model.WebUiActionResultDto
 import top.bilibili.webui.service.WebUiAuditRecord
 import top.bilibili.webui.model.WebUiAuthResponseDto
 import top.bilibili.webui.model.WebUiBiliAccountStatusDto
-import top.bilibili.webui.model.WebUiDockerRuntimeStatusDto
 import top.bilibili.webui.model.WebUiHostRuntimeStatusDto
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiConfigFileDto
@@ -228,7 +227,6 @@ class WebUiRouteSmokeTest {
         assertEquals(55.0, runtimeBody.host.cpuUsagePercent)
         assertEquals(50.0, runtimeBody.host.memory.usagePercent)
         assertEquals(25.0, runtimeBody.host.storage.usagePercent)
-        assertEquals(true, runtimeBody.host.docker.detected)
         assertEquals(2, runtimeBody.recentPushRecords.size)
         assertEquals("直播", runtimeBody.recentPushRecords.first().typeLabel)
         assertEquals("已发送", runtimeBody.recentPushRecords.first().statusLabel)
@@ -886,10 +884,6 @@ class WebUiRouteSmokeTest {
                         usedBytes = 256L,
                         totalBytes = 1024L,
                         usagePercent = 25.0,
-                    ),
-                    docker = WebUiDockerRuntimeStatusDto(
-                        detected = true,
-                        evidence = ".dockerenv",
                     ),
                 )
             },

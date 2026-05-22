@@ -41,12 +41,10 @@ export const webuiParityChecklist: WebUiParityGroup[] = [
       'system-time',
       'system-load',
       'cpu-memory-storage',
-      'docker-status',
       'bili-account-summary',
       'platform-connection-summary',
       'daily-push-count',
       'recent-push-records',
-      'dashboard-shortcuts',
     ],
   },
   {
@@ -68,7 +66,6 @@ export const webuiParityChecklist: WebUiParityGroup[] = [
   {
     id: 'subscriptions',
     items: [
-      'subscription-type-filter',
       'subscription-search',
       'create-delete-confirmation',
       'dynamic-bangumi-group-modes',

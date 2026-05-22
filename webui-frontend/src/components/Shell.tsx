@@ -109,20 +109,19 @@ export function Shell({page, onNavigate, children}: ShellProps) {
         <div className="flex min-w-0 flex-col">
           <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur max-sm:flex-col max-sm:items-stretch max-sm:px-4">
             <div className="min-w-0">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">WebUI</p>
               <h2 className="text-lg font-semibold text-slate-950">{pageLabel(page)}</h2>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-3 max-sm:w-full">
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700 max-sm:w-full">
-                <span>主题偏好</span>
+                <span>主题模式</span>
                 <select
                   value={preference}
                   onChange={(event) => setPreference(event.target.value as 'system' | 'light' | 'dark')}
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
                 >
+                  <option value="light">亮色</option>
+                  <option value="dark">暗色</option>
                   <option value="system">跟随系统</option>
-                  <option value="light">浅色</option>
-                  <option value="dark">深色</option>
                 </select>
               </label>
               <div className="relative max-sm:w-full">

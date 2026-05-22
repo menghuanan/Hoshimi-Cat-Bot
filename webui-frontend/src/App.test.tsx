@@ -115,6 +115,12 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('代理地址')).toHaveValue('')
     expect(screen.queryByDisplayValue('SECRET_COOKIE')).not.toBeInTheDocument()
     expect(screen.queryByDisplayValue('http://secret-proxy')).not.toBeInTheDocument()
+    expect(screen.queryByText('BiliConfig 快照')).not.toBeInTheDocument()
+    expect(screen.queryByText('bot.yml 快照')).not.toBeInTheDocument()
+    expect(screen.queryByText('敏感输入')).not.toBeInTheDocument()
+    expect(screen.queryByText(/仅填写需要替换的敏感值/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/当前分区包含需要重启后生效的配置/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/写入专用/)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', {name: '对接配置'}))
     expect(await screen.findByLabelText('OneBot11 Token')).toHaveValue('')
@@ -125,8 +131,13 @@ describe('webui shell routing', () => {
     renderAtPath('/')
 
     expect(screen.getByText('运行概览')).toBeInTheDocument()
-    expect(screen.getByText('配置入口')).toBeInTheDocument()
-    expect(screen.getByText('日志窗口')).toBeInTheDocument()
+    expect(screen.queryByText('配置入口')).not.toBeInTheDocument()
+    expect(screen.queryByText('日志窗口')).not.toBeInTheDocument()
+    expect(screen.queryByText('最近推送')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '打开配置'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '打开订阅'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '查看日志'})).not.toBeInTheDocument()
+    expect(screen.queryByText(/实时摘要由/)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', {name: '管理员菜单'}))
     fireEvent.click(screen.getByRole('button', {name: '修改密码'}))
@@ -157,9 +168,8 @@ describe('webui shell routing', () => {
         systemTimeEpochMillis: 1_700_007_200_000,
         systemLoadAverage: 0.5,
         cpuUsagePercent: 12,
-        memory: {usedBytes: 1024, totalBytes: 2048, usagePercent: 50},
-        storage: {usedBytes: 2048, totalBytes: 4096, usagePercent: 50},
-        docker: {detected: true, evidence: 'container'},
+        memory: {usedBytes: 130 * 1024 ** 3, totalBytes: 256 * 1024 ** 3, usagePercent: 51},
+        storage: {usedBytes: 120 * 1024 ** 3, totalBytes: 256 * 1024 ** 3, usagePercent: 50},
       },
     })
 
@@ -170,6 +180,8 @@ describe('webui shell routing', () => {
     expect(screen.getByText('已连接')).toBeInTheDocument()
     expect(screen.getByText('7 条')).toBeInTheDocument()
     expect(screen.getByText('动态更新')).toBeInTheDocument()
+    expect(screen.getByText('120G/256G')).toBeInTheDocument()
+    expect(screen.queryByText('50%')).not.toBeInTheDocument()
   })
 
   /**
@@ -185,9 +197,8 @@ describe('webui shell routing', () => {
     expect(screen.getByText('CPU')).toBeInTheDocument()
     expect(screen.getByText('内存')).toBeInTheDocument()
     expect(screen.getByText('存储')).toBeInTheDocument()
-    expect(screen.getByText('Docker')).toBeInTheDocument()
+    expect(screen.queryByText('Docker')).not.toBeInTheDocument()
     expect(screen.getByText('今日推送')).toBeInTheDocument()
-    expect(screen.getByText('最近推送')).toBeInTheDocument()
   })
 
   it('renders the login screen for the login path', () => {
@@ -204,11 +215,15 @@ describe('webui shell routing', () => {
   it('renders log filtering, auto-refresh, export, and clear controls', async () => {
     renderAtPath('/#logs')
 
+    expect(screen.queryByText('来源数量')).not.toBeInTheDocument()
+    expect(screen.queryByText('当前来源')).not.toBeInTheDocument()
+    expect(screen.queryByText('日志行数')).not.toBeInTheDocument()
     expect(await screen.findByLabelText('日志来源')).toBeInTheDocument()
     expect(screen.getByLabelText('级别')).toBeInTheDocument()
     expect(screen.getByLabelText('模块')).toBeInTheDocument()
-    expect(screen.getByLabelText('关键词')).toBeInTheDocument()
+    expect(screen.getByLabelText('搜索')).toBeInTheDocument()
     expect(screen.getByLabelText('自动刷新')).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '刷新'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '导出'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '清空'})).toBeInTheDocument()
   })
@@ -264,10 +279,11 @@ describe('webui shell routing', () => {
     renderAtPath('/#subscriptions')
 
     expect(await screen.findByText('测试订阅')).toBeInTheDocument()
-    expect(screen.getByRole('button', {name: '全部'})).toBeInTheDocument()
-    expect(screen.getByRole('button', {name: '动态'})).toBeInTheDocument()
-    expect(screen.getByRole('button', {name: '番剧'})).toBeInTheDocument()
-    expect(screen.getByRole('button', {name: '分组'})).toBeInTheDocument()
+    expect(screen.queryByText('全部订阅')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '全部'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '动态'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '番剧'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '分组'})).not.toBeInTheDocument()
     expect(screen.getByLabelText('搜索订阅')).toBeInTheDocument()
     expect(screen.getByText('过滤器信息')).toBeInTheDocument()
     expect(screen.getByText('模板信息')).toBeInTheDocument()
@@ -311,8 +327,10 @@ describe('webui shell routing', () => {
 
     renderAtPath('/')
 
-    await user.selectOptions(screen.getByLabelText('主题偏好'), 'dark')
+    await user.selectOptions(screen.getByLabelText('主题模式'), 'dark')
     expect(document.documentElement.classList.contains('theme-dark')).toBe(true)
+    expect(screen.getByRole('option', {name: '亮色'})).toBeInTheDocument()
+    expect(screen.getByRole('option', {name: '暗色'})).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '管理员菜单'}))
     expect(screen.getByRole('menu')).toBeInTheDocument()

@@ -1,19 +1,10 @@
 import { useMemo, useState } from 'react'
 import { PageSection } from '../components/PageSection'
-import { StatusCard } from '../components/StatusCard'
 import { SubscriptionEditorModal } from '../components/subscriptions/SubscriptionEditorModal'
 import { SubscriptionModal } from '../components/subscriptions/SubscriptionModal'
 import { useSubscriptions } from '../hooks/useSubscriptions'
 
-type SubscriptionTypeFilter = 'all' | 'dynamic' | 'bangumi' | 'group'
 type SubscriptionItem = Record<string, unknown>
-
-const subscriptionTypeLabels: Array<{id: SubscriptionTypeFilter, label: string}> = [
-  {id: 'all', label: '全部'},
-  {id: 'dynamic', label: '动态'},
-  {id: 'bangumi', label: '番剧'},
-  {id: 'group', label: '分组'},
-]
 
 /**
  * 订阅页提供类型筛选、搜索、新增、删除和四类嵌套编辑器入口。
@@ -22,7 +13,6 @@ export function SubscriptionsPage() {
   const subscriptionActions = useSubscriptions()
   const {items, loading, saveSubscription, removeSubscription, reload} = subscriptionActions
   const [query, setQuery] = useState('')
-  const [typeFilter, setTypeFilter] = useState<SubscriptionTypeFilter>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<SubscriptionItem | null>(null)
   const [pending, setPending] = useState(false)
@@ -32,11 +22,10 @@ export function SubscriptionsPage() {
   const filteredItems = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     return subscriptionItems.filter((item) => {
-      const matchesType = typeFilter === 'all' || readItemField(item, 'kind') === typeFilter
       const matchesKeyword = !keyword || searchableSubscriptionText(item).toLowerCase().includes(keyword)
-      return matchesType && matchesKeyword
+      return matchesKeyword
     })
-  }, [query, subscriptionItems, typeFilter])
+  }, [query, subscriptionItems])
 
   /**
    * 新增订阅提交后刷新列表，确认密码由 hook 统一弹窗获取。
@@ -85,16 +74,11 @@ export function SubscriptionsPage() {
         description="管理动态、番剧和分组订阅，并编辑过滤器、模板、at全体和主题色。"
         actions={<button type="button" onClick={() => setCreateOpen(true)} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增订阅</button>}
       >
-        <div className="grid gap-4 md:grid-cols-4">
-          <StatusCard label="全部订阅" value={loading ? '--' : subscriptionItems.length} tone="emerald" />
-          <StatusCard label="动态" value={countByKind(subscriptionItems, 'dynamic')} tone="sky" />
-          <StatusCard label="番剧" value={countByKind(subscriptionItems, 'bangumi')} tone="amber" />
-          <StatusCard label="分组" value={countByKind(subscriptionItems, 'group')} tone="rose" />
-        </div>
+        {loading ? <p className="text-sm text-slate-500">正在加载</p> : null}
       </PageSection>
 
       <PageSection
-        title="订阅列表"
+        title="订阅"
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             <label className="sr-only" htmlFor="subscription-search">搜索订阅</label>
@@ -109,21 +93,6 @@ export function SubscriptionsPage() {
           </div>
         )}
       >
-        <div className="flex flex-wrap gap-2">
-          {subscriptionTypeLabels.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              aria-pressed={typeFilter === filter.id}
-              onClick={() => setTypeFilter(filter.id)}
-              className={typeFilter === filter.id
-                ? 'rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white'
-                : 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50'}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
         <div className="grid gap-3 xl:grid-cols-2">
           {filteredItems.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">没有匹配的订阅</div>
@@ -214,13 +183,6 @@ function searchableSubscriptionText(item: SubscriptionItem): string {
     readItemField(item, 'themeColor'),
     JSON.stringify(item),
   ].join(' ')
-}
-
-/**
- * 类型计数优先使用当前列表，避免后端缺少聚合字段时顶部卡片为空。
- */
-function countByKind(items: SubscriptionItem[], kind: string): number {
-  return items.filter((item) => readItemField(item, 'kind') === kind).length
 }
 
 /**

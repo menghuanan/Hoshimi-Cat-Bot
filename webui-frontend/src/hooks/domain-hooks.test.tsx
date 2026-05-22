@@ -58,7 +58,6 @@ describe('webui domain hooks', () => {
         cpuUsagePercent: 12.5,
         memory: {usedBytes: 1024, totalBytes: 2048, usagePercent: 50},
         storage: {usedBytes: 4096, totalBytes: 8192, usagePercent: 50},
-        docker: {detected: true, evidence: 'container'},
       },
     }))
 
@@ -74,7 +73,8 @@ describe('webui domain hooks', () => {
       cpuUsagePercent: 12.5,
       memoryUsagePercent: 50,
       storageUsagePercent: 50,
-      dockerDetected: true,
+      storageUsedBytes: 4096,
+      storageTotalBytes: 8192,
       accountLoggedIn: true,
       accountUid: 12345,
       platformReady: true,
@@ -293,6 +293,30 @@ describe('webui domain hooks', () => {
 
     await waitFor(() => expect(result.current.filteredRows.map((row) => row.raw)).toEqual(['[WARN] [push] push slow']))
     expect(result.current.exportFilteredRows()).toContain('[WARN] [push] push slow')
+  })
+
+  /**
+   * 日志初次加载必须用来源接口返回的第一个 sourceId 读取窗口，不能等用户手动切换。
+   */
+  it('useLogs should load the first source window during initial reload', async () => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/logs/sources')) {
+        return Promise.resolve(createJsonResponse(200, {sources: [{id: 'app'}, {id: 'error'}]}))
+      }
+      if (url.includes('/api/logs/app?tail=500')) {
+        return Promise.resolve(createJsonResponse(200, {text: '2026-05-23 INFO [core] boot ok'}))
+      }
+      return Promise.resolve(createJsonResponse(200, {}))
+    })
+
+    const {result} = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+      result: {current: ReturnType<typeof useLogs>}
+    }
+
+    await waitFor(() => expect(result.current.sourceId).toBe('app'))
+    await waitFor(() => expect(result.current.filteredRows.map((row) => row.raw)).toEqual(['2026-05-23 INFO [core] boot ok']))
+    expect(fetchImpl).toHaveBeenCalledWith('/api/logs/app?tail=500', expect.any(Object))
   })
 
   it('useThemePreference should persist the selected preference locally', () => {
