@@ -15,16 +15,16 @@ class WebUiRuleClosureVerificationTest {
 
     /**
      * WebUI 脚本入口已拆成加载器与功能脚本，闭环控件断言需要读取真实功能脚本集合。
+     * 删除 plain runtime 后，闭环检查读取 React 源码集合。
      */
-    private fun readWebUiScriptBundle(): String {
-        val entry = read("src/main/resources/webui/assets/app.js")
-        val scriptPaths = Regex(""""(/assets/scripts/[^"]+)"""")
-            .findAll(entry)
-            .map { match -> "src/main/resources/webui${match.groupValues[1]}" }
-            .toList()
-        return buildString {
-            appendLine(entry)
-            scriptPaths.forEach { path -> appendLine(read(path)) }
+    private fun readReactSourceBundle(): String {
+        return Files.walk(Path.of("webui-frontend/src")).use { paths ->
+            paths
+                .filter { path -> Files.isRegularFile(path) }
+                .filter { path -> path.toString().endsWith(".ts") || path.toString().endsWith(".tsx") }
+                .map { path -> read(path.toString()) }
+                .toList()
+                .joinToString("\n")
         }
     }
 
@@ -44,6 +44,7 @@ class WebUiRuleClosureVerificationTest {
         assertTrue(apiRoutes.contains("/api/config/bili-config"))
         assertTrue(apiRoutes.contains("/api/config/bili-data"))
         assertTrue(apiRoutes.contains("/api/config/bot"))
+        assertTrue(apiRoutes.contains("/api/subscriptions"))
         assertTrue(logRoutes.contains("/api/logs/sources"))
         assertTrue(actionRoutes.contains("/api/actions/reload-config"))
         assertTrue(actionRoutes.contains("/api/actions/shutdown"))
@@ -55,43 +56,29 @@ class WebUiRuleClosureVerificationTest {
      */
     @Test
     fun `frontend shell should keep closure controls visible`() {
-        val shellPage = read("src/main/resources/webui/index.html")
-        val shellScript = readWebUiScriptBundle()
+        val reactSource = readReactSourceBundle()
+        val reactShell = read("src/main/resources/webui/react/index.html")
 
-        assertTrue(shellPage.contains("data-nav-target=\"home\""))
-        assertTrue(shellPage.contains("data-nav-target=\"settings\""))
-        assertTrue(shellPage.contains("data-nav-target=\"subscriptions\""))
-        assertTrue(shellPage.contains("data-nav-target=\"logs\""))
-        assertTrue(shellPage.contains("class=\"metric-grid\""))
-        assertTrue(shellPage.contains("config-grid"))
-        assertTrue(shellPage.contains("class=\"subscription-grid\""))
-        assertTrue(shellPage.contains("class=\"log-list\""))
-        assertTrue(shellPage.contains("""data-runtime-list="recentPushRecords""""))
-        assertFalse(shellPage.contains("查看全部"))
-        assertFalse(shellPage.contains("data-nav-target=\"features\""))
-        assertFalse(shellPage.contains("page-features"))
-        assertFalse(shellPage.contains("feature-grid"))
-        assertTrue(shellPage.contains("data-runtime-field=\"startedAt\""))
-        assertTrue(shellPage.contains("data-runtime-field=\"runtimeDuration\""))
-        assertTrue(shellPage.contains("data-runtime-field=\"systemTime\""))
-        assertTrue(shellPage.contains("data-runtime-field=\"systemLoad\""))
-        assertTrue(shellPage.contains("data-runtime-field=\"cpuUsage\""))
-        assertTrue(shellPage.contains("data-runtime-field=\"memoryUsage\""))
-        assertTrue(shellPage.contains("data-runtime-field=\"storageUsage\""))
-        assertTrue(shellPage.contains("data-runtime-field=\"dockerStatus\""))
-        assertTrue(shellScript.contains("activateView("))
-        assertTrue(shellScript.contains("views.has(viewName)"))
-        assertTrue(shellScript.contains("/api/runtime/summary"))
-        assertTrue(shellScript.contains("/api/config/bili-config"))
-        assertTrue(shellScript.contains("/api/config/bot"))
-        assertTrue(shellScript.contains("settingsState"))
-        assertTrue(shellScript.contains("saveSettingsSection"))
-        assertTrue(shellScript.contains("buildBiliConfigSettingsPayload"))
-        assertTrue(shellScript.contains("buildBotConfigSettingsPayload"))
-        assertTrue(shellScript.contains("settingsSectionFileKeys"))
-        assertTrue(shellScript.contains("data-runtime-field"))
-        assertTrue(shellScript.contains("renderHostRuntimeStatus"))
-        assertTrue(shellScript.contains("renderRecentPushRecords"))
+        assertTrue(reactShell.contains("""id="root""""))
+        assertTrue(reactSource.contains("data-nav-target={target}"))
+        assertTrue(reactSource.contains("['home', '首页']"))
+        assertTrue(reactSource.contains("['settings', '系统配置']"))
+        assertTrue(reactSource.contains("['subscriptions', '订阅管理']"))
+        assertTrue(reactSource.contains("['logs', '日志']"))
+        assertTrue(reactSource.contains("/api/runtime/summary"))
+        assertTrue(reactSource.contains("/api/config/bili-config"))
+        assertTrue(reactSource.contains("/api/config/bot"))
+        assertTrue(reactSource.contains("settingsCategories"))
+        assertTrue(reactSource.contains("saveActiveCategory"))
+        assertTrue(reactSource.contains("buildBiliConfigSavePayload"))
+        assertTrue(reactSource.contains("buildBotConfigSavePayload"))
+        assertTrue(reactSource.contains("recentPushRecords"))
+        assertTrue(reactSource.contains("DashboardPage"))
+        assertTrue(reactSource.contains("SubscriptionsPage"))
+        assertTrue(reactSource.contains("LogsPage"))
+        assertFalse(Files.exists(Path.of("src/main/resources/webui/index.html")))
+        assertFalse(Files.exists(Path.of("src/main/resources/webui/login.html")))
+        assertFalse(Files.exists(Path.of("src/main/resources/webui/assets")))
     }
 
     /**
