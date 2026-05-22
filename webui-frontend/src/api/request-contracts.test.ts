@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildAuthHeaders, requestJson } from './http'
 import { applyAuthSession, applyLoginResult, loginWithPassword, restoreSession } from './auth'
 import { buildBiliConfigSavePayload, buildBotConfigSavePayload } from './settings'
-import { buildSubscriptionCreatePayload, buildSubscriptionDeletePayload } from './subscriptions'
+import {
+  buildSubscriptionCreatePayload,
+  buildSubscriptionDeletePayload,
+  listSubscriptionFilters,
+  saveSubscriptionFilter,
+  setSubscriptionTemplateRandom,
+} from './subscriptions'
 import { buildLogClearPayload } from './logs'
 import { fetchRuntimeSummary } from './runtime'
 
@@ -171,6 +177,47 @@ describe('webui api contracts', () => {
       confirmationPassword: 'pw-delete',
       itemId: 'item-1',
     })
+  })
+
+  it('subscription nested config requests should target existing backend routes', async () => {
+    const storage = createStorage('subscription-token')
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {success: true}))
+
+    await listSubscriptionFilters('item/1', {storage, fetchImpl})
+    await saveSubscriptionFilter('item/1', {
+      key: 'filter-1',
+      kind: 'regex',
+      mode: 'black',
+      content: '广告',
+      confirmationPassword: 'pw-filter',
+    }, {storage, fetchImpl})
+    await setSubscriptionTemplateRandom('item/1', true, 'pw-random', {storage, fetchImpl})
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/subscriptions/item%2F1/filters', expect.objectContaining({
+      method: 'GET',
+      body: undefined,
+    }))
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, '/api/subscriptions/item%2F1/filters', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer subscription-token',
+        'Content-Type': 'application/json',
+      }),
+      body: JSON.stringify({
+        key: 'filter-1',
+        kind: 'regex',
+        mode: 'black',
+        content: '广告',
+        confirmationPassword: 'pw-filter',
+      }),
+    }))
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, '/api/subscriptions/item%2F1/templates/random', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: true,
+        confirmationPassword: 'pw-random',
+      }),
+    }))
   })
 
   it('log clear payload should keep confirmation password', () => {

@@ -1,53 +1,31 @@
 import { requestJson, type WebUiJsonRequestOptions } from './http'
-import type { WebUiSubscriptionWritePayload } from '../types/subscriptions'
+import {
+  buildSubscriptionEditorUrl,
+  buildSubscriptionTemplateRandomUrl,
+} from '../subscriptions/subscriptionEditors'
+import {
+  buildSubscriptionAtAllPayload,
+  buildSubscriptionConfigDeletePayload,
+  buildSubscriptionCreatePayload,
+  buildSubscriptionDeletePayload,
+  buildSubscriptionFilterPayload,
+  buildSubscriptionRandomTemplatePayload,
+  buildSubscriptionTemplatePayload,
+  buildSubscriptionThemePayload,
+  type SubscriptionAtAllPayload,
+  type SubscriptionFilterPayload,
+  type SubscriptionTemplatePayload,
+} from '../subscriptions/subscriptionPayloads'
 
-/**
- * 订阅新增接口按当前类型拼装 payload，确认密码始终随请求一并提交。
- */
-export function buildSubscriptionCreatePayload(input: {
-  type: string
-  uid?: string
-  targetGroup?: string
-  bangumiId?: string
-  groupName?: string
-  groupUid?: string
-  groupTarget?: string
-  bangumiTarget?: string
-  confirmationPassword: string
-}): Record<string, unknown> {
-  if (input.type === 'group') {
-    return {
-      type: input.type,
-      groupName: input.groupName || '',
-      uid: input.groupUid || input.uid || '',
-      targetGroup: input.groupTarget || input.targetGroup || '',
-      confirmationPassword: input.confirmationPassword,
-    }
-  }
-  if (input.type === 'bangumi') {
-    return {
-      type: input.type,
-      bangumiId: input.bangumiId || '',
-      targetGroup: input.bangumiTarget || input.targetGroup || '',
-      confirmationPassword: input.confirmationPassword,
-    }
-  }
-  return {
-    type: input.type,
-    uid: input.uid || '',
-    targetGroup: input.targetGroup || '',
-    confirmationPassword: input.confirmationPassword,
-  }
-}
-
-/**
- * 删除订阅只需要 itemId 和确认密码，后端再决定具体删除哪条写入记录。
- */
-export function buildSubscriptionDeletePayload(itemId: string, confirmationPassword: string): WebUiSubscriptionWritePayload & {itemId: string} {
-  return {
-    itemId,
-    confirmationPassword,
-  }
+export {
+  buildSubscriptionAtAllPayload,
+  buildSubscriptionConfigDeletePayload,
+  buildSubscriptionCreatePayload,
+  buildSubscriptionDeletePayload,
+  buildSubscriptionFilterPayload,
+  buildSubscriptionRandomTemplatePayload,
+  buildSubscriptionTemplatePayload,
+  buildSubscriptionThemePayload,
 }
 
 /**
@@ -90,6 +68,207 @@ export async function deleteSubscription(
     ...options,
     method: 'DELETE',
     body: buildSubscriptionDeletePayload(itemId, confirmationPassword),
+    includeJson: true,
+    authenticated: true,
+  })
+}
+
+/**
+ * 过滤器列表读取沿用后端只读端点，GET 请求不附带 JSON body。
+ */
+export async function listSubscriptionFilters(
+  itemId: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'filters'), {
+    ...options,
+    method: 'GET',
+    authenticated: true,
+    includeJson: false,
+  })
+}
+
+/**
+ * 过滤器保存通过统一 payload builder 写入，确保确认密码不会被调用方遗漏。
+ */
+export async function saveSubscriptionFilter(
+  itemId: string,
+  payload: SubscriptionFilterPayload,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'filters'), {
+    ...options,
+    method: 'POST',
+    body: buildSubscriptionFilterPayload(payload),
+    includeJson: true,
+    authenticated: true,
+  })
+}
+
+/**
+ * 过滤器删除把 key 放在路径中，body 只承载高风险确认密码。
+ */
+export async function deleteSubscriptionFilter(
+  itemId: string,
+  key: string,
+  confirmationPassword: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'filters', key), {
+    ...options,
+    method: 'DELETE',
+    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
+    includeJson: true,
+    authenticated: true,
+  })
+}
+
+/**
+ * 模板列表读取包含模板数组和随机模板开关状态。
+ */
+export async function listSubscriptionTemplates(
+  itemId: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'templates'), {
+    ...options,
+    method: 'GET',
+    authenticated: true,
+    includeJson: false,
+  })
+}
+
+/**
+ * 模板保存 payload 保持 key/type/name/content 与后端 DTO 对齐。
+ */
+export async function saveSubscriptionTemplate(
+  itemId: string,
+  payload: SubscriptionTemplatePayload,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'templates'), {
+    ...options,
+    method: 'POST',
+    body: buildSubscriptionTemplatePayload(payload),
+    includeJson: true,
+    authenticated: true,
+  })
+}
+
+/**
+ * 模板删除复用统一嵌套配置删除 body，避免泄漏额外业务字段。
+ */
+export async function deleteSubscriptionTemplate(
+  itemId: string,
+  key: string,
+  confirmationPassword: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'templates', key), {
+    ...options,
+    method: 'DELETE',
+    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
+    includeJson: true,
+    authenticated: true,
+  })
+}
+
+/**
+ * 随机模板开关写入独立端点，避免页面层直接拼接 `/random` 后缀。
+ */
+export async function setSubscriptionTemplateRandom(
+  itemId: string,
+  enabled: boolean,
+  confirmationPassword: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionTemplateRandomUrl(itemId), {
+    ...options,
+    method: 'POST',
+    body: buildSubscriptionRandomTemplatePayload(enabled, confirmationPassword),
+    includeJson: true,
+    authenticated: true,
+  })
+}
+
+/**
+ * @全体列表读取当前订阅可编辑的聚合记录。
+ */
+export async function listSubscriptionAtAll(
+  itemId: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'atall'), {
+    ...options,
+    method: 'GET',
+    authenticated: true,
+    includeJson: false,
+  })
+}
+
+/**
+ * @全体保存提交类型和目标群聊，确认密码仍由调用方确认后传入。
+ */
+export async function saveSubscriptionAtAll(
+  itemId: string,
+  payload: SubscriptionAtAllPayload,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'atall'), {
+    ...options,
+    method: 'POST',
+    body: buildSubscriptionAtAllPayload(payload),
+    includeJson: true,
+    authenticated: true,
+  })
+}
+
+/**
+ * @全体删除按聚合 key 定位，body 保持高风险确认最小形状。
+ */
+export async function deleteSubscriptionAtAll(
+  itemId: string,
+  key: string,
+  confirmationPassword: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'atall', key), {
+    ...options,
+    method: 'DELETE',
+    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
+    includeJson: true,
+    authenticated: true,
+  })
+}
+
+/**
+ * 主题色读取只返回当前颜色，页面决定如何展示空值。
+ */
+export async function readSubscriptionTheme(
+  itemId: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'theme'), {
+    ...options,
+    method: 'GET',
+    authenticated: true,
+    includeJson: false,
+  })
+}
+
+/**
+ * 主题色保存使用单独 builder，保持颜色字段名与后端 DTO 一致。
+ */
+export async function saveSubscriptionTheme(
+  itemId: string,
+  color: string,
+  confirmationPassword: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'theme'), {
+    ...options,
+    method: 'POST',
+    body: buildSubscriptionThemePayload(color, confirmationPassword),
     includeJson: true,
     authenticated: true,
   })
