@@ -130,7 +130,7 @@ class WebUiConfigWriteFacade(
                 expires = cacheExpiresFrom(request.cacheExpires, current.cacheConfig.expires),
             ),
             proxyConfig = ProxyConfig(
-                proxy = request.proxies.map { it.trim() }.filter { it.isNotBlank() },
+                proxy = resolveProxyList(current.proxyConfig.proxy, request),
             ),
             translateConfig = current.translateConfig.copy(
                 cutLine = request.cutLine,
@@ -365,7 +365,25 @@ class WebUiConfigWriteFacade(
         if (request.cacheExpires.values.any { value -> value <= 0 }) {
             errors += "cacheExpires contains invalid expire days"
         }
+        if (request.proxyUpdateMode.trim().lowercase() !in setOf("preserve", "replace", "clear")) {
+            errors += "proxyUpdateMode is invalid"
+        }
         return errors
+    }
+
+    /**
+     * 代理列表按 write-only 语义保存，避免把脱敏展示值或未编辑的空列表覆盖到配置文件。
+     */
+    private fun resolveProxyList(
+        currentProxies: List<String>,
+        request: WebUiBiliConfigWriteRequestDto,
+    ): List<String> {
+        val normalizedSubmitted = request.proxies.map { it.trim() }.filter { it.isNotBlank() }
+        return when (request.proxyUpdateMode.trim().lowercase()) {
+            "replace" -> normalizedSubmitted
+            "clear" -> emptyList()
+            else -> if (normalizedSubmitted.isNotEmpty()) normalizedSubmitted else currentProxies
+        }
     }
 
     /**

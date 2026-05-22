@@ -259,6 +259,45 @@ class WebUiConfigWriteFacadeTest {
     }
 
     /**
+     * 代理地址是 write-only 敏感列表；局部保存未明确提交新代理时必须保留 owner 当前值。
+     */
+    @Test
+    fun `bili config writes should preserve existing proxies when replacement is omitted`() {
+        var currentConfig = BiliConfig(
+            adminContact = "onebot11:private:1",
+            proxyConfig = ProxyConfig(
+                proxy = listOf("http://user:password@proxy.local:8080"),
+            ),
+        )
+        var savedBiliConfig: BiliConfig? = null
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { currentConfig },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { BotConfig() },
+            ),
+            biliConfigProvider = { currentConfig },
+            saveBiliConfigAction = { configToSave ->
+                savedBiliConfig = configToSave
+                currentConfig = configToSave
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliConfigProvider = { currentConfig }).readBiliConfig().snapshotToken
+        val result = facade.saveBiliConfig(
+            WebUiBiliConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                adminContact = "onebot11:private:2",
+                proxies = emptyList(),
+            ),
+        )
+
+        assertTrue(result.success)
+        assertEquals(listOf("http://user:password@proxy.local:8080"), savedBiliConfig?.proxyConfig?.proxy)
+    }
+
+    /**
      * BiliData 写入失败时，WebUI 不应先污染全局单例内存态，再返回失败结果。
      */
     @Test

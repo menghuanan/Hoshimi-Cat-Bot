@@ -109,6 +109,26 @@ class WebUiAuditService(
     }
 
     /**
+     * 非动作 facade 的高风险写操作也按 risky-action 审计，但只记录语义目标和结果。
+     */
+    fun recordRiskyEvent(
+        action: String,
+        success: Boolean,
+        outcome: String,
+        detailSummary: String,
+    ) {
+        sink(
+            WebUiAuditRecord(
+                eventType = "risky-action",
+                target = action,
+                success = success,
+                outcome = outcome,
+                detailSummary = sanitizeDetailSummary(detailSummary),
+            ),
+        )
+    }
+
+    /**
      * 常见 secret 键统一替换为 `<redacted>`，避免参数串或描述文本被原样写入日志。
      */
     private fun sanitizeDetailSummary(detailSummary: String): String {

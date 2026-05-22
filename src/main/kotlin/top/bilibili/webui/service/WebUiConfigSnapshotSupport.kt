@@ -11,7 +11,6 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import top.bilibili.BiliConfig
 import top.bilibili.BiliData
-import top.bilibili.BiliDataWrapper
 import top.bilibili.config.BotConfig
 import top.bilibili.webui.model.WebUiConfigFieldDto
 import top.bilibili.webui.model.WebUiFieldCapability
@@ -46,17 +45,17 @@ internal fun buildBiliConfigSnapshot(config: BiliConfig): WebUiConfigSnapshot {
 }
 
 /**
- * `BiliData.yml` 的快照通过 wrapper 展开当前持久化结构，包含模板策略和业务数据的完整只读视图。
+ * `BiliData.yml` 的快照只暴露 WebUI 可编辑或可统计的语义字段，避免把运行态时间戳和兼容字段当配置返回。
  */
 internal fun buildBiliDataSnapshot(data: BiliData): WebUiConfigSnapshot {
-    val snapshot = buildSnapshot(
-        root = BiliDataWrapper.from(data),
-        serializer = BiliDataWrapper.serializer(),
-        capabilityResolver = ::biliDataCapability,
-    )
-    val rawSnapshot = LinkedHashMap(snapshot.rawSnapshot)
+    val rawSnapshot = LinkedHashMap<String, String>()
+    rawSnapshot["dataVersion"] = data.dataVersion.toString()
     rawSnapshot["dynamic.count"] = data.dynamic.size.toString()
     rawSnapshot["group.count"] = data.group.size.toString()
+    rawSnapshot["bangumi.count"] = data.bangumi.size.toString()
+    rawSnapshot["linkParseBlacklistContacts"] = data.linkParseBlacklistContacts
+        .sorted()
+        .joinToString("\n")
     val fields = rawSnapshot.entries.map { (key, value) ->
         val capability = biliDataCapability(key)
         WebUiConfigFieldDto(
@@ -78,6 +77,7 @@ internal fun buildBotConfigSnapshot(config: BotConfig): WebUiConfigSnapshot {
         root = config,
         serializer = BotConfig.serializer(),
         capabilityResolver = ::botConfigCapability,
+        responseFieldFilter = ::botConfigResponseFieldAllowed,
     )
 }
 
@@ -107,6 +107,7 @@ private fun <T> buildSnapshot(
     root: T,
     serializer: KSerializer<T>,
     capabilityResolver: (String) -> WebUiFieldCapability,
+    responseFieldFilter: (String) -> Boolean = { true },
 ): WebUiConfigSnapshot {
     val element = snapshotJson.encodeToJsonElement(serializer, root)
     val rawSnapshot = LinkedHashMap<String, String>()
@@ -115,7 +116,9 @@ private fun <T> buildSnapshot(
         path = "",
         rawSnapshot = rawSnapshot,
     )
-    val fields = rawSnapshot.entries.map { (key, value) ->
+    val fields = rawSnapshot.entries.filter { (key, _) ->
+        responseFieldFilter(key)
+    }.map { (key, value) ->
         val capability = capabilityResolver(key)
         WebUiConfigFieldDto(
             key = key,
@@ -208,7 +211,7 @@ private fun displayValue(
     capability: WebUiFieldCapability,
 ): String {
     return when {
-        capability == WebUiFieldCapability.MASKED && value.isNotBlank() -> "******"
+        capability == WebUiFieldCapability.MASKED && value.isNotBlank() && value != "[]" -> "******"
         key == "linkParseBlacklistContacts" -> value
         else -> value
     }
@@ -232,7 +235,6 @@ private fun biliConfigCapability(key: String): WebUiFieldCapability {
         "enableConfig.cacheClearEnable",
         "accountConfig.autoFollow",
         "accountConfig.followGroup",
-        "proxyConfig.proxy",
         "checkConfig.lowSpeedTime",
         "checkConfig.lowSpeedRange",
         "checkConfig.normalRange",
@@ -267,6 +269,7 @@ private fun biliConfigCapability(key: String): WebUiFieldCapability {
         "translateConfig.cutLine",
         "translateConfig.baidu.APP_ID" -> WebUiFieldCapability.EDITABLE
         "accountConfig.cookie",
+        "proxyConfig.proxy",
         "translateConfig.baidu.SECURITY_KEY" -> WebUiFieldCapability.MASKED
         else -> when {
             isTemplateMapField(key) || key.startsWith("cacheConfig.expires.") -> WebUiFieldCapability.EDITABLE
@@ -294,7 +297,8 @@ private fun biliDataCapability(key: String): WebUiFieldCapability {
     return when (key) {
         "dataVersion" -> WebUiFieldCapability.SYSTEM_MANAGED
         "dynamic.count",
-        "group.count" -> WebUiFieldCapability.SYSTEM_MANAGED
+        "group.count",
+        "bangumi.count" -> WebUiFieldCapability.SYSTEM_MANAGED
         "linkParseBlacklistContacts" -> WebUiFieldCapability.EDITABLE
         else -> WebUiFieldCapability.READ_ONLY
     }
@@ -317,20 +321,30 @@ private fun botConfigCapability(key: String): WebUiFieldCapability {
         "platform.onebot11.maxReconnectAttempts",
         "platform.onebot11.connectTimeout",
         "platform.qqOfficial.appId",
-        "platform.qqOfficial.botToken",
         "webui.enabled",
         "webui.host",
         "webui.port",
         "webui.tokenTtlSeconds",
         "admins" -> WebUiFieldCapability.EDITABLE
         "platform.onebot11.token",
-        "platform.qqOfficial.appSecret" -> WebUiFieldCapability.MASKED
+        "platform.qqOfficial.appSecret",
+        "platform.qqOfficial.botToken",
+        "napcat.token" -> WebUiFieldCapability.MASKED
         "firstRunFlag" -> WebUiFieldCapability.SYSTEM_MANAGED
         else -> when {
             key.startsWith("admins.") -> WebUiFieldCapability.EDITABLE
             else -> WebUiFieldCapability.READ_ONLY
         }
     }
+}
+
+/**
+ * bot.yml 响应层排除本地路径和 legacy napcat 块；原始快照仍保留它们参与并发 token。
+ */
+private fun botConfigResponseFieldAllowed(key: String): Boolean {
+    return !key.startsWith("napcat.") &&
+        key != "webui.credentialFile" &&
+        key != "webui.staticDir"
 }
 
 /**

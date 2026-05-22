@@ -3,7 +3,7 @@ package top.bilibili.webui.model
 import kotlinx.serialization.Serializable
 
 /**
- * `BiliConfig.yml` 写请求保持文件级边界；空 secret 值表示保留后端当前敏感配置。
+ * `BiliConfig.yml` 写请求保持文件级边界；空 secret 和 preserve 代理模式表示保留后端当前敏感配置。
  */
 @Serializable
 data class WebUiBiliConfigWriteRequestDto(
@@ -23,6 +23,7 @@ data class WebUiBiliConfigWriteRequestDto(
     val autoFollow: Boolean = true,
     val followGroup: String = "Bot关注",
     val proxies: List<String> = emptyList(),
+    val proxyUpdateMode: String = "preserve",
     val lowSpeedTime: String = "22-8",
     val lowSpeedRange: String = "60-240",
     val normalRange: String = "30-120",

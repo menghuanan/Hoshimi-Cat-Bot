@@ -38,7 +38,7 @@ data class WebUiSubscriptionItemDto(
 )
 
 /**
- * WebUI 新增订阅请求只承载页面表单字段，具体类型校验由后端 facade 统一执行。
+ * WebUI 新增订阅请求只承载页面表单字段和二次确认密码，具体类型校验由后端 facade 统一执行。
  */
 @Serializable
 data class WebUiSubscriptionCreateRequestDto(
@@ -47,6 +47,7 @@ data class WebUiSubscriptionCreateRequestDto(
     val targetGroup: String = "",
     val groupName: String = "",
     val bangumiId: String = "",
+    val confirmationPassword: String = "",
 )
 
 /**
@@ -84,7 +85,7 @@ data class WebUiSubscriptionFilterItemDto(
 )
 
 /**
- * 过滤器保存请求同时覆盖新增和编辑；key 为空表示追加到当前订阅的所有适用目标。
+ * 过滤器保存请求同时覆盖新增和编辑；key 为空表示追加到当前订阅的所有适用目标，确认密码只供路由鉴权。
  */
 @Serializable
 data class WebUiSubscriptionFilterSaveRequestDto(
@@ -92,6 +93,7 @@ data class WebUiSubscriptionFilterSaveRequestDto(
     val kind: String,
     val mode: String,
     val content: String,
+    val confirmationPassword: String = "",
 )
 
 /**
@@ -117,7 +119,7 @@ data class WebUiSubscriptionTemplateItemDto(
 )
 
 /**
- * 模板保存请求会同时写入模板正文和当前订阅的模板策略绑定。
+ * 模板保存请求会同时写入模板正文和当前订阅的模板策略绑定，确认密码只供路由鉴权。
  */
 @Serializable
 data class WebUiSubscriptionTemplateSaveRequestDto(
@@ -125,14 +127,16 @@ data class WebUiSubscriptionTemplateSaveRequestDto(
     val type: String,
     val name: String,
     val content: String,
+    val confirmationPassword: String = "",
 )
 
 /**
- * 随机模板开关请求只承载布尔值，具体作用域由订阅卡片 ID 决定。
+ * 随机模板开关请求承载布尔值和确认密码，具体作用域由订阅卡片 ID 决定。
  */
 @Serializable
 data class WebUiSubscriptionTemplateRandomRequestDto(
     val enabled: Boolean,
+    val confirmationPassword: String = "",
 )
 
 /**
@@ -155,12 +159,13 @@ data class WebUiSubscriptionAtAllItemDto(
 )
 
 /**
- * @全体保存请求只需要类型，目标群组由订阅卡片的推送目标展开。
+ * @全体保存请求承载类型、目标群组和确认密码，目标群组由订阅卡片的推送目标展开。
  */
 @Serializable
 data class WebUiSubscriptionAtAllSaveRequestDto(
     val type: String,
     val targetGroups: List<String> = emptyList(),
+    val confirmationPassword: String = "",
 )
 
 /**
@@ -172,9 +177,10 @@ data class WebUiSubscriptionThemeDto(
 )
 
 /**
- * 主题色保存请求要求单个 HEX 颜色，后端负责格式校验和作用域展开。
+ * 主题色保存请求要求单个 HEX 颜色和确认密码，后端负责格式校验和作用域展开。
  */
 @Serializable
 data class WebUiSubscriptionThemeSaveRequestDto(
     val color: String,
+    val confirmationPassword: String = "",
 )

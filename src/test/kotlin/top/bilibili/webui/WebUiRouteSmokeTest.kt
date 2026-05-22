@@ -242,18 +242,30 @@ class WebUiRouteSmokeTest {
             contentType(ContentType.Application.Json)
             setBody(WebUiSubscriptionCreateRequestDto(type = "dynamic"))
         }
-        val invalidCreate = client.post("/api/subscriptions") {
+        val invalidCreateMissingConfirmation = client.post("/api/subscriptions") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $token")
             setBody(WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "md12345", targetGroup = "10001"))
         }
-        val invalidDelete = client.delete("/api/subscriptions/missing") {
+        val invalidDeleteMissingConfirmation = client.delete("/api/subscriptions/missing") {
             header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val invalidCreate = client.post("/api/subscriptions") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody("""{"type":"bangumi","bangumiId":"md12345","targetGroup":"10001","confirmationPassword":"Better123!@"}""")
+        }
+        val invalidDelete = client.delete("/api/subscriptions/missing") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
 
         assertEquals(HttpStatusCode.Unauthorized, unauthenticated.status)
+        assertEquals(HttpStatusCode.Forbidden, invalidCreateMissingConfirmation.status)
         assertEquals(HttpStatusCode.BadRequest, invalidCreate.status)
         assertTrue(invalidCreate.body<WebUiSubscriptionMutationResultDto>().message.contains("ep 或 ss"))
+        assertEquals(HttpStatusCode.Forbidden, invalidDeleteMissingConfirmation.status)
         assertEquals(HttpStatusCode.BadRequest, invalidDelete.status)
     }
 
@@ -312,7 +324,7 @@ class WebUiRouteSmokeTest {
             header(HttpHeaders.Authorization, "Bearer $token")
         }.body<WebUiSubscriptionFilterListDto>()
         val filterKey = filters.filters.first().key
-        val filterSaved = client.post("/api/subscriptions/dynamic%3A123/filters") {
+        val filterMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/filters") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $token")
             setBody(WebUiSubscriptionFilterSaveRequestDto(key = filterKey, kind = "regex", mode = "white", content = "^new"))
@@ -320,25 +332,50 @@ class WebUiRouteSmokeTest {
         val templates = client.get("/api/subscriptions/dynamic%3A123/templates") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }.body<WebUiSubscriptionTemplateListDto>()
-        val templateSaved = client.post("/api/subscriptions/dynamic%3A123/templates") {
+        val templateMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/templates") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $token")
             setBody(WebUiSubscriptionTemplateSaveRequestDto(type = "dynamic", name = "WebTpl", content = "{name}"))
         }
-        val randomSaved = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
+        val randomMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $token")
             setBody(WebUiSubscriptionTemplateRandomRequestDto(enabled = true))
         }
-        val atAllSaved = client.post("/api/subscriptions/dynamic%3A123/atall") {
+        val atAllMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/atall") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $token")
             setBody(WebUiSubscriptionAtAllSaveRequestDto(type = "直播", targetGroups = listOf("onebot11:group:10001")))
         }
-        val themeSaved = client.post("/api/subscriptions/dynamic%3A123/theme") {
+        val themeMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/theme") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $token")
             setBody(WebUiSubscriptionThemeSaveRequestDto(color = "#AABBCC"))
+        }
+        val filterSaved = client.post("/api/subscriptions/dynamic%3A123/filters") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody("""{"key":"$filterKey","kind":"regex","mode":"white","content":"^new","confirmationPassword":"Better123!@"}""")
+        }
+        val templateSaved = client.post("/api/subscriptions/dynamic%3A123/templates") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody("""{"type":"dynamic","name":"WebTpl","content":"{name}","confirmationPassword":"Better123!@"}""")
+        }
+        val randomSaved = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody("""{"enabled":true,"confirmationPassword":"Better123!@"}""")
+        }
+        val atAllSaved = client.post("/api/subscriptions/dynamic%3A123/atall") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody("""{"type":"直播","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
+        }
+        val themeSaved = client.post("/api/subscriptions/dynamic%3A123/theme") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody("""{"color":"#AABBCC","confirmationPassword":"Better123!@"}""")
         }
         val theme = client.get("/api/subscriptions/dynamic%3A123/theme") {
             header(HttpHeaders.Authorization, "Bearer $token")
@@ -346,10 +383,15 @@ class WebUiRouteSmokeTest {
 
         assertEquals(listOf("r0"), filters.filters.map { it.prefix })
         assertEquals(listOf("OneMsg"), templates.templates.map { it.name })
+        assertEquals(HttpStatusCode.Forbidden, filterMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, filterSaved.status)
+        assertEquals(HttpStatusCode.Forbidden, templateMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, templateSaved.status)
+        assertEquals(HttpStatusCode.Forbidden, randomMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, randomSaved.status)
+        assertEquals(HttpStatusCode.Forbidden, atAllMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, atAllSaved.status)
+        assertEquals(HttpStatusCode.Forbidden, themeMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, themeSaved.status)
         assertEquals("#AABBCC", theme.color)
     }
@@ -660,6 +702,7 @@ class WebUiRouteSmokeTest {
         Files.writeString(logFile, "line-1\nline-2\nline-3\n")
         var reloadCalls = 0
         var shutdownCalls = 0
+        val records = mutableListOf<WebUiAuditRecord>()
 
         application {
             installWebUiModule(
@@ -677,7 +720,7 @@ class WebUiRouteSmokeTest {
                     shutdownAction = { shutdownCalls += 1 },
                     restartSupportedProvider = { false },
                 ),
-                auditService = WebUiAuditService(sink = {}),
+                auditService = WebUiAuditService(sink = { record -> records += record }),
             )
         }
 
@@ -691,8 +734,13 @@ class WebUiRouteSmokeTest {
         val exportedLog = createWebUiClient().get("/api/logs/main/export?tail=20") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val clearedLog = createWebUiClient().post("/api/logs/main/clear") {
+        val clearMissingConfirmation = createWebUiClient().post("/api/logs/main/clear") {
             header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        val clearedLog = createWebUiClient().post("/api/logs/main/clear") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $token")
+            setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
         val logWindowAfterClear = createWebUiClient().get("/api/logs/main?tail=20") {
             header(HttpHeaders.Authorization, "Bearer $token")
@@ -711,6 +759,7 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.OK, sourceList.status)
         assertEquals(HttpStatusCode.OK, logWindow.status)
         assertEquals(HttpStatusCode.OK, exportedLog.status)
+        assertEquals(HttpStatusCode.Forbidden, clearMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, clearedLog.status)
         assertEquals(HttpStatusCode.OK, logWindowAfterClear.status)
         assertEquals(HttpStatusCode.OK, reload.status)
@@ -727,6 +776,7 @@ class WebUiRouteSmokeTest {
         assertEquals(top.bilibili.webui.model.WebUiActionOutcome.RESTART_REQUESTED_MANUAL_FALLBACK, restart.body<WebUiActionResultDto>().outcome)
         assertEquals(1, reloadCalls)
         assertEquals(1, shutdownCalls)
+        assertTrue(records.any { it.eventType == "risky-action" && it.target == "clear-log:main" && it.success })
     }
 
     private fun buildAuthService(): WebUiAuthService {

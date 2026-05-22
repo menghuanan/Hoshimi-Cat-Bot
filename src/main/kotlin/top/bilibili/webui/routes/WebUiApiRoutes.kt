@@ -1,5 +1,6 @@
 package top.bilibili.webui.routes
 
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -12,6 +13,7 @@ import top.bilibili.webui.auth.WebUiAuthService
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiBiliDataWriteRequestDto
 import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
+import top.bilibili.webui.model.WebUiActionConfirmationRequestDto
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
 import top.bilibili.webui.model.WebUiSaveEffectLevel
 import top.bilibili.webui.model.WebUiSubscriptionAtAllSaveRequestDto
@@ -68,14 +70,20 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/subscriptions") {
-        call.requireWebUiSession(authService, auditService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val request = call.receive<WebUiSubscriptionCreateRequestDto>()
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
+            return@post
+        }
         val result = subscriptionManagementFacade.createSubscription(request)
         call.respondSubscriptionMutation(result)
     }
 
     delete("/api/subscriptions/{id}") {
-        call.requireWebUiSession(authService, auditService) ?: return@delete
+        val session = call.requireWebUiSession(authService, auditService) ?: return@delete
+        if (!call.requireHighRiskConfirmation(authService, session, call.receiveConfirmationPasswordOrEmpty(), auditService)) {
+            return@delete
+        }
         val id = call.parameters["id"].orEmpty()
         val result = subscriptionManagementFacade.deleteSubscription(id)
         call.respondSubscriptionMutation(result)
@@ -88,15 +96,21 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/subscriptions/{id}/filters") {
-        call.requireWebUiSession(authService, auditService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val id = call.parameters["id"].orEmpty()
         val request = call.receive<WebUiSubscriptionFilterSaveRequestDto>()
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
+            return@post
+        }
         val result = subscriptionManagementFacade.saveSubscriptionFilter(id, request)
         call.respondSubscriptionMutation(result)
     }
 
     delete("/api/subscriptions/{id}/filters/{key}") {
-        call.requireWebUiSession(authService, auditService) ?: return@delete
+        val session = call.requireWebUiSession(authService, auditService) ?: return@delete
+        if (!call.requireHighRiskConfirmation(authService, session, call.receiveConfirmationPasswordOrEmpty(), auditService)) {
+            return@delete
+        }
         val id = call.parameters["id"].orEmpty()
         val key = call.parameters["key"].orEmpty()
         val result = subscriptionManagementFacade.deleteSubscriptionFilter(id, key)
@@ -110,15 +124,21 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/subscriptions/{id}/templates") {
-        call.requireWebUiSession(authService, auditService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val id = call.parameters["id"].orEmpty()
         val request = call.receive<WebUiSubscriptionTemplateSaveRequestDto>()
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
+            return@post
+        }
         val result = subscriptionManagementFacade.saveSubscriptionTemplate(id, request)
         call.respondSubscriptionMutation(result)
     }
 
     delete("/api/subscriptions/{id}/templates/{key}") {
-        call.requireWebUiSession(authService, auditService) ?: return@delete
+        val session = call.requireWebUiSession(authService, auditService) ?: return@delete
+        if (!call.requireHighRiskConfirmation(authService, session, call.receiveConfirmationPasswordOrEmpty(), auditService)) {
+            return@delete
+        }
         val id = call.parameters["id"].orEmpty()
         val key = call.parameters["key"].orEmpty()
         val result = subscriptionManagementFacade.deleteSubscriptionTemplate(id, key)
@@ -126,9 +146,12 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/subscriptions/{id}/templates/random") {
-        call.requireWebUiSession(authService, auditService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val id = call.parameters["id"].orEmpty()
         val request = call.receive<WebUiSubscriptionTemplateRandomRequestDto>()
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
+            return@post
+        }
         val result = subscriptionManagementFacade.setSubscriptionTemplateRandom(id, request.enabled)
         call.respondSubscriptionMutation(result)
     }
@@ -140,15 +163,21 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/subscriptions/{id}/atall") {
-        call.requireWebUiSession(authService, auditService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val id = call.parameters["id"].orEmpty()
         val request = call.receive<WebUiSubscriptionAtAllSaveRequestDto>()
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
+            return@post
+        }
         val result = subscriptionManagementFacade.saveSubscriptionAtAll(id, request.type, request.targetGroups)
         call.respondSubscriptionMutation(result)
     }
 
     delete("/api/subscriptions/{id}/atall/{key}") {
-        call.requireWebUiSession(authService, auditService) ?: return@delete
+        val session = call.requireWebUiSession(authService, auditService) ?: return@delete
+        if (!call.requireHighRiskConfirmation(authService, session, call.receiveConfirmationPasswordOrEmpty(), auditService)) {
+            return@delete
+        }
         val id = call.parameters["id"].orEmpty()
         val key = call.parameters["key"].orEmpty()
         val result = subscriptionManagementFacade.deleteSubscriptionAtAll(id, key)
@@ -162,9 +191,12 @@ fun Route.registerWebUiApiRoutes(
     }
 
     post("/api/subscriptions/{id}/theme") {
-        call.requireWebUiSession(authService, auditService) ?: return@post
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
         val id = call.parameters["id"].orEmpty()
         val request = call.receive<WebUiSubscriptionThemeSaveRequestDto>()
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
+            return@post
+        }
         val result = subscriptionManagementFacade.saveSubscriptionTheme(id, request.color)
         call.respondSubscriptionMutation(result)
     }
@@ -241,4 +273,18 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondSubscripti
 ) {
     val status = if (result.success) HttpStatusCode.OK else HttpStatusCode.BadRequest
     respond(status, result)
+}
+
+/**
+ * DELETE 类写操作没有业务 DTO；缺少 JSON body 时返回空确认值，让统一确认 guard 产出 403。
+ */
+private suspend fun io.ktor.server.application.ApplicationCall.receiveConfirmationPasswordOrEmpty(): String {
+    if (request.headers[HttpHeaders.ContentLength].orEmpty().toLongOrNull() == null ||
+        request.headers[HttpHeaders.ContentLength].orEmpty().toLongOrNull() == 0L
+    ) {
+        return ""
+    }
+    return runCatching {
+        receive<WebUiActionConfirmationRequestDto>().confirmationPassword
+    }.getOrDefault("")
 }

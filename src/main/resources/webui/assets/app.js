@@ -225,6 +225,7 @@ const restartRequiredPayloadKeyByFile = {
 };
 const restartMaskedSettingKeys = new Set([
     "accountConfig.cookie",
+    "proxyConfig.proxy",
     "platform.onebot11.token",
     "platform.qqOfficial.appSecret",
     "platform.qqOfficial.botToken",
@@ -674,12 +675,17 @@ function setSubscriptionModalStatus(message, success = false) {
  */
 function buildSubscriptionCreatePayload() {
     const type = subscriptionCreateType?.value || "dynamic";
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认新增订阅");
+    if (!confirmationPassword) {
+        return null;
+    }
     if (type === "group") {
         return {
             type,
             groupName: document.getElementById("subscription-create-group-name")?.value || "",
             uid: document.getElementById("subscription-create-group-uid")?.value || "",
             targetGroup: document.getElementById("subscription-create-group-target")?.value || "",
+            confirmationPassword,
         };
     }
     if (type === "bangumi") {
@@ -687,12 +693,14 @@ function buildSubscriptionCreatePayload() {
             type,
             bangumiId: document.getElementById("subscription-create-bangumi-id")?.value || "",
             targetGroup: document.getElementById("subscription-create-bangumi-target")?.value || "",
+            confirmationPassword,
         };
     }
     return {
         type,
         uid: document.getElementById("subscription-create-uid")?.value || "",
         targetGroup: document.getElementById("subscription-create-target")?.value || "",
+        confirmationPassword,
     };
 }
 
@@ -700,10 +708,15 @@ function buildSubscriptionCreatePayload() {
  * 新增订阅走后端业务 facade，成功后刷新卡片列表以展示真实写入结果。
  */
 async function createSubscription() {
+    const payloadToSend = buildSubscriptionCreatePayload();
+    if (!payloadToSend) {
+        setSubscriptionModalStatus("已取消添加");
+        return;
+    }
     const response = await fetch("/api/subscriptions", {
         method: "POST",
         headers: buildAuthHeaders(true),
-        body: JSON.stringify(buildSubscriptionCreatePayload()),
+        body: JSON.stringify(payloadToSend),
     });
     if (response.status === 401 || response.status === 403) {
         location.href = "/login";
@@ -764,9 +777,15 @@ async function confirmSubscriptionDelete() {
  * 删除订阅请求只负责调用后端和刷新列表，交互确认由页面弹窗提前完成。
  */
 async function deleteSubscription(itemId) {
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认删除订阅");
+    if (!confirmationPassword) {
+        setSubscriptionError("已取消删除");
+        return;
+    }
     const response = await fetch(`/api/subscriptions/${encodeURIComponent(itemId)}`, {
         method: "DELETE",
-        headers: buildAuthHeaders(),
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({confirmationPassword}),
     });
     if (response.status === 401 || response.status === 403) {
         location.href = "/login";
@@ -1246,6 +1265,11 @@ async function submitFilterForm(form) {
         setSubscriptionEditStatus("正则内容必须填写");
         return;
     }
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认保存过滤器");
+    if (!confirmationPassword) {
+        setSubscriptionEditStatus("已取消保存");
+        return;
+    }
     await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/filters"), {
         method: "POST",
         headers: buildAuthHeaders(true),
@@ -1254,6 +1278,7 @@ async function submitFilterForm(form) {
             kind,
             mode: form.elements.mode.value,
             content,
+            confirmationPassword,
         }),
     });
     setSubscriptionEditStatus("过滤器已保存", true);
@@ -1270,6 +1295,11 @@ async function submitTemplateForm(form) {
         setSubscriptionEditStatus("模板名称必须填写");
         return;
     }
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认保存模板");
+    if (!confirmationPassword) {
+        setSubscriptionEditStatus("已取消保存");
+        return;
+    }
     await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/templates"), {
         method: "POST",
         headers: buildAuthHeaders(true),
@@ -1278,6 +1308,7 @@ async function submitTemplateForm(form) {
             type: form.elements.type.value,
             name,
             content: form.elements.content.value,
+            confirmationPassword,
         }),
     });
     setSubscriptionEditStatus("模板已保存", true);
@@ -1296,16 +1327,22 @@ async function submitAtAllForm(form) {
         setSubscriptionEditStatus("目标群聊必须至少选择一个");
         return;
     }
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认保存at全体");
+    if (!confirmationPassword) {
+        setSubscriptionEditStatus("已取消保存");
+        return;
+    }
     if (oldItem && oldItem.type !== form.elements.type.value) {
         await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl(`/atall/${encodeURIComponent(oldKey)}`), {
             method: "DELETE",
-            headers: buildAuthHeaders(),
+            headers: buildAuthHeaders(true),
+            body: JSON.stringify({confirmationPassword}),
         });
     }
     await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/atall"), {
         method: "POST",
         headers: buildAuthHeaders(true),
-        body: JSON.stringify({type: form.elements.type.value, targetGroups}),
+        body: JSON.stringify({type: form.elements.type.value, targetGroups, confirmationPassword}),
     });
     setSubscriptionEditStatus("@全体已保存", true);
     await loadAtAllEditor();
@@ -1321,10 +1358,15 @@ async function submitThemeForm(form) {
         setSubscriptionEditStatus("HEX颜色格式错误");
         return;
     }
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认保存主题色");
+    if (!confirmationPassword) {
+        setSubscriptionEditStatus("已取消保存");
+        return;
+    }
     await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/theme"), {
         method: "POST",
         headers: buildAuthHeaders(true),
-        body: JSON.stringify({color}),
+        body: JSON.stringify({color, confirmationPassword}),
     });
     setSubscriptionEditStatus("主题色已保存", true);
     await refreshSubscriptions();
@@ -1334,12 +1376,18 @@ async function submitThemeForm(form) {
  * 删除配置项根据当前类型调用对应接口，删除完成后刷新当前列表和订阅卡片。
  */
 async function deleteConfigItem(action, key) {
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认删除配置项");
+    if (!confirmationPassword) {
+        setSubscriptionEditStatus("已取消删除");
+        return;
+    }
     const path = action === "filter" ? `/filters/${encodeURIComponent(key)}`
         : action === "template" ? `/templates/${encodeURIComponent(key)}`
             : `/atall/${encodeURIComponent(key)}`;
     await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl(path), {
         method: "DELETE",
-        headers: buildAuthHeaders(),
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({confirmationPassword}),
     });
     if (action === "filter") {
         await loadFilterEditor();
@@ -1356,11 +1404,17 @@ async function deleteConfigItem(action, key) {
  */
 async function toggleTemplateRandom(checkbox) {
     const nextValue = checkbox.checked;
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认切换随机模板");
+    if (!confirmationPassword) {
+        checkbox.checked = !nextValue;
+        setSubscriptionEditStatus("已取消保存");
+        return;
+    }
     try {
         await fetchSubscriptionConfigJson(subscriptionConfigBaseUrl("/templates/random"), {
             method: "POST",
             headers: buildAuthHeaders(true),
-            body: JSON.stringify({enabled: nextValue}),
+            body: JSON.stringify({enabled: nextValue, confirmationPassword}),
         });
         setSubscriptionEditStatus(nextValue ? "随机模板已开启" : "随机模板已关闭", true);
         await refreshSubscriptions();
@@ -1778,9 +1832,15 @@ async function clearCurrentLog() {
     if (!window.confirm("确认清空当前日志来源的内容？")) {
         return;
     }
+    const confirmationPassword = requestHighRiskConfirmation("请输入 WebUI 密码确认清空日志");
+    if (!confirmationPassword) {
+        setLogStatus("已取消清空");
+        return;
+    }
     const response = await fetch(`/api/logs/${encodeURIComponent(sourceId)}/clear`, {
         method: "POST",
-        headers: buildAuthHeaders(),
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({confirmationPassword}),
     });
     if (response.status === 401 || response.status === 403) {
         location.href = "/login";
@@ -2068,6 +2128,13 @@ function settingsSectionFileKeys(sectionName) {
 }
 
 /**
+ * 高风险写操作统一二次输入当前密码，后端会继续执行服务端确认和短期确认缓存。
+ */
+function requestHighRiskConfirmation(message = "请输入 WebUI 密码确认操作") {
+    return (window.prompt(message) || "").trim();
+}
+
+/**
  * 当前分区保存前收集表单字段，再由文件级 builder 合成完整写请求。
  */
 async function saveSettingsSection(sectionName) {
@@ -2171,6 +2238,9 @@ function settingsPayloadHasRestartRequiredChanges(fileKey, payload) {
         if (nextValue === undefined) {
             return false;
         }
+        if (settingsKey === "proxyConfig.proxy" && payload.proxyUpdateMode === "preserve") {
+            return false;
+        }
         if (restartMaskedSettingKeys.has(settingsKey) && String(nextValue ?? "").trim() === "") {
             return false;
         }
@@ -2242,6 +2312,7 @@ function closeRestartRequiredModal() {
  */
 function buildBiliConfigSettingsPayload(sectionName, values, confirmationPassword = "") {
     const read = (key, fallback = "") => values[key] ?? fieldValue("biliConfig", key, fallback);
+    const submittedProxies = settingsLines(values["proxyConfig.proxy"] || "");
     return {
         snapshotToken: settingsState.files.biliConfig.snapshotToken,
         admin: settingsLong(fieldValue("biliConfig", "admin"), 0),
@@ -2260,7 +2331,8 @@ function buildBiliConfigSettingsPayload(sectionName, values, confirmationPasswor
         cookie: values["accountConfig.cookie"] || "",
         autoFollow: settingsBool(read("accountConfig.autoFollow", "true")),
         followGroup: read("accountConfig.followGroup", "Bot关注"),
-        proxies: settingsLines(read("proxyConfig.proxy")),
+        proxies: submittedProxies,
+        proxyUpdateMode: submittedProxies.length > 0 ? "replace" : "preserve",
         lowSpeedTime: read("checkConfig.lowSpeedTime", "22-8"),
         lowSpeedRange: read("checkConfig.lowSpeedRange", "60-240"),
         normalRange: read("checkConfig.normalRange", "30-120"),
@@ -2837,9 +2909,10 @@ function renderSettingSelect(field) {
 function renderSettingTextarea(field) {
     const value = field.value ?? fieldValue(field.file, field.key, field.fallback || "");
     const wide = field.wide === false ? "" : " settings-field--wide";
+    const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
     return `<label class="settings-field${wide}">
         <span>${escapeHtml(field.label)}</span>
-        <textarea name="${escapeHtml(field.key)}" rows="${field.rows || 4}">${escapeHtml(value)}</textarea>
+        <textarea name="${escapeHtml(field.key)}" rows="${field.rows || 4}"${placeholder}>${escapeHtml(value)}</textarea>
     </label>`;
 }
 
@@ -2861,6 +2934,18 @@ function renderListTextarea(field) {
         ...field,
         value: jsonArrayToLines(field.value ?? fieldValue(field.file, field.key, "")),
         rows: field.rows || 5,
+    });
+}
+
+/**
+ * 敏感列表只允许新值写入，默认空白提交由后端解释为保留当前配置。
+ */
+function renderWriteOnlyListTextarea(field) {
+    return renderSettingTextarea({
+        ...field,
+        value: "",
+        rows: field.rows || 5,
+        placeholder: field.placeholder || "留空则保留原值；每行一个新值",
     });
 }
 
@@ -2945,7 +3030,7 @@ function renderBiliSettings() {
         ${renderSecretField({key: "accountConfig.cookie", label: "B站 Cookie"})}
         ${renderSettingSelect({file: "biliConfig", key: "accountConfig.autoFollow", label: "自动关注", options: boolOptions()})}
         ${renderSettingField({file: "biliConfig", key: "accountConfig.followGroup", label: "关注分组"})}
-        ${renderListTextarea({file: "biliConfig", key: "proxyConfig.proxy", label: "代理地址", wide: true})}
+        ${renderWriteOnlyListTextarea({file: "biliConfig", key: "proxyConfig.proxy", label: "代理地址", wide: true})}
     </div>`, {title: "B站配置"});
 }
 

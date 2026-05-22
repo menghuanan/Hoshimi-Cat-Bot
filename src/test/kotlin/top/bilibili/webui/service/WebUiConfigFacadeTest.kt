@@ -111,6 +111,15 @@ class WebUiConfigFacadeTest {
         val botConfig = BotConfig(
             platform = PlatformConfig(
                 onebot11 = NapCatConfig(token = "napcat-token"),
+                qqOfficial = QQOfficialConfig(
+                    appSecret = "qq-secret",
+                    botToken = "qq-bot-token",
+                ),
+            ),
+            napcat = NapCatConfig(token = "legacy-token"),
+            webui = top.bilibili.webui.config.WebUiConfig(
+                credentialFile = "custom-webui.json",
+                staticDir = "static-root",
             ),
         )
         val facade = WebUiConfigFacade(
@@ -124,13 +133,22 @@ class WebUiConfigFacadeTest {
         val cookieField = biliConfigDto.fields.first { it.key == "accountConfig.cookie" }
         val baiduSecretField = biliConfigDto.fields.first { it.key == "translateConfig.baidu.SECURITY_KEY" }
         val tokenField = botConfigDto.fields.first { it.key == "platform.onebot11.token" }
+        val qqSecretField = botConfigDto.fields.first { it.key == "platform.qqOfficial.appSecret" }
+        val qqBotTokenField = botConfigDto.fields.first { it.key == "platform.qqOfficial.botToken" }
 
         assertEquals(WebUiFieldCapability.MASKED, cookieField.capability)
         assertEquals(WebUiFieldCapability.MASKED, baiduSecretField.capability)
         assertEquals(WebUiFieldCapability.MASKED, tokenField.capability)
+        assertEquals(WebUiFieldCapability.MASKED, qqSecretField.capability)
+        assertEquals(WebUiFieldCapability.MASKED, qqBotTokenField.capability)
         assertNotEquals("SESSDATA=raw-cookie", cookieField.value)
         assertNotEquals("raw-secret", baiduSecretField.value)
         assertNotEquals("napcat-token", tokenField.value)
+        assertNotEquals("qq-secret", qqSecretField.value)
+        assertNotEquals("qq-bot-token", qqBotTokenField.value)
+        assertFalse(botConfigDto.fields.any { it.key == "napcat.token" })
+        assertFalse(botConfigDto.fields.any { it.key == "webui.credentialFile" })
+        assertFalse(botConfigDto.fields.any { it.key == "webui.staticDir" })
     }
 
     @Test
@@ -384,10 +402,10 @@ class WebUiConfigFacadeTest {
     }
 
     /**
-     * WebUI 读侧应当把三份配置文件的完整字段树都返回给前端，而不是只暴露少量表单字段。
+     * WebUI 读侧只返回可展示的配置字段，BiliData 运行态字段和本地路径必须留在响应之外。
      */
     @Test
-    fun `config responses should expose full field trees for all three files`() {
+    fun `config responses should expose controlled field trees for all three files`() {
         val biliConfig = BiliConfig(
             admin = 42L,
             adminContact = "onebot11:private:42",
@@ -612,15 +630,25 @@ class WebUiConfigFacadeTest {
         assertTrue(biliConfigFields.containsKey("templateConfig.footer.footerAlign"))
         assertTrue(biliConfigFields.containsKey("cacheConfig.expires"))
         assertTrue(biliConfigFields.containsKey("proxyConfig.proxy"))
+        assertEquals(WebUiFieldCapability.MASKED, biliConfigFields["proxyConfig.proxy"]?.capability)
+        assertNotEquals("http://proxy.local:8080", biliConfigFields["proxyConfig.proxy"]?.value)
         assertTrue(biliConfigFields.containsKey("linkResolveConfig.triggerMode"))
-        assertTrue(biliDataFields.containsKey("dynamic.123.name"))
-        assertTrue(biliDataFields.containsKey("filter.onebot11:private:1.123.typeSelect.mode"))
-        assertTrue(biliDataFields.containsKey("dynamicTemplatePolicyByScope.scope-a.123.templates"))
-        assertTrue(biliDataFields.containsKey("group.group-a.name"))
-        assertTrue(biliDataFields.containsKey("bangumi.100.title"))
+        assertTrue(biliDataFields.containsKey("dataVersion"))
+        assertTrue(biliDataFields.containsKey("dynamic.count"))
+        assertTrue(biliDataFields.containsKey("group.count"))
+        assertTrue(biliDataFields.containsKey("bangumi.count"))
+        assertTrue(biliDataFields.containsKey("linkParseBlacklistContacts"))
+        assertFalse(biliDataFields.containsKey("dynamic.123.last"))
+        assertFalse(biliDataFields.containsKey("dynamic.123.lastLive"))
+        assertFalse(biliDataFields.containsKey("filter.onebot11:private:1.123.typeSelect.mode"))
+        assertFalse(biliDataFields.containsKey("dynamicTemplatePolicyByScope.scope-a.123.templates"))
+        assertFalse(biliDataFields.containsKey("atAllCooldownUntil.scope-a.123.ALL"))
         assertTrue(botConfigFields.containsKey("platform.qqOfficial.appId"))
-        assertTrue(botConfigFields.containsKey("napcat.host"))
         assertTrue(botConfigFields.containsKey("webui.tokenTtlSeconds"))
+        assertFalse(botConfigFields.containsKey("napcat.host"))
+        assertFalse(botConfigFields.containsKey("napcat.token"))
+        assertFalse(botConfigFields.containsKey("webui.credentialFile"))
+        assertFalse(botConfigFields.containsKey("webui.staticDir"))
         assertTrue(botConfigFields.containsKey("targets.0.type"))
         assertTrue(botConfigFields.containsKey("admins.0.userContacts.0"))
         assertTrue(botConfigFields.containsKey("firstRunFlag"))
