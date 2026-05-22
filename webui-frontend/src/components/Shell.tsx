@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { changePassword, logout } from '../api/auth'
+import { useThemePreference } from '../hooks/useThemePreference'
 import type { WebUiPageName } from '../router/webuiRouter'
 import { clearWebUiToken } from '../utils/storage'
 
@@ -13,6 +14,7 @@ type ShellProps = {
  * 壳层负责导航、顶部管理员菜单和内容承载区，页面内容由子页面组件填充。
  */
 export function Shell({page, onNavigate, children}: ShellProps) {
+  const {preference, setPreference} = useThemePreference()
   const [adminMenuOpen, setAdminMenuOpen] = useState(false)
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
@@ -20,6 +22,24 @@ export function Shell({page, onNavigate, children}: ShellProps) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [accountMessage, setAccountMessage] = useState('')
   const [accountPending, setAccountPending] = useState(false)
+
+  /**
+   * 改密弹窗支持 Escape 关闭，和全局确认弹窗保持一致的键盘行为。
+   */
+  useEffect(() => {
+    if (!passwordModalOpen) {
+      return undefined
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPasswordModalOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [passwordModalOpen])
 
   /**
    * 改密弹窗复用认证 API，成功后清理 token 并回到登录页重新认证。
@@ -92,7 +112,20 @@ export function Shell({page, onNavigate, children}: ShellProps) {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">WebUI</p>
               <h2 className="text-lg font-semibold text-slate-950">{pageLabel(page)}</h2>
             </div>
-            <div className="relative shrink-0 max-sm:w-full">
+            <div className="flex shrink-0 flex-wrap items-center gap-3 max-sm:w-full">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 max-sm:w-full">
+                <span>主题偏好</span>
+                <select
+                  value={preference}
+                  onChange={(event) => setPreference(event.target.value as 'system' | 'light' | 'dark')}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                >
+                  <option value="system">跟随系统</option>
+                  <option value="light">浅色</option>
+                  <option value="dark">深色</option>
+                </select>
+              </label>
+              <div className="relative max-sm:w-full">
               <button
                 type="button"
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
@@ -122,6 +155,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                   </button>
                 </div>
               ) : null}
+              </div>
             </div>
           </header>
           <section className="min-w-0 flex-1 px-6 py-6 max-sm:px-4">

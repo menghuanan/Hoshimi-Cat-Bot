@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -284,5 +285,42 @@ describe('webui shell routing', () => {
 
     await user.click(screen.getByRole('button', {name: '编辑主题色'}))
     expect(await screen.findByLabelText('主题颜色')).toHaveValue('#33aaff')
+  })
+
+  /**
+   * Shell 顶部需要保留管理员操作、主题偏好和可键盘关闭的账号弹窗。
+   */
+  it('supports admin menu actions, theme preference, and Escape modal close', async () => {
+    const user = userEvent.setup()
+
+    renderAtPath('/')
+
+    await user.selectOptions(screen.getByLabelText('主题偏好'), 'dark')
+    expect(document.documentElement.classList.contains('theme-dark')).toBe(true)
+
+    await user.click(screen.getByRole('button', {name: '管理员菜单'}))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '修改密码'}))
+    expect(screen.getByRole('dialog', {name: '修改密码'})).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', {name: '修改密码'})).not.toBeInTheDocument()
+  })
+
+  /**
+   * React 源码不得重新引入浏览器原生确认、提示或通知 API。
+   */
+  it('does not use native browser dialog APIs in React source', () => {
+    const sourceFiles = [
+      'src/App.tsx',
+      'src/components/Shell.tsx',
+      'src/contexts/ConfirmationContext.tsx',
+      'src/pages/SubscriptionsPage.tsx',
+      'src/pages/SettingsPage.tsx',
+      'src/pages/LogsPage.tsx',
+    ]
+    const source = sourceFiles.map((file) => readFileSync(file, 'utf8')).join('\n')
+
+    expect(source).not.toMatch(/window\.confirm|window\.prompt|window\.alert|new\s+Notification|Notification\./)
   })
 })

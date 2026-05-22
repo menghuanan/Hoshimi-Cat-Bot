@@ -302,4 +302,17 @@ describe('webui domain hooks', () => {
 
     expect(window.localStorage.getItem('dynamic_bot_webui_theme')).toBe('dark')
   })
+
+  /**
+   * 主题偏好需要同步应用到 DOM 和 cookie，服务端静态壳层才能维持一致主题。
+   */
+  it('useThemePreference should apply theme preference to document state', () => {
+    const {result} = renderHook(() => useThemePreference())
+
+    result.current.setPreference('dark')
+
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.documentElement.classList.contains('theme-dark')).toBe(true)
+    expect(document.cookie).toContain('dynamic_bot_webui_theme=dark')
+  })
 })
