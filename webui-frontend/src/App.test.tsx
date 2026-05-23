@@ -35,7 +35,7 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '系统配置'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '订阅管理'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '日志'})).toBeInTheDocument()
-    expect(screen.getByRole('button', {name: 'Admin'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
   })
 
   it('switches pages when the shell navigation is used', () => {
@@ -108,7 +108,7 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '轮询配置'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '渲染配置'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '消息配置'})).toBeInTheDocument()
-    expect(screen.getByRole('button', {name: '管理员'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '翻译配置'})).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', {name: 'B站配置'}))
@@ -136,12 +136,12 @@ describe('webui shell routing', () => {
       success: false,
       message: 'oneBot11Port is invalid',
       validationErrors: ['oneBot11Port is invalid'],
-    }])).toBe('保存失败：oneBot11Port is invalid')
+    }])).toBe('保存失败：请检查填写内容后重试')
 
     expect(formatSaveResultMessage([{
       success: true,
       message: 'bot.yml saved',
-    }])).toBe('保存成功：bot.yml saved')
+    }])).toBe('保存成功')
   })
 
   /**
@@ -266,7 +266,7 @@ describe('webui shell routing', () => {
     expect(screen.queryByRole('button', {name: '查看日志'})).not.toBeInTheDocument()
     expect(screen.queryByText(/实时摘要由/)).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', {name: 'Admin'}))
+    fireEvent.click(screen.getByRole('button', {name: '管理员', expanded: false}))
     fireEvent.click(screen.getByRole('button', {name: '修改密码'}))
 
     expect(screen.getByRole('dialog', {name: '修改密码'})).toBeInTheDocument()
@@ -387,7 +387,7 @@ describe('webui shell routing', () => {
     }))
 
     renderAtPath('/#settings')
-    fireEvent.click(await screen.findByRole('button', {name: '管理员'}))
+    fireEvent.click(await screen.findByRole('button', {name: '管理员', pressed: false}))
 
     expect(await screen.findByLabelText('群聊')).toHaveValue('124515')
     expect(screen.getByLabelText('个人QQ号')).toHaveValue('1245512')
@@ -416,7 +416,7 @@ describe('webui shell routing', () => {
 
     expect(screen.getByRole('heading', {name: '登录'})).toBeInTheDocument()
     expect(screen.getByLabelText('WebUI 密码')).toBeInTheDocument()
-    expect(screen.queryByRole('button', {name: 'Admin'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '管理员'})).not.toBeInTheDocument()
   })
 
   /**
@@ -603,12 +603,12 @@ describe('webui shell routing', () => {
     expect(readFileSync('src/styles.css', 'utf8')).toContain('.theme-dark .border-l-emerald-500')
     expect(readFileSync('src/styles.css', 'utf8')).toContain('.subscription-info-block')
 
-    await user.click(screen.getByRole('button', {name: 'Admin'}))
+    await user.click(screen.getByRole('button', {name: '管理员', expanded: false}))
     expect(screen.getByRole('menu')).toBeInTheDocument()
     fireEvent.mouseDown(document.body)
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', {name: 'Admin'}))
+    await user.click(screen.getByRole('button', {name: '管理员', expanded: false}))
     await user.click(screen.getByRole('button', {name: '修改密码'}))
     expect(screen.getByRole('dialog', {name: '修改密码'})).toBeInTheDocument()
 
@@ -617,7 +617,7 @@ describe('webui shell routing', () => {
     fireEvent.mouseDown(overlay as Element)
     expect(screen.queryByRole('dialog', {name: '修改密码'})).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', {name: 'Admin'}))
+    await user.click(screen.getByRole('button', {name: '管理员', expanded: false}))
     await user.click(screen.getByRole('button', {name: '修改密码'}))
     expect(screen.getByRole('dialog', {name: '修改密码'})).toBeInTheDocument()
 

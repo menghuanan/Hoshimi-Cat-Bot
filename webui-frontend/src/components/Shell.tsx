@@ -3,6 +3,7 @@ import { changePassword, logout } from '../api/auth'
 import { useThemePreference } from '../hooks/useThemePreference'
 import type { WebUiPageName } from '../router/webuiRouter'
 import { clearWebUiToken } from '../utils/storage'
+import { formatPasswordErrorMessage } from '../utils/errorMessages'
 
 type ShellProps = {
   page: Exclude<WebUiPageName, 'login'>
@@ -11,7 +12,7 @@ type ShellProps = {
 }
 
 /**
- * 壳层负责导航、顶部 Admin 菜单和内容承载区，页面内容由子页面组件填充。
+ * 壳层负责导航、顶部管理员菜单和内容承载区，页面内容由子页面组件填充。
  */
 export function Shell({page, onNavigate, children}: ShellProps) {
   const {preference, setPreference} = useThemePreference()
@@ -43,7 +44,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
   }, [passwordModalOpen])
 
   /**
-   * Admin 下拉菜单跟随页面空白区域点击关闭，保持顶部弹层和旧版交互一致。
+   * 管理员下拉菜单跟随页面空白区域点击关闭，保持顶部弹层和旧版交互一致。
    */
   useEffect(() => {
     if (!adminMenuOpen) {
@@ -80,7 +81,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
       clearWebUiToken()
       window.location.assign('/login')
     } catch (error) {
-      setAccountMessage(error instanceof Error ? error.message : '修改密码失败')
+      setAccountMessage(formatPasswordErrorMessage(error, '修改密码失败'))
     } finally {
       setAccountPending(false)
     }
@@ -156,7 +157,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                   aria-expanded={adminMenuOpen}
                   onClick={() => setAdminMenuOpen((current) => !current)}
                 >
-                  Admin
+                  管理员
                 </button>
                 {adminMenuOpen ? (
                   <div

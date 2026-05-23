@@ -19,6 +19,7 @@ import {
 } from '../api/subscriptions'
 import type { WebUiJsonRequestOptions } from '../api/http'
 import { useHighRiskConfirmation } from './useHighRiskConfirmation'
+import { normalizeVisibleMessage } from '../utils/errorMessages'
 
 type UseSubscriptionsOptions = WebUiJsonRequestOptions
 type SubscriptionFilterDraft = {
@@ -43,8 +44,8 @@ type SubscriptionAtAllDraft = {
  */
 function ensureSubscriptionWriteSucceeded(result: unknown, fallbackMessage: string): unknown {
   if (result && typeof result === 'object' && 'success' in result && (result as {success?: unknown}).success === false) {
-    const message = String((result as {message?: unknown}).message || fallbackMessage)
-    throw new Error(message)
+    const message = normalizeVisibleMessage((result as {message?: unknown}).message || '', fallbackMessage)
+    throw new Error(message || fallbackMessage)
   }
   return result
 }

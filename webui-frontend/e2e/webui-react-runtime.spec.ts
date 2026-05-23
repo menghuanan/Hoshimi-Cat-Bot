@@ -20,7 +20,7 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
   await page.goto('/login')
   await page.getByLabel('WebUI 密码').fill('wrong-password')
   await page.getByRole('button', {name: '登录'}).click()
-  await expect(page.getByText('HTTP 401')).toBeVisible()
+  await expect(page.getByText('密码错误，请重试')).toBeVisible()
 
   await page.getByLabel('WebUI 密码').fill('secret-password')
   await page.getByRole('button', {name: '登录'}).click()

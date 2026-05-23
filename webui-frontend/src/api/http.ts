@@ -1,5 +1,6 @@
 import { clearWebUiToken, readWebUiToken } from '../utils/storage'
 import { readJsonResponse, toJsonBody } from '../utils/json'
+import { normalizeVisibleMessage } from '../utils/errorMessages'
 import type { TokenStorage } from '../utils/storage'
 
 /**
@@ -78,15 +79,16 @@ export async function requestJson<T>(
   if (response.status === 401 || response.status === 403) {
     if (authenticated) {
       handleUnauthorized(storage, redirectToLogin)
+      throw new Error('请重新登录')
     }
-    throw new Error(`HTTP ${response.status}`)
+    throw new Error('密码错误，请重试')
   }
   const payload = await readJsonResponse<T>(response)
   if (!response.ok) {
-    const message = typeof payload === 'object' && payload && 'message' in payload
-      ? String((payload as {message?: string}).message || `HTTP ${response.status}`)
-      : `HTTP ${response.status}`
-    throw new Error(message)
+    const payloadMessage = typeof payload === 'object' && payload && 'message' in payload
+      ? String((payload as {message?: string}).message || '')
+      : ''
+    throw new Error(normalizeVisibleMessage(payloadMessage, '请求失败，请稍后重试'))
   }
   return payload as T
 }

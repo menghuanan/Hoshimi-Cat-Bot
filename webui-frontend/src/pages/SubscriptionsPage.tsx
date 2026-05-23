@@ -3,6 +3,7 @@ import { PageSection } from '../components/PageSection'
 import { SubscriptionEditorModal } from '../components/subscriptions/SubscriptionEditorModal'
 import { SubscriptionModal } from '../components/subscriptions/SubscriptionModal'
 import { useSubscriptions } from '../hooks/useSubscriptions'
+import { formatPasswordErrorMessage } from '../utils/errorMessages'
 
 type SubscriptionItem = Record<string, unknown>
 
@@ -31,7 +32,7 @@ export function SubscriptionsPage() {
       setCreateOpen(false)
       setMessage('订阅已提交')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '订阅提交失败')
+      setMessage(formatPasswordErrorMessage(error, '订阅提交失败'))
     } finally {
       setPending(false)
     }
@@ -50,7 +51,7 @@ export function SubscriptionsPage() {
       await reload()
       setMessage('订阅已删除')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '删除失败')
+      setMessage(formatPasswordErrorMessage(error, '删除失败'))
     } finally {
       setPending(false)
     }

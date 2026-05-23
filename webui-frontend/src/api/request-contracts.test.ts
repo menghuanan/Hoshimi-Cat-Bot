@@ -58,10 +58,19 @@ describe('webui api contracts', () => {
       storage,
       fetchImpl,
       redirectToLogin,
-    })).rejects.toThrow('HTTP 401')
+    })).rejects.toThrow('请重新登录')
 
     expect(storage.getItem('webuiToken')).toBeNull()
     expect(redirectToLogin).toHaveBeenCalledTimes(1)
+  })
+
+  it('requestJson should hide status codes from generic request failures', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(500, {}))
+
+    await expect(requestJson('/api/runtime/summary', {
+      fetchImpl,
+      storage: createStorage('runtime-token'),
+    })).rejects.toThrow('请求失败，请稍后重试')
   })
 
   it('loginWithPassword should post the password without auth headers', async () => {
