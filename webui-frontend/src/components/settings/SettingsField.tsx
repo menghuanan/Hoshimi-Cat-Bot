@@ -7,6 +7,8 @@ type SettingsFieldProps = {
 }
 
 const baseInputClass = 'mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950'
+// 设置卡片只缩窄横向占比，纵向间距和内部控件尺寸保持不变。
+const settingsCardWidthClass = 'w-full md:w-3/4'
 
 /**
  * 单个设置字段按元数据渲染控件，写入专用字段始终由父级提供空值。
@@ -20,7 +22,7 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
   }
   if (field.type === 'boolean') {
     return (
-      <label htmlFor={id} className="flex min-w-0 items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <label htmlFor={id} className={`flex min-w-0 items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${settingsCardWidthClass}`}>
         <span className="min-w-0">
           <span className="block text-sm font-medium text-slate-800">{field.label}</span>
           {field.restartRequired ? <span className="mt-1 block text-xs text-amber-700">保存后需要重启</span> : null}
@@ -38,7 +40,7 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
   }
 
   return (
-    <label htmlFor={id} className="block min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <label htmlFor={id} className={`block min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${settingsCardWidthClass}`}>
       <span className="text-sm font-medium text-slate-800">{field.label}</span>
       {field.type === 'select' ? (
         <select

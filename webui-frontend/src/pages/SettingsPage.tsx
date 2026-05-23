@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
 import { useSettingsFiles } from '../hooks/useSettingsFiles'
@@ -131,10 +130,9 @@ export function SettingsPage() {
 
   return (
     <div data-page="settings" className="space-y-6">
-      <PageSection
-        title="写入设置"
-        actions={(
-          <>
+      <section className="space-y-4">
+        {/* 设置页顶部只保留保存操作，移除标题文本以让配置区获得更宽的横向空间。 */}
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -148,9 +146,7 @@ export function SettingsPage() {
               {saveStatus.message}
             </span>
           ) : null}
-          </>
-        )}
-      >
+        </div>
         <SettingsTabs categories={settingsCategories} activeCategoryId={activeCategoryId} onSelectCategory={selectCategory} />
         <div className="space-y-4">
           {visibleFieldGroups.map((group) => (
@@ -163,7 +159,7 @@ export function SettingsPage() {
             />
           ))}
         </div>
-      </PageSection>
+      </section>
     </div>
   )
 }
@@ -223,8 +219,8 @@ function SettingsGroup({title, fields, values, onChange}: {
   return (
     <section data-layout="single-column" className="space-y-3">
       <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
-      {/* 字段按单列堆叠，避免大屏下配置项被拆成左右两栏。 */}
-      <div className="grid gap-4">
+      {/* 字段仍然单列堆叠，只收窄卡片横向占比，避免页面整体布局横向收缩。 */}
+      <div className="grid justify-items-start gap-4">
         {fields.map((field) => field.key === 'adminsText' ? (
           // 群管理员草稿跟随父级保存值重挂载，避免 effect 中同步派生 state。
           <GroupAdminField key={`${field.key}:${String(values[field.key] || '')}`} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
@@ -262,7 +258,7 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
   }
 
   return (
-    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="min-w-0 w-full rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:w-3/4">
       <p className="text-sm font-medium text-slate-800">群普通管理员</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1 text-xs font-medium text-slate-600">

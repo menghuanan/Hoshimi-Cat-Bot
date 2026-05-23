@@ -56,7 +56,8 @@ describe('webui shell routing', () => {
 
     fireEvent.click(screen.getByRole('button', {name: '系统配置'}))
 
-    expect(screen.getByText('写入设置')).toBeInTheDocument()
+    expect(screen.queryByText('写入设置')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '保存'})).toBeInTheDocument()
   })
 
   /**
@@ -64,7 +65,8 @@ describe('webui shell routing', () => {
    */
   it('renders protected direct path routes without requiring hash navigation', () => {
     const settingsRender = renderAtPath('/settings')
-    expect(screen.getByText('写入设置')).toBeInTheDocument()
+    expect(screen.queryByText('写入设置')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '保存'})).toBeInTheDocument()
     settingsRender.unmount()
 
     const subscriptionsRender = renderAtPath('/subscriptions')
@@ -123,6 +125,7 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '消息配置'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '翻译配置'})).toBeInTheDocument()
+    expect(screen.queryByText('写入设置')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', {name: 'B站配置'}))
     expect(await screen.findByLabelText('Cookie')).toHaveValue('')
@@ -363,7 +366,7 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('OneBot11 主机')).toBeInTheDocument()
     expect(screen.queryByLabelText('QQ App ID')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('WebUI 主机')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('justify-center')
+    expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('justify-start')
 
     const platformSection = screen.getByText('平台配置').closest('section')
     expect(platformSection).not.toBeNull()

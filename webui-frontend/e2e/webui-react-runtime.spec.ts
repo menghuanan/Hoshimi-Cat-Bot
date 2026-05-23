@@ -47,7 +47,7 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
   await expect(page.getByText('group:1072150397 类型黑名单: 空，正则黑名单: 测试')).toHaveCount(0)
 })
 
-test('centers shell pages and keeps settings fields in one column', async ({page}) => {
+test('left aligns settings tabs and narrows settings cards without changing vertical flow', async ({page}) => {
   await page.setViewportSize({width: 1440, height: 1000})
   await page.goto('/login')
   await page.getByLabel('WebUI 密码').fill('secret-password')
@@ -74,14 +74,14 @@ test('centers shell pages and keeps settings fields in one column', async ({page
   const contentBox = await page.locator('[data-page="settings"]').boundingBox()
   expect(tabsBox).not.toBeNull()
   expect(contentBox).not.toBeNull()
-  const tabsCenter = (tabsBox?.x || 0) + (tabsBox?.width || 0) / 2
-  const contentCenter = (contentBox?.x || 0) + (contentBox?.width || 0) / 2
-  expect(Math.abs(tabsCenter - contentCenter)).toBeLessThan(2)
+  expect(Math.abs((tabsBox?.x || 0) - (contentBox?.x || 0))).toBeLessThan(2)
 
   const platformTypeBox = await page.getByLabel('平台类型').boundingBox()
   const adapterBox = await page.getByLabel('适配器').boundingBox()
   expect(platformTypeBox).not.toBeNull()
   expect(adapterBox).not.toBeNull()
+  expect((platformTypeBox?.width || 0) / (contentBox?.width || 1)).toBeGreaterThan(0.7)
+  expect((platformTypeBox?.width || 0) / (contentBox?.width || 1)).toBeLessThan(0.8)
   expect(Math.abs((platformTypeBox?.x || 0) - (adapterBox?.x || 0))).toBeLessThan(2)
   expect(adapterBox?.y).toBeGreaterThan((platformTypeBox?.y || 0) + (platformTypeBox?.height || 0))
 })
