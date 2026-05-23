@@ -13,7 +13,7 @@ type UseRuntimeSummaryOptions = WebUiJsonRequestOptions & {
 function toDashboardRuntimeFields(summary: WebUiRuntimeSummary | null): WebUiDashboardRuntimeFields {
   return {
     appVersion: summary?.appVersion || '--',
-    lifecycleState: summary?.lifecycleState || '--',
+    lifecycleState: displayLifecycleState(summary?.lifecycleState),
     uptimeSeconds: summary?.uptimeSeconds ?? null,
     startedAtEpochMillis: summary?.host?.startedAtEpochMillis ?? null,
     systemTimeEpochMillis: summary?.host?.systemTimeEpochMillis ?? null,
@@ -30,6 +30,21 @@ function toDashboardRuntimeFields(summary: WebUiRuntimeSummary | null): WebUiDas
     todayPushTotal: summary?.todayPushStats?.total ?? null,
     recentPushRecordsCount: summary?.recentPushRecords?.length ?? 0,
   }
+}
+
+/**
+ * 后端运行态枚举转换成用户可读文案，避免首页直接暴露 RUNNING 等内部值。
+ */
+function displayLifecycleState(value: string | undefined): string {
+  const normalized = String(value || '').trim().toUpperCase()
+  const labels: Record<string, string> = {
+    RUNNING: 'Bot运行中',
+    STARTING: 'Bot启动中',
+    STOPPED: 'Bot已停止',
+    STOPPING: 'Bot停止中',
+    FAILED: 'Bot异常',
+  }
+  return labels[normalized] || value || '--'
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createSubscription,
+  buildSubscriptionCreatePayload,
   deleteSubscription,
   deleteSubscriptionAtAll,
   deleteSubscriptionFilter,
@@ -38,6 +39,17 @@ type SubscriptionAtAllDraft = {
 }
 
 /**
+ * 写接口可能以 HTTP 200 返回业务失败，前端必须把具体 message 暴露给页面状态。
+ */
+function ensureSubscriptionWriteSucceeded(result: unknown, fallbackMessage: string): unknown {
+  if (result && typeof result === 'object' && 'success' in result && (result as {success?: unknown}).success === false) {
+    const message = String((result as {message?: unknown}).message || fallbackMessage)
+    throw new Error(message)
+  }
+  return result
+}
+
+/**
  * 订阅页把加载和高风险写操作封成一个 hook，页面只拿结果和命令。
  */
 export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
@@ -71,7 +83,19 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     if (!confirmationPassword) {
       return null
     }
-    return createSubscription({...payload, confirmationPassword}, requestOptions)
+    // 新增表单使用分类型显示字段，提交前统一转换成后端订阅写入 DTO。
+    const result = await createSubscription(buildSubscriptionCreatePayload({
+      type: String(payload.type || 'dynamic'),
+      uid: String(payload.uid || ''),
+      targetGroup: String(payload.targetGroup || ''),
+      bangumiId: String(payload.bangumiId || ''),
+      bangumiTarget: String(payload.bangumiTarget || ''),
+      groupName: String(payload.groupName || ''),
+      groupUid: String(payload.groupUid || ''),
+      groupTarget: String(payload.groupTarget || ''),
+      confirmationPassword,
+    }), requestOptions)
+    return ensureSubscriptionWriteSucceeded(result, '新增订阅失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   const removeSubscription = useCallback(async (itemId: string) => {
@@ -79,7 +103,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     if (!confirmationPassword) {
       return null
     }
-    return deleteSubscription(itemId, confirmationPassword, requestOptions)
+    return ensureSubscriptionWriteSucceeded(await deleteSubscription(itemId, confirmationPassword, requestOptions), '删除订阅失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
@@ -118,7 +142,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     if (!confirmationPassword) {
       return null
     }
-    return saveSubscriptionFilter(itemId, {...draft, confirmationPassword}, requestOptions)
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionFilter(itemId, {...draft, confirmationPassword}, requestOptions), '保存过滤器失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
@@ -129,7 +153,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     if (!confirmationPassword) {
       return null
     }
-    return saveSubscriptionTemplate(itemId, {...draft, confirmationPassword}, requestOptions)
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTemplate(itemId, {...draft, confirmationPassword}, requestOptions), '保存模板失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
@@ -140,7 +164,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     if (!confirmationPassword) {
       return null
     }
-    return saveSubscriptionAtAll(itemId, {...draft, confirmationPassword}, requestOptions)
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionAtAll(itemId, {...draft, confirmationPassword}, requestOptions), '保存at全体失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
@@ -151,7 +175,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     if (!confirmationPassword) {
       return null
     }
-    return saveSubscriptionTheme(itemId, color, confirmationPassword, requestOptions)
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTheme(itemId, color, confirmationPassword, requestOptions), '保存主题色失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
@@ -163,12 +187,12 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
       return null
     }
     if (kind === 'filter') {
-      return deleteSubscriptionFilter(itemId, key, confirmationPassword, requestOptions)
+      return ensureSubscriptionWriteSucceeded(await deleteSubscriptionFilter(itemId, key, confirmationPassword, requestOptions), '删除过滤器失败')
     }
     if (kind === 'template') {
-      return deleteSubscriptionTemplate(itemId, key, confirmationPassword, requestOptions)
+      return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTemplate(itemId, key, confirmationPassword, requestOptions), '删除模板失败')
     }
-    return deleteSubscriptionAtAll(itemId, key, confirmationPassword, requestOptions)
+    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionAtAll(itemId, key, confirmationPassword, requestOptions), '删除at全体失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
@@ -179,7 +203,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     if (!confirmationPassword) {
       return null
     }
-    return setSubscriptionTemplateRandom(itemId, enabled, confirmationPassword, requestOptions)
+    return ensureSubscriptionWriteSucceeded(await setSubscriptionTemplateRandom(itemId, enabled, confirmationPassword, requestOptions), '切换随机模板失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   return {

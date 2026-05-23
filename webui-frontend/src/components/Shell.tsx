@@ -11,7 +11,7 @@ type ShellProps = {
 }
 
 /**
- * 壳层负责导航、顶部管理员菜单和内容承载区，页面内容由子页面组件填充。
+ * 壳层负责导航、顶部 Admin 菜单和内容承载区，页面内容由子页面组件填充。
  */
 export function Shell({page, onNavigate, children}: ShellProps) {
   const {preference, setPreference} = useThemePreference()
@@ -132,7 +132,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                 aria-expanded={adminMenuOpen}
                 onClick={() => setAdminMenuOpen((current) => !current)}
               >
-                管理员菜单
+                Admin
               </button>
               {adminMenuOpen ? (
                 <div
@@ -202,7 +202,7 @@ function pageLabel(page: Exclude<WebUiPageName, 'login'>): string {
     home: '首页',
     settings: '系统配置',
     subscriptions: '订阅管理',
-    logs: '日志',
+    logs: '实时日志',
   }
   return labels[page]
 }

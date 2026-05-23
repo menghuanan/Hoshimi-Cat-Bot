@@ -2,7 +2,7 @@ import { PageSection } from '../components/PageSection'
 import { useLogs } from '../hooks/useLogs'
 
 /**
- * 日志页提供来源、过滤、搜索、自动刷新、导出和清空入口，清空动作仍走双重确认。
+ * 日志页提供来源、过滤、搜索、自动刷新、导出和本地清屏入口。
  */
 export function LogsPage() {
   const {
@@ -27,9 +27,8 @@ export function LogsPage() {
 
   return (
     <div data-page="logs" className="space-y-6">
-      <PageSection
-        title="日志"
-        actions={(
+      <PageSection title="实时日志">
+        <div className="grid min-h-0 gap-4">
           <div className="grid w-full items-end gap-2 md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(8rem,1fr))_auto_auto_auto_auto]">
             <label className="grid gap-1 text-xs font-medium text-slate-600">
               日志来源
@@ -74,11 +73,12 @@ export function LogsPage() {
             <button type="button" onClick={() => exportFilteredRows()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">导出</button>
             <button type="button" onClick={() => void clearCurrentLog()} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">清空</button>
           </div>
-        )}
-      >
-        <pre className="min-h-96 overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100 shadow-sm">
-          {filteredRows.length > 0 ? filteredRows.map((row) => row.raw).join('\n') : '暂无日志'}
-        </pre>
+          <pre className="h-[calc(100vh-16rem)] min-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100 shadow-sm">
+            {filteredRows.length > 0 ? filteredRows.map((row, index) => (
+              <span key={`${row.raw}-${index}`} className="block">{renderLogRow(row.raw, row.level)}</span>
+            )) : '暂无日志'}
+          </pre>
+        </div>
       </PageSection>
     </div>
   )
@@ -92,4 +92,36 @@ function readSourceId(source: unknown): string {
     return ''
   }
   return String((source as {id?: unknown}).id || '')
+}
+
+/**
+ * 日志级别仅高亮级别文本，保留原始行其余内容以便用户复制排查。
+ */
+function renderLogRow(raw: string, level: string) {
+  if (!level || level === 'PLAIN') {
+    return raw
+  }
+  const levelIndex = raw.indexOf(level)
+  if (levelIndex < 0) {
+    return <span className={logLevelClass(level)}>{raw}</span>
+  }
+  return (
+    <>
+      {raw.slice(0, levelIndex)}
+      <span className={logLevelClass(level)}>{level}</span>
+      {raw.slice(levelIndex + level.length)}
+    </>
+  )
+}
+
+/**
+ * INFO/WARN/ERROR 使用明确警示色，其余级别保持低调的可读颜色。
+ */
+function logLevelClass(level: string): string {
+  const classes: Record<string, string> = {
+    INFO: 'font-semibold text-emerald-300',
+    WARN: 'font-semibold text-amber-300',
+    ERROR: 'font-semibold text-rose-300',
+  }
+  return classes[level] || 'font-semibold text-sky-300'
 }

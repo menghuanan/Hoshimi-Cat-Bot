@@ -3,7 +3,9 @@ import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
 import { useSettingsFiles } from '../hooks/useSettingsFiles'
-import { settingsCategories, validateSettingsValues, type SettingsCategoryId, type SettingsFieldDefinition } from '../settings/settingsSchema'
+import { formatSaveResultMessage } from '../settings/settingsSaveResult'
+import { settingsCategories, validateSettingsValues, type SettingsCategoryDefinition, type SettingsCategoryId, type SettingsFieldDefinition } from '../settings/settingsSchema'
+import type { WebUiSettingsSaveResult } from '../types/settings'
 
 type SettingsFieldSnapshot = {
   key?: string
@@ -11,6 +13,10 @@ type SettingsFieldSnapshot = {
 }
 
 type SettingsFormValues = Record<string, string | boolean>
+type SettingsFieldGroup = {
+  title: string
+  fields: SettingsFieldDefinition[]
+}
 
 /**
  * 配置页按元数据渲染八个分区，敏感字段只允许空输入触发保留语义。
@@ -51,6 +57,8 @@ export function SettingsPage() {
     ...initialValues,
     ...editedValues,
   }), [editedValues, initialValues])
+  const visibleFieldGroups = useMemo(() => visibleGroupsForCategory(activeCategory, values), [activeCategory, values])
+  const visibleSettingsFields = useMemo(() => visibleFieldGroups.flatMap((group) => group.fields), [visibleFieldGroups])
 
   /**
    * 字段变更只更新当前表单值，保存时再按文件边界拆分提交。
@@ -74,34 +82,44 @@ export function SettingsPage() {
     setSaving(true)
     setMessage('')
     try {
-      const biliValues = pickValuesForFile(activeCategory.fields, values, 'biliConfig')
-      const botValues = pickValuesForFile(activeCategory.fields, values, 'botConfig')
+      const biliValues = pickValuesForFile(visibleSettingsFields, values, 'biliConfig')
+      const botValues = pickValuesForFile(visibleSettingsFields, values, 'botConfig')
       const validationErrors = validateSettingsValues({...biliValues, ...botValues})
       if (validationErrors.length > 0) {
         setMessage(validationErrors.join('；'))
         return
       }
-      const completeBiliValues = pickValuesForFile(allSettingsFields, completeValues, 'biliConfig')
-      const completeBotValues = pickValuesForFile(allSettingsFields, completeValues, 'botConfig')
+      const completeBiliValues = pickValuesForFile(visibleSettingsFields, completeValues, 'biliConfig')
+      const completeBotValues = pickValuesForFile(visibleSettingsFields, completeValues, 'botConfig')
       const biliToken = String(biliConfig?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
+      const saveResults: Array<WebUiSettingsSaveResult | null> = []
       if (biliToken && Object.keys(biliValues).length > 0) {
-        await saveBili({
+        saveResults.push(await saveBili({
           snapshotToken: biliToken,
           proxyText: String(completeBiliValues['proxyConfig.proxy'] || ''),
           fields: omitKey(completeBiliValues, 'proxyConfig.proxy'),
-        })
+        }))
       }
       if (botToken && Object.keys(botValues).length > 0) {
-        await saveBot({
+        saveResults.push(await saveBot({
           snapshotToken: botToken,
           token: String(completeBotValues['platform.onebot11.token'] || ''),
           fields: omitKey(completeBotValues, 'platform.onebot11.token'),
-        })
+        }))
+      }
+      const resultMessage = formatSaveResultMessage(saveResults)
+      if (saveResults.some((result) => result === null)) {
+        setMessage(resultMessage)
+        return
+      }
+      if (saveResults.some((result) => result?.success === false)) {
+        setMessage(resultMessage)
+        return
       }
       await reload()
       setEditedValues({})
-      setMessage('配置已提交')
+      setMessage(resultMessage)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '保存失败')
     } finally {
@@ -125,15 +143,148 @@ export function SettingsPage() {
         )}
       >
         <SettingsTabs categories={settingsCategories} activeCategoryId={activeCategoryId} onSelectCategory={selectCategory} />
-        <div className="grid gap-4 xl:grid-cols-2">
-          {activeCategory.fields.map((field) => (
-            <SettingsField key={field.key} field={field} value={values[field.key] ?? ''} onChange={updateValue} />
+        <div className="space-y-4">
+          {visibleFieldGroups.map((group) => (
+            <SettingsGroup
+              key={group.title}
+              title={group.title}
+              fields={group.fields}
+              values={values}
+              onChange={updateValue}
+            />
           ))}
         </div>
         {message ? <p className="break-words text-sm font-medium text-slate-700">{message}</p> : null}
       </PageSection>
     </div>
   )
+}
+
+/**
+ * 配置分组根据页面实际显示字段生成，保存范围也沿用同一组字段。
+ */
+function visibleGroupsForCategory(category: SettingsCategoryDefinition, values: SettingsFormValues): SettingsFieldGroup[] {
+  if (category.id === 'integration') {
+    const platformType = String(values['platform.type'] || 'onebot11')
+    const platformKeys = platformType === 'qq_official'
+      ? ['platform.type', 'platform.qqOfficial.appId', 'platform.qqOfficial.appSecret', 'platform.qqOfficial.botToken']
+      : [
+          'platform.type',
+          'platform.adapter',
+          'platform.onebot11.host',
+          'platform.onebot11.port',
+          'platform.onebot11.token',
+          'platform.onebot11.useTls',
+          'platform.onebot11.heartbeatInterval',
+          'platform.onebot11.reconnectInterval',
+          'platform.onebot11.sendMode',
+          'platform.onebot11.maxReconnectAttempts',
+          'platform.onebot11.connectTimeout',
+        ]
+    const webUiKeys = values['webui.enabled'] === true
+      ? ['webui.enabled', 'webui.host', 'webui.port', 'webui.tokenTtlSeconds']
+      : ['webui.enabled']
+    return [
+      {title: '平台配置', fields: fieldsByKeys(category.fields, platformKeys)},
+      {title: 'WebUI 配置', fields: fieldsByKeys(category.fields, webUiKeys)},
+    ]
+  }
+  return [{title: category.label, fields: category.fields}]
+}
+
+/**
+ * 字段顺序以显式 key 列表为准，避免条件显示后改变旧 WebUI 的阅读顺序。
+ */
+function fieldsByKeys(fields: SettingsFieldDefinition[], keys: string[]): SettingsFieldDefinition[] {
+  const fieldByKey = new Map(fields.map((field) => [field.key, field]))
+  return keys.flatMap((key) => {
+    const field = fieldByKey.get(key)
+    return field ? [field] : []
+  })
+}
+
+/**
+ * 设置组统一渲染两列字段，管理员组对群管理映射使用专用双输入控件。
+ */
+function SettingsGroup({title, fields, values, onChange}: {
+  title: string
+  fields: SettingsFieldDefinition[]
+  values: SettingsFormValues
+  onChange: (key: string, value: string | boolean) => void
+}) {
+  return (
+    <section className="space-y-3">
+      <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {fields.map((field) => field.key === 'adminsText' ? (
+          <GroupAdminField key={field.key} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
+        ) : (
+          <SettingsField key={field.key} field={field} value={values[field.key] ?? ''} onChange={onChange} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * 群普通管理员按“群聊 + 个人QQ号”双输入编辑首条映射，并在下方列出现有映射。
+ */
+function GroupAdminField({value, onChange}: {value: string, onChange: (value: string) => void}) {
+  const pairs = adminPairsFromText(value)
+  const firstPair = pairs[0] || {groupId: '', userId: ''}
+  const updatePair = (part: 'groupId' | 'userId', nextValue: string) => {
+    const nextPairs = pairs.length > 0 ? [...pairs] : [{groupId: '', userId: ''}]
+    nextPairs[0] = {...nextPairs[0], [part]: nextValue}
+    onChange(nextPairs.map((pair) => `${pair.groupId}:${pair.userId}`).join('\n'))
+  }
+
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2">
+      <p className="text-sm font-medium text-slate-800">群普通管理员</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-xs font-medium text-slate-600">
+          群聊
+          <input
+            aria-label="群聊"
+            inputMode="numeric"
+            value={firstPair.groupId}
+            onChange={(event) => updatePair('groupId', event.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950"
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-medium text-slate-600">
+          个人QQ号
+          <input
+            aria-label="个人QQ号"
+            inputMode="numeric"
+            value={firstPair.userId}
+            onChange={(event) => updatePair('userId', event.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950"
+          />
+        </label>
+      </div>
+      <div className="mt-3 space-y-1">
+        {pairs.length > 0 ? pairs.map((pair, index) => (
+          <p key={`${pair.groupId}-${pair.userId}-${index}`} className="text-sm text-slate-700">
+            群聊：{pair.groupId || '--'} 管理员：{pair.userId || '--'}
+          </p>
+        )) : <p className="text-sm text-slate-500">暂无群普通管理员</p>}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 管理员文本解析只服务显示层，非法或半填行仍保留到保存校验中处理。
+ */
+function adminPairsFromText(value: string): Array<{groupId: string, userId: string}> {
+  return value.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [groupId = '', userId = ''] = line.split(/\s*[:：]\s*/, 2)
+      return {groupId, userId}
+    })
 }
 
 /**

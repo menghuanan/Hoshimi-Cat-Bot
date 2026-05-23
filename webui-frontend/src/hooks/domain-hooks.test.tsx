@@ -39,7 +39,7 @@ describe('webui domain hooks', () => {
    */
   it('useRuntimeSummary should expose dashboard parity fields from the runtime payload', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {
-      lifecycleState: 'RUNNING',
+      lifecycleState: 'Bot运行中',
       uptimeSeconds: 3661,
       appVersion: '2.0.0',
       platformReady: true,
@@ -65,7 +65,7 @@ describe('webui domain hooks', () => {
 
     await waitFor(() => expect(result.current.dashboard).toMatchObject({
       appVersion: '2.0.0',
-      lifecycleState: 'RUNNING',
+      lifecycleState: 'Bot运行中',
       uptimeSeconds: 3661,
       startedAtEpochMillis: 1_700_000_000_000,
       systemTimeEpochMillis: 1_700_000_300_000,
@@ -174,6 +174,49 @@ describe('webui domain hooks', () => {
   })
 
   /**
+   * 分组新增表单使用显示层字段名，hook 必须转换成后端新增订阅 DTO。
+   */
+  it('useSubscriptions should convert group create fields before posting to backend', async () => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
+        return Promise.resolve(createJsonResponse(200, {items: []}))
+      }
+      if (url.endsWith('/api/subscriptions') && init?.method === 'POST') {
+        return Promise.resolve(createJsonResponse(200, {success: true}))
+      }
+      return Promise.resolve(createJsonResponse(200, {}))
+    })
+
+    const user = userEvent.setup()
+    const {result} = renderWithConfirmationProvider(() => useSubscriptions({fetchImpl})) as {
+      result: {current: ReturnType<typeof useSubscriptions>}
+    }
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions', expect.any(Object)))
+    const createPromise = result.current.saveSubscription({
+      type: 'group',
+      groupName: '测试分组',
+      groupUid: '1001',
+      groupTarget: '2001',
+    })
+
+    await user.type(await screen.findByLabelText('确认密码'), 'group-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    await createPromise
+
+    const postCall = fetchImpl.mock.calls.find(([url, init]) => String(url).endsWith('/api/subscriptions') && init?.method === 'POST')
+    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({
+      type: 'group',
+      groupName: '测试分组',
+      uid: '1001',
+      targetGroup: '2001',
+      confirmationPassword: 'group-password',
+    })
+  })
+
+  /**
    * 订阅嵌套编辑器的写入同样属于高风险操作，hook 必须统一补齐 confirmationPassword。
    */
   it('useSubscriptions should gate nested editor writes with confirmation passwords', async () => {
@@ -225,8 +268,8 @@ describe('webui domain hooks', () => {
     })
   })
 
-  it('useLogs should go through centered and high-risk confirmation when clearing logs', async () => {
-    const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+  it('useLogs should clear the visible log window without calling the backend clear route', async () => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/api/logs/sources')) {
         return Promise.resolve(createJsonResponse(200, {sources: [{id: 'source-1'}]}))
@@ -234,35 +277,51 @@ describe('webui domain hooks', () => {
       if (url.includes('/api/logs/source-1?tail=500')) {
         return Promise.resolve(createJsonResponse(200, {text: 'line-1'}))
       }
-      if (url.endsWith('/api/logs/source-1/clear') && init?.method === 'POST') {
-        return Promise.resolve(createJsonResponse(200, {success: true}))
-      }
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const user = userEvent.setup()
     const {result} = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
       result: {current: ReturnType<typeof useLogs>}
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/logs/sources', expect.any(Object)))
-    const clearPromise = result.current.clearCurrentLog('source-1')
+    await waitFor(() => expect(result.current.rows).toEqual(['line-1']))
 
-    const centeredDialog = await screen.findByRole('dialog')
-    expect(centeredDialog).toHaveTextContent('确认操作')
-    await user.click(screen.getByRole('button', {name: '确认'}))
+    await result.current.clearCurrentLog('source-1')
 
-    await screen.findByRole('dialog')
-    await user.type(screen.getByLabelText('确认密码'), 'log-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
+    expect(result.current.rows).toEqual([])
+    expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/clear'))).toBe(false)
+  })
 
-    await clearPromise
-
-    const postCall = fetchImpl.mock.calls.find(([url, init]) => String(url).includes('/api/logs/source-1/clear') && init?.method === 'POST')
-    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
-      sourceId: 'source-1',
-      confirmationPassword: 'log-password',
+  /**
+   * 自动刷新偏好写入 cookie，用户再次打开日志页时继续沿用。
+   */
+  it('useLogs should persist auto refresh preference in a cookie', async () => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/logs/sources')) {
+        return Promise.resolve(createJsonResponse(200, {sources: [{id: 'source-1'}]}))
+      }
+      if (url.includes('/api/logs/source-1?tail=500')) {
+        return Promise.resolve(createJsonResponse(200, {text: 'line-1'}))
+      }
+      return Promise.resolve(createJsonResponse(200, {}))
     })
+    document.cookie = 'dynamic_bot_webui_logs_auto_refresh=; Max-Age=0; path=/'
+    const first = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+      result: {current: ReturnType<typeof useLogs>}
+      unmount: () => void
+    }
+
+    await waitFor(() => expect(first.result.current.sourceId).toBe('source-1'))
+    first.result.current.setAutoRefresh(true)
+    expect(document.cookie).toContain('dynamic_bot_webui_logs_auto_refresh=true')
+    first.unmount()
+
+    const second = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+      result: {current: ReturnType<typeof useLogs>}
+    }
+    expect(second.result.current.autoRefresh).toBe(true)
   })
 
   /**
@@ -293,6 +352,39 @@ describe('webui domain hooks', () => {
 
     await waitFor(() => expect(result.current.filteredRows.map((row) => row.raw)).toEqual(['[WARN] [push] push slow']))
     expect(result.current.exportFilteredRows()).toContain('[WARN] [push] push slow')
+  })
+
+  /**
+   * 文件日志使用 logback 默认格式，级别和模块筛选必须从真实日志行中提取。
+   */
+  it('useLogs should parse logback file rows for level and module filters', async () => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/logs/sources')) {
+        return Promise.resolve(createJsonResponse(200, {sources: [{id: 'app'}]}))
+      }
+      if (url.includes('/api/logs/app?tail=500')) {
+        return Promise.resolve(createJsonResponse(200, {text: [
+          '2026-05-23 10:00:00.000 [main] INFO  top.bilibili.Main - boot ok',
+          '2026-05-23 10:00:01.000 [main] WARN  top.bilibili.webui.WebUiManager - reload failed',
+        ].join('\n')}))
+      }
+      return Promise.resolve(createJsonResponse(200, {}))
+    })
+
+    const {result} = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+      result: {current: ReturnType<typeof useLogs>}
+    }
+
+    await waitFor(() => expect(result.current.levels).toEqual(['INFO', 'WARN']))
+    expect(result.current.modules).toEqual(['top.bilibili.Main', 'top.bilibili.webui.WebUiManager'])
+
+    result.current.setLevelFilter('WARN')
+    result.current.setModuleFilter('top.bilibili.webui.WebUiManager')
+
+    await waitFor(() => expect(result.current.filteredRows.map((row) => row.raw)).toEqual([
+      '2026-05-23 10:00:01.000 [main] WARN  top.bilibili.webui.WebUiManager - reload failed',
+    ]))
   })
 
   /**

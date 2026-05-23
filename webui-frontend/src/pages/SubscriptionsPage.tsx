@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { PageSection } from '../components/PageSection'
 import { SubscriptionEditorModal } from '../components/subscriptions/SubscriptionEditorModal'
 import { SubscriptionModal } from '../components/subscriptions/SubscriptionModal'
@@ -7,25 +7,17 @@ import { useSubscriptions } from '../hooks/useSubscriptions'
 type SubscriptionItem = Record<string, unknown>
 
 /**
- * 订阅页提供类型筛选、搜索、新增、删除和四类嵌套编辑器入口。
+ * 订阅页提供新增、删除和四类嵌套编辑器入口。
  */
 export function SubscriptionsPage() {
   const subscriptionActions = useSubscriptions()
   const {items, loading, saveSubscription, removeSubscription, reload} = subscriptionActions
-  const [query, setQuery] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<SubscriptionItem | null>(null)
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState('')
 
   const subscriptionItems = items as SubscriptionItem[]
-  const filteredItems = useMemo(() => {
-    const keyword = query.trim().toLowerCase()
-    return subscriptionItems.filter((item) => {
-      const matchesKeyword = !keyword || searchableSubscriptionText(item).toLowerCase().includes(keyword)
-      return matchesKeyword
-    })
-  }, [query, subscriptionItems])
 
   /**
    * 新增订阅提交后刷新列表，确认密码由 hook 统一弹窗获取。
@@ -77,26 +69,11 @@ export function SubscriptionsPage() {
         {loading ? <p className="text-sm text-slate-500">正在加载</p> : null}
       </PageSection>
 
-      <PageSection
-        title="订阅"
-        actions={(
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="sr-only" htmlFor="subscription-search">搜索订阅</label>
-            <input
-              id="subscription-search"
-              aria-label="搜索订阅"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="搜索订阅"
-            />
-          </div>
-        )}
-      >
+      <PageSection title="订阅">
         <div className="grid gap-3 xl:grid-cols-2">
-          {filteredItems.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">没有匹配的订阅</div>
-          ) : filteredItems.map((item, index) => (
+          {subscriptionItems.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">暂无订阅</div>
+          ) : subscriptionItems.map((item, index) => (
             <SubscriptionCard
               key={readItemField(item, 'id') || index}
               item={item}
@@ -164,25 +141,11 @@ function SubscriptionCard({item, pending, onEdit, onDelete}: {
  */
 function InfoBlock({label, value}: {label: string, value: string}) {
   return (
-    <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+    <div className="subscription-info-block rounded-lg border border-slate-100 bg-slate-50 p-3">
       <p className="text-xs font-semibold text-slate-500">{label}</p>
       <p className="mt-1 break-words text-sm font-medium text-slate-800">{value}</p>
     </div>
   )
-}
-
-/**
- * 订阅搜索把常用摘要字段和原始 JSON 都纳入匹配，兼容不同快照形态。
- */
-function searchableSubscriptionText(item: SubscriptionItem): string {
-  return [
-    readItemField(item, 'title'),
-    readItemField(item, 'identifierLabel'),
-    readItemField(item, 'filterInfo'),
-    readItemField(item, 'atAllInfo'),
-    readItemField(item, 'themeColor'),
-    JSON.stringify(item),
-  ].join(' ')
 }
 
 /**

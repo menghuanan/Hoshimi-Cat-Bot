@@ -49,7 +49,7 @@ export const settingsCategories: SettingsCategoryDefinition[] = [
     fields: [
       {key: 'platform.type', label: '平台类型', file: 'botConfig', payloadKey: 'platformType', type: 'select', restartRequired: true, options: [
         {value: 'onebot11', label: '通用机器人协议'},
-        {value: 'qq_official', label: 'QQ 官方机器人'},
+        {value: 'qq_official', label: 'QQ官方机器人'},
       ]},
       {key: 'platform.adapter', label: '适配器', file: 'botConfig', payloadKey: 'adapter', type: 'select', restartRequired: true, options: [
         {value: 'onebot11', label: '通用'},
@@ -241,6 +241,8 @@ function validatePort(label: string, value: unknown): string[] {
  * 小时范围允许跨午夜，但两端都必须是 0-23 内的整数。
  */
 function validateHourRange(label: string, value: unknown): string[] {
+  const text = String(value ?? '').trim()
+  if (!text) return []
   const range = parseRange(value)
   if (!range || range.start < 0 || range.start > 23 || range.end < 0 || range.end > 23 || range.start === range.end) {
     return [`${label}必须使用 0-23 的 时-时 格式`]
@@ -252,6 +254,8 @@ function validateHourRange(label: string, value: unknown): string[] {
  * 秒级区间必须是升序正整数，前端不再把错误文本隐式回退成默认值。
  */
 function validateIntervalRange(label: string, value: unknown): string[] {
+  const text = String(value ?? '').trim()
+  if (!text) return []
   const range = parseRange(value)
   if (!range || range.start <= 0 || range.end <= 0 || range.end < range.start) {
     return [`${label}必须使用 起始-结束 格式，且结束不小于起始`]
@@ -274,8 +278,14 @@ function validateHexColor(label: string, value: unknown): string[] {
  */
 function validateAdminLines(value: unknown): string[] {
   const lines = String(value ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-  const invalidIndex = lines.findIndex((line) => !/^\d+\s*[:：]\s*\d+$/.test(line))
-  return invalidIndex >= 0 ? [`群普通管理员第 ${invalidIndex + 1} 行格式应为 群号:QQ号`] : []
+  const invalidIndex = lines.findIndex((line) => {
+    const matched = line.match(/^(\d*)\s*[:：]\s*(\d*)$/)
+    if (!matched) return true
+    const groupId = Number.parseInt(matched[1], 10)
+    const userId = Number.parseInt(matched[2], 10)
+    return !matched[1] || !matched[2] || !Number.isInteger(groupId) || !Number.isInteger(userId) || groupId <= 0 || userId <= 0
+  })
+  return invalidIndex >= 0 ? [`群普通管理员第 ${invalidIndex + 1} 行必须同时填写正数群聊和个人QQ号`] : []
 }
 
 /**

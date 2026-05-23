@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { buildLogClearPayload, clearLogSource, listLogSources, readLogWindow } from '../api/logs'
+import { flushSync } from 'react-dom'
+import { listLogSources, readLogWindow } from '../api/logs'
 import type { WebUiJsonRequestOptions } from '../api/http'
 import type { WebUiParsedLogRow } from '../types/logs'
-import { useCenteredConfirmation } from './useCenteredConfirmation'
-import { useHighRiskConfirmation } from './useHighRiskConfirmation'
 
 type UseLogsOptions = WebUiJsonRequestOptions & {
   tailLines?: number
   autoRefreshMs?: number
 }
+
+const logsAutoRefreshCookieName = 'dynamic_bot_webui_logs_auto_refresh'
 
 /**
  * 日志行解析兼容 `[LEVEL] [module] message` 和纯文本行，过滤时纯文本归为 PLAIN。
@@ -21,6 +22,16 @@ function parseLogRow(raw: string): WebUiParsedLogRow {
       level: match[1],
       module: match[2],
       message: match[3],
+    }
+  }
+  // 文件日志来自 logback.xml 的固定模式，级别后面的 logger 名称就是模块筛选值。
+  const logbackMatch = raw.match(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\[[^\]]+]\s+(TRACE|DEBUG|INFO|WARN|ERROR)\s+([^\s]+)\s+-\s*(.*)$/)
+  if (logbackMatch) {
+    return {
+      raw,
+      level: logbackMatch[1],
+      module: logbackMatch[2],
+      message: logbackMatch[3],
     }
   }
   const timestampedMatch = raw.match(/\b(TRACE|DEBUG|INFO|WARN|ERROR)\b\s+\[([^\]]+)]\s*(.*)$/)
@@ -43,7 +54,23 @@ function uniqueValues(values: string[]): string[] {
 }
 
 /**
- * 日志页把来源、窗口和清空动作封成一个 hook，清空仍然走双重确认。
+ * 自动刷新偏好从 cookie 读取，保证重新打开日志页时沿用用户选择。
+ */
+function readLogsAutoRefreshCookie(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.cookie.split(';').some((entry) => entry.trim() === `${logsAutoRefreshCookieName}=true`)
+}
+
+/**
+ * 自动刷新偏好写入站点 cookie，不依赖后端会话或本地存储。
+ */
+function writeLogsAutoRefreshCookie(value: boolean) {
+  if (typeof document === 'undefined') return
+  document.cookie = `${logsAutoRefreshCookieName}=${value ? 'true' : 'false'}; Max-Age=31536000; path=/; SameSite=Lax`
+}
+
+/**
+ * 日志页把来源、窗口、本地清屏和自动刷新偏好封成一个 hook。
  */
 export function useLogs(options: UseLogsOptions = {}) {
   const {tailLines = 500, autoRefreshMs = 30_000, fetchImpl, storage, redirectToLogin} = options
@@ -52,15 +79,13 @@ export function useLogs(options: UseLogsOptions = {}) {
     storage,
     redirectToLogin,
   }), [fetchImpl, redirectToLogin, storage])
-  const requestCenteredConfirmation = useCenteredConfirmation()
-  const {requestHighRiskConfirmation} = useHighRiskConfirmation()
   const [sources, setSources] = useState<unknown[]>([])
   const [sourceId, setSourceId] = useState('')
   const [rows, setRows] = useState<string[]>([])
   const [levelFilter, setLevelFilter] = useState('all')
   const [moduleFilter, setModuleFilter] = useState('all')
   const [keyword, setKeyword] = useState('')
-  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [autoRefresh, setAutoRefreshState] = useState(readLogsAutoRefreshCookie)
   const [loading, setLoading] = useState(true)
 
   const reloadSources = useCallback(async () => {
@@ -139,16 +164,17 @@ export function useLogs(options: UseLogsOptions = {}) {
     return text
   }, [filteredRows, sourceId])
 
+  const setAutoRefresh = useCallback((nextValue: boolean) => {
+    writeLogsAutoRefreshCookie(nextValue)
+    setAutoRefreshState(nextValue)
+  }, [])
+
   const clearCurrentLog = useCallback(async (currentSourceId = sourceId) => {
-    if (!await requestCenteredConfirmation('确认清空当前日志来源的内容？')) {
-      return null
-    }
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认清空日志')
-    if (!confirmationPassword) {
-      return null
-    }
-    return clearLogSource(currentSourceId, confirmationPassword, requestOptions)
-  }, [requestCenteredConfirmation, requestHighRiskConfirmation, requestOptions, sourceId])
+    // 清空当前日志只影响页面窗口，避免等待后端删除文件或清空日志源。
+    void currentSourceId
+    flushSync(() => setRows([]))
+    return []
+  }, [sourceId])
 
   return {
     sources,
@@ -173,6 +199,5 @@ export function useLogs(options: UseLogsOptions = {}) {
     reloadWindow,
     exportFilteredRows,
     clearCurrentLog,
-    buildLogClearPayload,
   }
 }

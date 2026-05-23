@@ -27,6 +27,14 @@ function formatEpochMillis(value: number | null) {
 }
 
 /**
+ * 运行信息使用短时间，避免首页多个年份文本干扰最近推送记录的时间识别。
+ */
+function formatRuntimeTime(value: number | null) {
+  if (value === null) return '--'
+  return new Date(value).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false})
+}
+
+/**
  * 运行时长以天、小时、分钟压缩展示，保证卡片内文本不会过长。
  */
 function formatDuration(seconds: number | null) {
@@ -95,7 +103,7 @@ export function DashboardPage() {
           <StatusCard label="版本" value={loading ? '--' : dashboard.appVersion} tone="emerald" detail="当前运行版本" />
           <StatusCard label="运行状态" value={loading ? '同步中' : dashboard.lifecycleState} tone="sky" detail="Bot 运行状态" />
           <StatusCard label="B站账号信息" value={formatState(dashboard.accountLoggedIn, '已登录', '未登录')} tone="rose" detail={dashboard.accountUid ? `UID ${dashboard.accountUid}` : 'UID --'} />
-          <StatusCard label="WebSocket 状态" value={formatState(dashboard.webSocketConnected, '已连接', '未连接')} tone="sky" detail={`会话：${summary?.webSocket?.activeSessionCount ?? '--'}`} />
+          <StatusCard label="WebSocket 状态" value={formatState(dashboard.webSocketConnected, '已连接', '未连接')} tone="sky" detail={`会话：${summary?.webSocket?.activeSessionCount ?? '--'} / 重连：${summary?.webSocket?.reconnectAttempts ?? '--'}`} />
           <StatusCard label="今日推送" value={formatCount(dashboard.todayPushTotal, ' 条')} tone="amber" detail={`动态：${summary?.todayPushStats?.dynamic ?? '--'} / 直播：${summary?.todayPushStats?.live ?? '--'}`} />
         </div>
       </PageSection>
@@ -104,9 +112,9 @@ export function DashboardPage() {
         <PageSection title="运行信息">
           <div className="grid h-full gap-4 lg:grid-cols-2">
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-              <MetricRow label="启动时间" value={formatEpochMillis(dashboard.startedAtEpochMillis)} />
+              <MetricRow label="启动时间" value={formatRuntimeTime(dashboard.startedAtEpochMillis)} />
               <MetricRow label="运行时长" value={formatDuration(dashboard.uptimeSeconds)} />
-              <MetricRow label="系统时间" value={formatEpochMillis(dashboard.systemTimeEpochMillis)} />
+              <MetricRow label="系统时间" value={formatRuntimeTime(dashboard.systemTimeEpochMillis)} />
               <MetricRow label="系统负载" value={dashboard.systemLoadAverage === null ? '--' : String(dashboard.systemLoadAverage)} />
             </div>
             <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -124,10 +132,11 @@ export function DashboardPage() {
             ) : (
               <div className="max-h-[22rem] divide-y divide-slate-100 overflow-y-auto">
                 {recentPushRecords.map((record, index) => (
-                  <div key={`${record.timestampEpochMillis || index}-${record.summary || index}`} className="grid gap-1 px-4 py-3 text-sm md:grid-cols-[8rem_1fr_8rem] md:items-center">
+                  <div key={`${record.timestampEpochMillis || index}-${record.summary || index}`} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[4rem_6rem_minmax(0,1fr)_10rem] md:items-center">
                     <span className="font-medium text-slate-700">{record.typeLabel || record.type || '--'}</span>
-                    <span className="min-w-0 break-words text-slate-950">{record.summary || '--'}</span>
                     <span className={record.success ? 'text-emerald-600' : 'text-rose-700'}>{record.statusLabel || '--'}</span>
+                    <span className="min-w-0 break-words text-slate-950">{record.summary || '--'}</span>
+                    <span className="text-right text-slate-500">{formatEpochMillis(record.timestampEpochMillis ?? null)}</span>
                   </div>
                 ))}
               </div>

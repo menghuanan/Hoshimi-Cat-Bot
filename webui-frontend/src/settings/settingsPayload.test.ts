@@ -119,6 +119,15 @@ describe('settings payload helpers', () => {
   })
 
   /**
+   * 群普通管理员由左右两栏组成，保存前必须保证每行群聊和 QQ 都是正数。
+   */
+  it('validates paired group admin rows', () => {
+    expect(validateSettingsValues({adminsText: '123:'})).toEqual(['群普通管理员第 1 行必须同时填写正数群聊和个人QQ号'])
+    expect(validateSettingsValues({adminsText: ':456'})).toEqual(['群普通管理员第 1 行必须同时填写正数群聊和个人QQ号'])
+    expect(validateSettingsValues({adminsText: '123:456'})).toEqual([])
+  })
+
+  /**
    * 代理字段是写入专用字段，空输入必须保留现有代理，显式输入才替换。
    */
   it('maps proxyConfig.proxy to write-only preserve and replace payloads', () => {
