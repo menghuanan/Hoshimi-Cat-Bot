@@ -30,7 +30,7 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
   for (const [path, heading] of [
     ['/settings', '系统配置'],
     ['/subscriptions', '订阅管理'],
-    ['/logs', '日志'],
+    ['/logs', '实时日志'],
     ['/', '运行概览'],
   ] as const) {
     await page.goto(path)
@@ -45,9 +45,18 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
   await expect(page.getByText('2 个模板')).toBeVisible()
   await expect(page.getByText('onebot11:group:1072150397')).toHaveCount(0)
   await expect(page.getByText('group:1072150397 类型黑名单: 空，正则黑名单: 测试')).toHaveCount(0)
+
+  await page.getByRole('button', {name: '编辑'}).click()
+  await page.getByRole('button', {name: '编辑过滤器'}).click()
+  const editorOverlayBox = await page.locator('[data-subscription-editor-overlay]').boundingBox()
+  const editorPanelBox = await page.locator('[data-subscription-editor-panel]').boundingBox()
+  expect(editorOverlayBox).not.toBeNull()
+  expect(editorOverlayBox?.x).toBeGreaterThan(200)
+  expect(editorPanelBox).not.toBeNull()
+  expect(editorPanelBox?.width).toBeLessThan(520)
 })
 
-test('left aligns settings tabs and narrows settings cards without changing vertical flow', async ({page}) => {
+test('centers settings cards within the page while keeping the tabs fixed', async ({page}) => {
   await page.setViewportSize({width: 1440, height: 1000})
   await page.goto('/login')
   await page.getByLabel('WebUI 密码').fill('secret-password')
@@ -76,11 +85,18 @@ test('left aligns settings tabs and narrows settings cards without changing vert
   expect(contentBox).not.toBeNull()
   expect(Math.abs((tabsBox?.x || 0) - (contentBox?.x || 0))).toBeLessThan(2)
 
+  const platformGroupBox = await page.getByText('平台配置').locator('xpath=ancestor::fieldset[1]').boundingBox()
   const platformTypeBox = await page.getByLabel('平台类型').boundingBox()
   const adapterBox = await page.getByLabel('适配器').boundingBox()
+  expect(platformGroupBox).not.toBeNull()
   expect(platformTypeBox).not.toBeNull()
   expect(adapterBox).not.toBeNull()
-  expect((platformTypeBox?.width || 0) / (contentBox?.width || 1)).toBeGreaterThan(0.7)
+  expect(platformGroupBox?.x).toBeGreaterThan(200)
+  expect(platformGroupBox?.width).toBeLessThan(contentBox?.width || 0)
+  const platformTypeCenter = (platformTypeBox?.x || 0) + (platformTypeBox?.width || 0) / 2
+  const contentCenter = (contentBox?.x || 0) + (contentBox?.width || 0) / 2
+  expect(Math.abs(platformTypeCenter - contentCenter)).toBeLessThan(40)
+  expect((platformTypeBox?.width || 0) / (contentBox?.width || 1)).toBeGreaterThan(0.65)
   expect((platformTypeBox?.width || 0) / (contentBox?.width || 1)).toBeLessThan(0.8)
   expect(Math.abs((platformTypeBox?.x || 0) - (adapterBox?.x || 0))).toBeLessThan(2)
   expect(adapterBox?.y).toBeGreaterThan((platformTypeBox?.y || 0) + (platformTypeBox?.height || 0))

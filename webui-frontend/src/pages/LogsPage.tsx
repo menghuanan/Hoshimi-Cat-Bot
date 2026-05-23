@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { PageSection } from '../components/PageSection'
 import { useLogs } from '../hooks/useLogs'
 
@@ -24,12 +25,22 @@ export function LogsPage() {
     exportFilteredRows,
     clearCurrentLog,
   } = useLogs()
+  const logWindowRef = useRef<HTMLPreElement | null>(null)
+
+  // 日志窗口打开或刷新后直接跳到底部，默认展示最新日志而不是最旧日志。
+  useEffect(() => {
+    const element = logWindowRef.current
+    if (!element) {
+      return
+    }
+    element.scrollTop = element.scrollHeight
+  }, [filteredRows])
 
   return (
     <div data-page="logs" className="space-y-6">
       <PageSection title="实时日志">
         <div className="grid min-h-0 gap-4">
-          <div className="grid w-full items-end gap-2 md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(8rem,1fr))_auto_auto_auto_auto]">
+          <div className="grid w-full items-end gap-x-4 gap-y-3 md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(9rem,1fr))_auto_auto_auto_auto]">
             <label className="grid gap-1 text-xs font-medium text-slate-600">
               日志来源
               <select
@@ -73,7 +84,7 @@ export function LogsPage() {
             <button type="button" onClick={() => exportFilteredRows()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">导出</button>
             <button type="button" onClick={() => void clearCurrentLog()} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">清空</button>
           </div>
-          <pre className="h-[calc(100vh-16rem)] min-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100 shadow-sm">
+          <pre ref={logWindowRef} className="h-[calc(100vh-16rem)] min-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100 shadow-sm">
             {filteredRows.length > 0 ? filteredRows.map((row, index) => (
               <span key={`${row.raw}-${index}`} className="block">{renderLogRow(row.raw, row.level)}</span>
             )) : '暂无日志'}

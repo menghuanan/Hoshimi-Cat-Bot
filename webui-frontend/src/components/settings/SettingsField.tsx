@@ -7,8 +7,8 @@ type SettingsFieldProps = {
 }
 
 const baseInputClass = 'mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950'
-// 设置卡片只缩窄横向占比，纵向间距和内部控件尺寸保持不变。
-const settingsCardWidthClass = 'w-full md:w-3/4'
+// 卡片宽度交给外层分组控制，这里保持全宽，方便小标题和左边框对齐。
+const settingsCardWidthClass = 'w-full'
 
 /**
  * 单个设置字段按元数据渲染控件，写入专用字段始终由父级提供空值。
@@ -20,12 +20,12 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
     max: field.max,
     step: field.step,
   }
+
   if (field.type === 'boolean') {
     return (
       <label htmlFor={id} className={`flex min-w-0 items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${settingsCardWidthClass}`}>
         <span className="min-w-0">
           <span className="block text-sm font-medium text-slate-800">{field.label}</span>
-          {field.restartRequired ? <span className="mt-1 block text-xs text-amber-700">保存后需要重启</span> : null}
         </span>
         <input
           id={id}
@@ -73,7 +73,6 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
           {...(field.type === 'number' ? numberAttributes : {})}
         />
       )}
-      {field.restartRequired ? <p className="mt-2 text-xs text-amber-700">保存后需要重启。</p> : null}
     </label>
   )
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
 import { useSettingsFiles } from '../hooks/useSettingsFiles'
@@ -13,13 +14,19 @@ type SettingsFieldSnapshot = {
 }
 
 type SettingsFormValues = Record<string, string | boolean>
+
 type SettingsFieldGroup = {
   title: string
   fields: SettingsFieldDefinition[]
 }
 
+type AdminDraftPair = {
+  groupId: string
+  userId: string
+}
+
 /**
- * 配置页按元数据渲染八个分区，敏感字段只允许空输入触发保留语义。
+ * 设置页按元数据渲染八个分区，敏感字段只允许空输入触发保留语义。
  */
 export function SettingsPage() {
   const {loading, biliConfig, botConfig, saveBili, saveBot, patchBiliConfig, patchBotConfig} = useSettingsFiles()
@@ -36,14 +43,15 @@ export function SettingsPage() {
   }), [biliConfig, botConfig])
 
   const initialValues = useMemo<SettingsFormValues>(() => {
-    // 初始值从快照派生，写入专用字段保持空值不回显。
+    // 初始值来自快照，写入专用字段保持空值不回显。
     return Object.fromEntries(activeCategory.fields.map((field) => [
       field.key,
       readInitialFieldValue(field, fieldValues),
     ]))
   }, [activeCategory, fieldValues])
+
   const completeValues = useMemo<SettingsFormValues>(() => {
-    // 完整值用于组装文件级 DTO，避免只保存当前表单时把同文件其它字段写成后端默认值。
+    // 完整值用于组装文件级 DTO，避免只保存当前表单时把同文件其他字段写成后端默认值。
     return {
       ...Object.fromEntries(allSettingsFields.map((field) => [
         field.key,
@@ -52,11 +60,12 @@ export function SettingsPage() {
       ...editedValues,
     }
   }, [allSettingsFields, editedValues, fieldValues])
-  // 当前表单值由快照初始值和用户编辑覆盖组成，避免 effect 中同步 setState。
+
   const values = useMemo<SettingsFormValues>(() => ({
     ...initialValues,
     ...editedValues,
   }), [editedValues, initialValues])
+
   const visibleFieldGroups = useMemo(() => visibleGroupsForCategory(activeCategory, values), [activeCategory, values])
   const visibleSettingsFields = useMemo(() => visibleFieldGroups.flatMap((group) => group.fields), [visibleFieldGroups])
 
@@ -68,7 +77,7 @@ export function SettingsPage() {
   }
 
   /**
-   * 切换设置分区时丢弃未提交的本地编辑，下一屏重新使用当前快照派生值。
+   * 切换设置分区时丢弃未提交编辑，下一页重新从快照派生值。
    */
   const selectCategory = (categoryId: SettingsCategoryId) => {
     setEditedValues({})
@@ -76,7 +85,7 @@ export function SettingsPage() {
   }
 
   /**
-   * 保存当前分区，BiliConfig 和 bot.yml 分别带自己的 snapshotToken。
+   * 保存当前分区时分别写入 BiliConfig 和 bot.yml，并保持快照令牌边界。
    */
   const saveActiveCategory = async () => {
     setSaving(true)
@@ -89,11 +98,13 @@ export function SettingsPage() {
         setSaveStatus({tone: 'error', message: validationErrors.join('；')})
         return
       }
+
       const completeBiliValues = pickValuesForFile(allSettingsFields, completeValues, 'biliConfig')
       const completeBotValues = pickValuesForFile(allSettingsFields, completeValues, 'botConfig')
       const biliToken = String(biliConfig?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
       const saveResults: Array<WebUiSettingsSaveResult | null> = []
+
       if (biliToken && Object.keys(biliValues).length > 0) {
         saveResults.push(await saveBili({
           snapshotToken: biliToken,
@@ -108,6 +119,7 @@ export function SettingsPage() {
           fields: omitKey(completeBotValues, 'platform.onebot11.token'),
         }))
       }
+
       const resultMessage = formatSaveResultMessage(saveResults)
       if (saveResults.some((result) => result === null)) {
         setSaveStatus({tone: 'neutral', message: resultMessage})
@@ -117,6 +129,7 @@ export function SettingsPage() {
         setSaveStatus({tone: 'error', message: resultMessage})
         return
       }
+
       patchBiliConfig(completeBiliValues)
       patchBotConfig(completeBotValues)
       setEditedValues({})
@@ -130,23 +143,28 @@ export function SettingsPage() {
 
   return (
     <div data-page="settings" className="space-y-6">
-      <section className="space-y-4">
-        {/* 设置页顶部只保留保存操作，移除标题文本以让配置区获得更宽的横向空间。 */}
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-            disabled={saving || loading}
-            onClick={saveActiveCategory}
-          >
-            {saving ? '保存中' : '保存'}
-          </button>
-          {saveStatus.message ? (
-            <span className={`text-sm font-medium ${saveStatus.tone === 'success' ? 'text-emerald-600' : saveStatus.tone === 'error' ? 'text-rose-600' : 'text-slate-600'}`}>
-              {saveStatus.message}
-            </span>
-          ) : null}
-        </div>
+      <PageSection
+        title="系统配置"
+        description="本页面所有配置项都需重启程序生效"
+        actions={(
+          <>
+            {/* 顶部只保留保存操作和保存结果，标题由 PageSection 承载。 */}
+            <button
+              type="button"
+              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+              disabled={saving || loading}
+              onClick={saveActiveCategory}
+            >
+              {saving ? '保存中' : '保存'}
+            </button>
+            {saveStatus.message ? (
+              <span className={`text-sm font-medium ${saveStatus.tone === 'success' ? 'text-emerald-600' : saveStatus.tone === 'error' ? 'text-rose-600' : 'text-slate-600'}`}>
+                {saveStatus.message}
+              </span>
+            ) : null}
+          </>
+        )}
+      >
         <SettingsTabs categories={settingsCategories} activeCategoryId={activeCategoryId} onSelectCategory={selectCategory} />
         <div className="space-y-4">
           {visibleFieldGroups.map((group) => (
@@ -159,13 +177,13 @@ export function SettingsPage() {
             />
           ))}
         </div>
-      </section>
+      </PageSection>
     </div>
   )
 }
 
 /**
- * 配置分组根据页面实际显示字段生成，保存范围也沿用同一组字段。
+ * 当前分区只展开可见字段，确保页面态和保存态使用同一组 field key。
  */
 function visibleGroupsForCategory(category: SettingsCategoryDefinition, values: SettingsFormValues): SettingsFieldGroup[] {
   if (category.id === 'integration') {
@@ -197,7 +215,7 @@ function visibleGroupsForCategory(category: SettingsCategoryDefinition, values: 
 }
 
 /**
- * 字段顺序以显式 key 列表为准，避免条件显示后改变旧 WebUI 的阅读顺序。
+ * 按 key 顺序取出字段，避免条件渲染改变当前分区的阅读顺序。
  */
 function fieldsByKeys(fields: SettingsFieldDefinition[], keys: string[]): SettingsFieldDefinition[] {
   const fieldByKey = new Map(fields.map((field) => [field.key, field]))
@@ -208,7 +226,7 @@ function fieldsByKeys(fields: SettingsFieldDefinition[], keys: string[]): Settin
 }
 
 /**
- * 设置组统一渲染两列字段，管理员组对群管理映射使用专用双输入控件。
+ * 设置分组使用统一边框容器，标题贴在边框上并与字段左边缘对齐。
  */
 function SettingsGroup({title, fields, values, onChange}: {
   title: string
@@ -218,69 +236,95 @@ function SettingsGroup({title, fields, values, onChange}: {
 }) {
   return (
     <section data-layout="single-column" className="space-y-3">
-      <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
-      {/* 字段仍然单列堆叠，只收窄卡片横向占比，避免页面整体布局横向收缩。 */}
-      <div className="grid justify-items-start gap-4">
-        {fields.map((field) => field.key === 'adminsText' ? (
-          // 群管理员草稿跟随父级保存值重挂载，避免 effect 中同步派生 state。
-          <GroupAdminField key={`${field.key}:${String(values[field.key] || '')}`} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
-        ) : (
-          <SettingsField key={field.key} field={field} value={values[field.key] ?? ''} onChange={onChange} />
-        ))}
-      </div>
+      <fieldset className="mx-auto w-full md:w-3/4 rounded-lg border border-slate-200 bg-white px-4 pb-4 pt-3 shadow-sm">
+        <legend className="px-2 text-sm font-semibold text-slate-900">{title}</legend>
+        <div className="grid gap-4">
+          {fields.map((field) => (
+            field.key === 'adminsText'
+              ? <GroupAdminField key={`${field.key}:${String(values[field.key] || '')}`} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
+              : <SettingsField key={field.key} field={field} value={values[field.key] ?? ''} onChange={onChange} />
+          ))}
+        </div>
+      </fieldset>
     </section>
   )
 }
 
 /**
- * 群普通管理员按“群聊 + 个人QQ号”双输入编辑首条映射，并在下方列出现有映射。
+ * 群普通管理员支持多行暂存，暂存时一次性写回页面态并在下方保留已保存映射。
  */
 function GroupAdminField({value, onChange}: {value: string, onChange: (value: string) => void}) {
-  const [draftText, setDraftText] = useState(value)
   const pairs = adminPairsFromText(value)
-  const draftPairs = adminPairsFromText(draftText)
-  const firstPair = draftPairs[0] || {groupId: '', userId: ''}
+  const [draftPairs, setDraftPairs] = useState<AdminDraftPair[]>(() => initialAdminDraftPairs(value))
 
   /**
-   * 输入区只更新卡片草稿，必须点击暂存后才写回页面待保存值。
+   * 输入区直接编辑草稿数组，新增和删除行都只影响页面态。
    */
-  const updatePair = (part: 'groupId' | 'userId', nextValue: string) => {
-    const nextPairs = draftPairs.length > 0 ? [...draftPairs] : [{groupId: '', userId: ''}]
-    nextPairs[0] = {...nextPairs[0], [part]: nextValue}
-    setDraftText(nextPairs.map((pair) => `${pair.groupId}:${pair.userId}`).join('\n'))
+  const updatePair = (index: number, part: keyof AdminDraftPair, nextValue: string) => {
+    setDraftPairs((current) => current.map((pair, pairIndex) => (
+      pairIndex === index ? {...pair, [part]: nextValue} : pair
+    )))
   }
 
   /**
-   * 暂存只提交到当前页面态，真正写入文件仍由页面右上角保存按钮处理。
+   * 添加空白行后继续编辑，避免群普通管理员只能暂存一组映射。
+   */
+  const addPair = () => {
+    setDraftPairs((current) => [...current, createEmptyAdminPair()])
+  }
+
+  /**
+   * 删除草稿行后保留至少一行空白输入，避免删空后失去新增入口。
+   */
+  const removePair = (index: number) => {
+    setDraftPairs((current) => ensureAdminDraftPairs(current.filter((_, pairIndex) => pairIndex !== index)))
+  }
+
+  /**
+   * 暂存前先压缩空白行，避免页面态出现无效的空映射。
    */
   const stageDraft = () => {
-    onChange(draftText)
+    onChange(serializeAdminDraftPairs(draftPairs))
   }
 
   return (
-    <div className="min-w-0 w-full rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:w-3/4">
-      <p className="text-sm font-medium text-slate-800">群普通管理员</p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1 text-xs font-medium text-slate-600">
-          群聊
-          <input
-            aria-label="群聊"
-            inputMode="numeric"
-            value={firstPair.groupId}
-            onChange={(event) => updatePair('groupId', event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950"
-          />
-        </label>
-        <label className="grid gap-1 text-xs font-medium text-slate-600">
-          个人QQ号
-          <input
-            aria-label="个人QQ号"
-            inputMode="numeric"
-            value={firstPair.userId}
-            onChange={(event) => updatePair('userId', event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950"
-          />
-        </label>
+    <div className="min-w-0 w-full rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-slate-800">群普通管理员</p>
+        <button type="button" onClick={addPair} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">添加一行</button>
+      </div>
+      <div className="mt-3 space-y-3">
+        {draftPairs.map((pair, index) => (
+          <div key={`admin-draft-${index}`} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                群聊
+                <input
+                  aria-label="群聊"
+                  inputMode="numeric"
+                  value={pair.groupId}
+                  onChange={(event) => updatePair(index, 'groupId', event.target.value)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                个人QQ号
+                <input
+                  aria-label="个人QQ号"
+                  inputMode="numeric"
+                  value={pair.userId}
+                  onChange={(event) => updatePair(index, 'userId', event.target.value)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end">
+              {draftPairs.length > 1 ? (
+                <button type="button" onClick={() => removePair(index)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">删除</button>
+              ) : null}
+            </div>
+          </div>
+        ))}
       </div>
       <div className="mt-4 flex justify-end">
         <button type="button" onClick={stageDraft} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">暂存</button>
@@ -297,6 +341,38 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
 }
 
 /**
+ * 生成空白草稿行，方便用户直接继续添加下一组映射。
+ */
+function createEmptyAdminPair(): AdminDraftPair {
+  return {groupId: '', userId: ''}
+}
+
+/**
+ * 草稿初始化时至少保留一行输入，避免空状态下无法直接填写。
+ */
+function initialAdminDraftPairs(value: string): AdminDraftPair[] {
+  const pairs = adminPairsFromText(value)
+  return pairs.length > 0 ? pairs : [createEmptyAdminPair()]
+}
+
+/**
+ * 删除草稿后如果没有任何行，就补回一行空白输入。
+ */
+function ensureAdminDraftPairs(pairs: AdminDraftPair[]): AdminDraftPair[] {
+  return pairs.length > 0 ? pairs : [createEmptyAdminPair()]
+}
+
+/**
+ * 暂存时压缩空白草稿，并保持“群号:QQ号”的页面态格式。
+ */
+function serializeAdminDraftPairs(pairs: AdminDraftPair[]): string {
+  return pairs
+    .filter((pair) => pair.groupId.trim() || pair.userId.trim())
+    .map((pair) => `${pair.groupId}:${pair.userId}`)
+    .join('\n')
+}
+
+/**
  * 管理员文本解析只服务显示层，非法或半填行仍保留到保存校验中处理。
  */
 function adminPairsFromText(value: string): Array<{groupId: string, userId: string}> {
@@ -310,7 +386,7 @@ function adminPairsFromText(value: string): Array<{groupId: string, userId: stri
 }
 
 /**
- * 后端快照字段转为 key-value 映射，缺失字段由元数据默认空值兜底。
+ * 后端快照字段转为 key-value 映射，缺失字段由元数据默认值兜底。
  */
 function readFieldValues(config: Record<string, unknown> | null): Map<string, string> {
   const fields = Array.isArray(config?.fields) ? config.fields as SettingsFieldSnapshot[] : []
@@ -341,7 +417,7 @@ function readInitialFieldValue(field: SettingsFieldDefinition, fieldValues: Reco
 }
 
 /**
- * 快照缺失字段沿用后端 DTO 默认值，避免文件级保存时把空值误转成 0 或 false。
+ * 快照缺失字段沿用后端 DTO 默认值，避免保存时把空值误转成 0 或 false。
  */
 function defaultSettingsValue(key: string): string {
   const defaults: Record<string, string> = {
@@ -416,7 +492,7 @@ function pickValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFo
 }
 
 /**
- * 特殊敏感字段由 save helper 的专用参数传入，其余字段继续走元数据映射。
+ * 特殊敏感字段用 save helper 的专用参数传入，其余字段继续走元数据映射。
  */
 function omitKey(values: Record<string, unknown>, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(values).filter(([entryKey]) => entryKey !== key))
@@ -450,7 +526,7 @@ function adminLinesFromSnapshot(value: string): string {
 }
 
 /**
- * 徽章选择框聚合 left/right 两个后端字段，显示层不暴露内部布尔拆分。
+ * 徽章选项按 left/right 两个后端字段显示，避免把内部布尔拆分暴露给用户。
  */
 function badgeChoiceFromFields(values: Map<string, string>): string {
   const left = values.get('imageConfig.badgeEnable.left') !== 'false'
@@ -462,7 +538,7 @@ function badgeChoiceFromFields(values: Map<string, string>): string {
 }
 
 /**
- * 群联系人 subject 只提取 OneBot11 数字群号，无法识别时跳过该行。
+ * 群聊联系人的 subject 只提取 OneBot11 数字群号。
  */
 function groupIdFromContact(contact: unknown): number {
   const matched = String(contact || '').match(/^onebot11:group:(\d+)$/)
@@ -470,7 +546,7 @@ function groupIdFromContact(contact: unknown): number {
 }
 
 /**
- * 私聊联系人 subject 只提取 OneBot11 数字 QQ，无法识别时跳过该成员。
+ * 私聊联系人的 subject 只提取 OneBot11 数字 QQ。
  */
 function userIdFromContact(contact: unknown): number {
   const matched = String(contact || '').match(/^onebot11:private:(\d+)$/)

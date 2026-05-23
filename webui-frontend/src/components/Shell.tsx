@@ -132,11 +132,8 @@ export function Shell({page, onNavigate, children}: ShellProps) {
           </nav>
         </aside>
         <div className="flex min-w-0 flex-col">
-          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-4 max-sm:flex-col max-sm:items-stretch max-sm:px-4">
-              <div className="min-w-0">
-                <h2 className="text-lg font-semibold text-slate-950">{pageLabel(page)}</h2>
-              </div>
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur" aria-label={`当前页面：${pageLabel(page)}`}>
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-end gap-3 px-6 py-4 max-sm:flex-col max-sm:items-stretch max-sm:px-4">
               <div className="flex shrink-0 flex-wrap items-center gap-3 max-sm:w-full">
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700 max-sm:w-full">
                   <span>主题模式</span>

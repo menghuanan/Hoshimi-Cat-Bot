@@ -263,19 +263,24 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
     }
   }
 
+  // 当前打开的表单类型决定列表和表单互斥展示，避免编辑时保留旧摘要。
+  const filterFormOpen = formMode === 'filter'
+  const templateFormOpen = formMode === 'template'
+  const atAllFormOpen = formMode === 'atall'
+
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6" role="presentation">
+    <div data-subscription-editor-overlay className="fixed inset-y-0 right-0 left-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6 lg:left-60" role="presentation">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="subscription-editor-title"
-        className="grid max-h-[90vh] w-full max-w-5xl gap-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl lg:grid-cols-[13rem_1fr]"
+        className="grid max-h-[90vh] w-full max-w-[46rem] gap-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl lg:grid-cols-[13rem_minmax(0,28rem)] lg:grid-rows-[auto_minmax(0,1fr)]"
       >
-        <aside className="space-y-3">
-          <div>
-            <h3 id="subscription-editor-title" className="text-base font-semibold text-slate-950">编辑订阅配置</h3>
-            <p className="mt-1 text-sm text-slate-600">{readItemField(item, 'title') || '未命名订阅'}</p>
-          </div>
+        <div className="lg:col-start-1 lg:row-start-1">
+          <h3 id="subscription-editor-title" className="text-base font-semibold text-slate-950">编辑订阅配置</h3>
+          <p className="mt-1 text-sm text-slate-600">{readItemField(item, 'title') || '未命名订阅'}</p>
+        </div>
+        <aside className="space-y-3 lg:col-start-1 lg:row-start-2">
           <div className="grid gap-2">
             <button type="button" onClick={() => void openAction('filters')} className={actionButtonClass(activeAction === 'filters')}>编辑过滤器</button>
             <button type="button" onClick={() => void openAction('templates')} className={actionButtonClass(activeAction === 'templates')}>编辑模板</button>
@@ -285,34 +290,46 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
           <button type="button" onClick={onClose} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">关闭</button>
         </aside>
 
-        <div className="min-w-0 space-y-4">
+        <div data-subscription-editor-panel className="min-w-0 w-full space-y-4 lg:col-start-2 lg:row-start-2 lg:max-w-md">
           {activeAction === 'overview' ? <EditorEmptyState text="选择左侧编辑器开始配置" /> : null}
           {activeAction === 'filters' ? (
             <div className="space-y-3">
-              <EditorList items={filters} kind="filter" emptyText="暂无过滤器" onEdit={(draft) => startForm('filter', draft)} onDelete={(draft) => void deleteConfigItem('filter', draft)} />
-              {formMode === 'filter'
-                ? <FilterForm draft={editingDraft} onSubmit={submitFilter} onCancel={cancelForm} />
-                : <button type="button" onClick={() => startForm('filter')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加过滤器</button>}
+              {filterFormOpen ? (
+                <FilterForm title={editorFormTitle('filter', editingDraft)} draft={editingDraft} onSubmit={submitFilter} onCancel={cancelForm} />
+              ) : (
+                <>
+                  <EditorList items={filters} kind="filter" emptyText="暂无过滤器" onEdit={(draft) => startForm('filter', draft)} onDelete={(draft) => void deleteConfigItem('filter', draft)} />
+                  <button type="button" onClick={() => startForm('filter')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加过滤器</button>
+                </>
+              )}
             </div>
           ) : null}
           {activeAction === 'templates' ? (
             <div className="space-y-3">
-              <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
-                <input type="checkbox" checked={randomEnabled} onChange={(event) => void toggleRandom(event.target.checked)} />
-                <span>随机模板</span>
-              </label>
-              <EditorList items={templates} kind="template" emptyText="暂无模板" onEdit={(draft) => startForm('template', draft)} onDelete={(draft) => void deleteConfigItem('template', draft)} />
-              {formMode === 'template'
-                ? <TemplateForm draft={editingDraft} onSubmit={submitTemplate} onCancel={cancelForm} />
-                : <button type="button" onClick={() => startForm('template')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加模板</button>}
+              {templateFormOpen ? (
+                <TemplateForm title={editorFormTitle('template', editingDraft)} draft={editingDraft} onSubmit={submitTemplate} onCancel={cancelForm} />
+              ) : (
+                <>
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input type="checkbox" checked={randomEnabled} onChange={(event) => void toggleRandom(event.target.checked)} />
+                    <span>随机模板</span>
+                  </label>
+                  <EditorList items={templates} kind="template" emptyText="暂无模板" onEdit={(draft) => startForm('template', draft)} onDelete={(draft) => void deleteConfigItem('template', draft)} />
+                  <button type="button" onClick={() => startForm('template')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加模板</button>
+                </>
+              )}
             </div>
           ) : null}
           {activeAction === 'atall' ? (
             <div className="space-y-3">
-              <EditorList items={atAllItems} kind="atall" emptyText="暂无atall信息" onEdit={(draft) => startForm('atall', draft)} onDelete={(draft) => void deleteConfigItem('atall', draft)} />
-              {formMode === 'atall'
-                ? <AtAllForm targets={targets} draft={editingDraft} onSubmit={submitAtAll} onCancel={cancelForm} />
-                : <button type="button" onClick={() => startForm('atall')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加at全体</button>}
+              {atAllFormOpen ? (
+                <AtAllForm targets={targets} draft={editingDraft} onSubmit={submitAtAll} onCancel={cancelForm} />
+              ) : (
+                <>
+                  <EditorList items={atAllItems} kind="atall" emptyText="暂无atall信息" onEdit={(draft) => startForm('atall', draft)} onDelete={(draft) => void deleteConfigItem('atall', draft)} />
+                  <button type="button" onClick={() => startForm('atall')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加at全体</button>
+                </>
+              )}
             </div>
           ) : null}
           {activeAction === 'theme' ? (
@@ -338,9 +355,10 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
 /**
  * 过滤器表单保留旧 WebUI 的类型、模式和内容三组核心字段。
  */
-function FilterForm({draft, onSubmit, onCancel}: {draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+function FilterForm({title, draft, onSubmit, onCancel}: {title?: string, draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+      {title ? <p className="text-sm font-semibold text-slate-900">{title}</p> : null}
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>过滤类型</span>
         <select name="kind" defaultValue={readItemField(draft || {}, 'kind') || 'regex'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -367,9 +385,10 @@ function FilterForm({draft, onSubmit, onCancel}: {draft: Record<string, unknown>
 /**
  * 模板表单保持类型、名称和正文，正文不做前端重写。
  */
-function TemplateForm({draft, onSubmit, onCancel}: {draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+function TemplateForm({title, draft, onSubmit, onCancel}: {title?: string, draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+      {title ? <p className="text-sm font-semibold text-slate-900">{title}</p> : null}
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>模板类型</span>
         <select name="type" defaultValue={readItemField(draft || {}, 'type') || 'dynamic'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -489,6 +508,38 @@ function actionForConfigKind(kind: EditorConfigKind): EditorAction {
   if (kind === 'filter') return 'filters'
   if (kind === 'template') return 'templates'
   return 'atall'
+}
+
+/**
+ * 编辑表单左上角显示稳定短标题，过滤器显示 key 加类型，模板优先显示名称。
+ */
+function editorFormTitle(kind: Exclude<EditorConfigKind, 'atall'>, draft: Record<string, unknown> | null): string {
+  if (!draft) {
+    return ''
+  }
+  if (kind === 'template') {
+    return readItemField(draft, 'name') || readItemField(draft, 'key')
+  }
+  const key = readItemField(draft, 'key')
+  const label = filterKindTitle(readItemField(draft, 'kind') || readItemField(draft, 'label'))
+  return [key, label].filter(Boolean).join(' ')
+}
+
+/**
+ * 过滤器标题只保留类型语义，不把正文内容塞进编辑页标题。
+ */
+function filterKindTitle(value: string): string {
+  const text = value.trim()
+  if (!text) {
+    return ''
+  }
+  if (text === 'regex' || text === '正则') {
+    return '正则过滤'
+  }
+  if (text === 'type' || text === '动态类型' || text === '类型') {
+    return '类型过滤'
+  }
+  return text.includes('过滤') ? text : `${text}过滤`
 }
 
 /**

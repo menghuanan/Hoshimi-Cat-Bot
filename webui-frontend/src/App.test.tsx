@@ -49,6 +49,9 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '订阅管理'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '日志'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
+    const header = document.querySelector('header')
+    expect(header).not.toBeNull()
+    expect(within(header as HTMLElement).queryByText('首页')).not.toBeInTheDocument()
   })
 
   it('switches pages when the shell navigation is used', () => {
@@ -367,12 +370,17 @@ describe('webui shell routing', () => {
     expect(screen.queryByLabelText('QQ App ID')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('WebUI 主机')).not.toBeInTheDocument()
     expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('justify-start')
+    expect(screen.getByRole('heading', {name: '系统配置'})).toBeInTheDocument()
+    expect(screen.getByText('本页面所有配置项都需重启程序生效')).toBeInTheDocument()
+    expect(screen.queryByText('保存后需要重启')).not.toBeInTheDocument()
 
-    const platformSection = screen.getByText('平台配置').closest('section')
-    expect(platformSection).not.toBeNull()
-    expect(platformSection).toHaveAttribute('data-layout', 'single-column')
-    expect(platformSection?.children[1]).toHaveClass('grid')
-    expect(platformSection?.children[1]).not.toHaveClass('xl:grid-cols-2')
+    const platformGroup = screen.getByText('平台配置').closest('fieldset')
+    expect(platformGroup).not.toBeNull()
+    expect(platformGroup?.querySelector('legend')).toHaveTextContent('平台配置')
+    expect(platformGroup).toHaveClass('mx-auto')
+    expect(platformGroup).toHaveClass('md:w-3/4')
+    expect(platformGroup?.querySelector('div')).toHaveClass('grid')
+    expect(platformGroup?.querySelector('div')).not.toHaveClass('xl:grid-cols-2')
 
     await user.selectOptions(screen.getByLabelText('平台类型'), 'qq_official')
     expect(screen.getByLabelText('QQ App ID')).toBeInTheDocument()
@@ -454,10 +462,16 @@ describe('webui shell routing', () => {
 
     await user.type(await screen.findByLabelText('群聊'), '123456')
     await user.type(screen.getByLabelText('个人QQ号'), '654321')
+    await user.click(screen.getByRole('button', {name: '添加一行'}))
+    const groupInputs = screen.getAllByLabelText('群聊')
+    const userInputs = screen.getAllByLabelText('个人QQ号')
+    await user.type(groupInputs[1], '111111')
+    await user.type(userInputs[1], '222222')
     expect(screen.getByText('暂无群普通管理员')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '暂存'}))
     expect(screen.getByText('群聊：123456 管理员：654321')).toBeInTheDocument()
+    expect(screen.getByText('群聊：111111 管理员：222222')).toBeInTheDocument()
     expect(postRequests).toHaveLength(0)
 
     await user.click(screen.getByRole('button', {name: '保存'}))
@@ -473,6 +487,8 @@ describe('webui shell routing', () => {
     const botPost = postRequests.find((request) => request.url.includes('/api/config/bot'))
     expect(botPost?.body).toContain('123456')
     expect(botPost?.body).toContain('654321')
+    expect(botPost?.body).toContain('111111')
+    expect(botPost?.body).toContain('222222')
   })
 
   /**
@@ -533,6 +549,13 @@ describe('webui shell routing', () => {
    * 日志页需要提供旧 WebUI 等价的来源、过滤、搜索、自动刷新、导出和清空控件。
    */
   it('renders log filtering, auto-refresh, export, and clear controls', async () => {
+    // 日志窗口高度由浏览器计算，测试中固定 scrollHeight 以验证加载后滚动到底部。
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get() {
+        return this instanceof HTMLPreElement ? 640 : 0
+      },
+    })
     renderAtPath('/#logs')
 
     expect(screen.queryByText('来源数量')).not.toBeInTheDocument()
@@ -547,6 +570,9 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '刷新'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '导出'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '清空'})).toBeInTheDocument()
+    const logWindow = document.querySelector('pre')
+    expect(logWindow).not.toBeNull()
+    await waitFor(() => expect((logWindow as HTMLPreElement).scrollTop).toBe(640))
   })
 
   /**
@@ -630,6 +656,13 @@ describe('webui shell routing', () => {
 
     await user.click(screen.getByRole('button', {name: '编辑'}))
     expect(screen.getByRole('dialog', {name: '编辑订阅配置'})).toBeInTheDocument()
+    const editorOverlay = document.querySelector('[data-subscription-editor-overlay]')
+    const editorPanel = document.querySelector('[data-subscription-editor-panel]')
+    expect(editorOverlay).not.toBeNull()
+    expect(editorOverlay).toHaveClass('lg:left-60')
+    expect(editorPanel).not.toBeNull()
+    expect(editorPanel).toHaveClass('lg:row-start-2')
+    expect(editorPanel).toHaveClass('lg:max-w-md')
     expect(screen.getByRole('button', {name: '编辑过滤器'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '编辑模板'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '编辑at全体'})).toBeInTheDocument()
@@ -641,12 +674,16 @@ describe('webui shell routing', () => {
     expect(within(filterRow as HTMLElement).getByRole('button', {name: '编辑'})).toBeInTheDocument()
     expect(within(filterRow as HTMLElement).getByRole('button', {name: '删除'})).toBeInTheDocument()
     await user.click(within(filterRow as HTMLElement).getByRole('button', {name: '编辑'}))
+    expect(screen.getByText('filter-1 正则过滤')).toBeInTheDocument()
+    expect(screen.queryByText('广告')).not.toBeInTheDocument()
     expect(screen.getByLabelText('规则内容')).toHaveValue('广告')
     expect(screen.getByRole('button', {name: '取消'})).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '取消'}))
     expect(screen.getByRole('button', {name: '添加过滤器'})).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '添加过滤器'}))
     expect(screen.getByRole('button', {name: '取消'})).toBeInTheDocument()
+    expect(screen.queryByText('暂无过滤器')).not.toBeInTheDocument()
+    expect(screen.queryByText('广告')).not.toBeInTheDocument()
     await user.type(screen.getByLabelText('规则内容'), '广告')
     await user.click(screen.getByRole('button', {name: '保存过滤器'}))
     await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
@@ -656,8 +693,17 @@ describe('webui shell routing', () => {
     await user.click(screen.getByRole('button', {name: '编辑模板'}))
     expect(await screen.findByLabelText('随机模板')).toBeChecked()
     expect(screen.getByRole('button', {name: '添加模板'})).toBeInTheDocument()
+    const templateRow = (await screen.findByText('默认模板')).closest('div')
+    expect(templateRow).not.toBeNull()
+    await user.click(within(templateRow as HTMLElement).getByRole('button', {name: '编辑'}))
+    expect(screen.getByText('默认模板')).toBeInTheDocument()
+    expect(screen.queryByLabelText('随机模板')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '添加模板'})).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '取消'}))
     await user.click(screen.getByRole('button', {name: '添加模板'}))
     expect(screen.getByRole('button', {name: '取消'})).toBeInTheDocument()
+    expect(screen.queryByText('暂无模板')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('随机模板')).not.toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('模板类型'), 'dynamic')
     await user.type(screen.getByLabelText('模板名称'), '默认模板')
     await user.type(screen.getByLabelText('模板内容'), '{{title}}')
