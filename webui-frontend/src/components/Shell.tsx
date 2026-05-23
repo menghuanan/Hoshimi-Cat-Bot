@@ -103,13 +103,14 @@ export function Shell({page, onNavigate, children}: ShellProps) {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-100 text-slate-950">
-      <div className="grid min-h-screen w-full grid-cols-[15rem_minmax(0,1fr)] max-lg:grid-cols-1">
-        <aside className="flex h-full flex-col border-r border-slate-200 bg-white px-4 py-5 max-lg:border-b max-lg:border-r-0">
+      <div className="grid min-h-screen w-full grid-cols-[18rem_minmax(0,1fr)] max-lg:grid-cols-1">
+        {/* 桌面侧边栏整体放大一档，移动端折叠布局保持原样。 */}
+        <aside className="flex h-full flex-col border-r border-slate-200 bg-white px-5 py-6 max-lg:border-b max-lg:border-r-0">
           <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">dynamic-bot</p>
-            <h1 className="mt-2 text-lg font-semibold text-slate-950">动态机器人 WebUI</h1>
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">dynamic-bot</p>
+            <h1 className="mt-2 text-xl font-semibold text-slate-950">动态机器人 WebUI</h1>
           </div>
-          <nav className="grid gap-2 max-lg:grid-cols-4 max-sm:grid-cols-2">
+          <nav className="grid gap-2.5 max-lg:grid-cols-4 max-sm:grid-cols-2">
             {[
               ['home', '首页'],
               ['settings', '系统配置'],
@@ -121,7 +122,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                 type="button"
                 data-nav-target={target}
                 aria-pressed={page === target}
-                className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+                className={`flex w-full items-center rounded-lg px-4 py-2.5 text-left text-base font-medium transition ${
                   page === target ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-700 hover:bg-slate-100'
                 }`}
                 onClick={() => onNavigate(target as Exclude<WebUiPageName, 'login'>)}
@@ -131,14 +132,14 @@ export function Shell({page, onNavigate, children}: ShellProps) {
             ))}
           </nav>
           {/* 主题切换和管理员操作放在侧边栏底部，避免顶部工具区占用主内容视线。 */}
-          <div className="mt-auto pt-6 max-lg:pt-4">
-            <div className="space-y-3">
-              <label className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700 max-sm:w-full">
+          <div className="mt-auto pt-7 max-lg:pt-4">
+            <div className="space-y-4">
+              <label className="flex flex-wrap items-center gap-2 text-base font-medium text-slate-700 max-sm:w-full">
                 <span>主题模式</span>
                 <select
                   value={preference}
                   onChange={(event) => setPreference(event.target.value as 'system' | 'light' | 'dark')}
-                  className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 max-sm:w-full"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-base text-slate-800 max-sm:w-full"
                 >
                   <option value="light">亮色</option>
                   <option value="dark">暗色</option>
@@ -148,7 +149,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
               <div ref={adminMenuRef} className="relative max-sm:w-full">
                 <button
                   type="button"
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-base font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
                   aria-haspopup="menu"
                   aria-expanded={adminMenuOpen}
                   onClick={() => setAdminMenuOpen((current) => !current)}
@@ -158,11 +159,11 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                 {adminMenuOpen ? (
                   <div
                     role="menu"
-                    className="absolute bottom-full left-0 z-30 mb-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-lg max-sm:w-full"
+                    className="absolute bottom-full left-0 z-30 mb-2 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-lg max-sm:w-full"
                   >
                     <button
                       type="button"
-                      className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                      className="block w-full rounded-md px-3 py-2 text-left text-base hover:bg-slate-100"
                       onClick={() => {
                         setPasswordModalOpen(true)
                         setAdminMenuOpen(false)
@@ -170,7 +171,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                     >
                       修改密码
                     </button>
-                    <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
+                    <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-base text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
                       退出登录
                     </button>
                   </div>
