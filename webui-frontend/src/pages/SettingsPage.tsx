@@ -153,7 +153,6 @@ export function SettingsPage() {
         title="系统配置"
         description="本页面所有配置项都需重启程序生效"
         descriptionTone="danger"
-        actionsPlacement="bottom"
         actions={(
           <>
             {/* 顶部只保留保存操作和保存结果，标题由 PageSection 承载。 */}

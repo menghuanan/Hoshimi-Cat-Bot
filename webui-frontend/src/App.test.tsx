@@ -374,7 +374,7 @@ describe('webui shell routing', () => {
     expect(screen.getByText('当前 QQ 官方机器人没有做适配，不推荐使用。')).toBeInTheDocument()
     expect(screen.getByText('默认关闭，按需开启独立 WebUI。')).toBeInTheDocument()
     expect(screen.queryByText('保存后需要重启')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', {name: '保存'}).parentElement).toHaveClass('justify-start')
+    expect(screen.getByRole('button', {name: '保存'}).parentElement?.parentElement).toHaveClass('justify-between')
 
     const platformGroup = screen.getByText('平台配置').closest('fieldset')
     expect(platformGroup).not.toBeNull()
@@ -765,7 +765,7 @@ describe('webui shell routing', () => {
     expect(screen.queryByText('onebot11:group:1072150397')).not.toBeInTheDocument()
     expect(screen.queryByText('group:1072150397 类型黑名单: 空，正则黑名单: 测试')).not.toBeInTheDocument()
     expect(screen.queryByText('默认模板')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', {name: '新增订阅'}).parentElement).toHaveClass('justify-start')
+    expect(screen.getByRole('button', {name: '新增订阅'}).parentElement?.parentElement).toHaveClass('justify-between')
 
     await user.click(screen.getByRole('button', {name: '新增订阅'}))
     expect(screen.getByRole('dialog', {name: '新增订阅'})).toBeInTheDocument()
@@ -947,6 +947,9 @@ describe('webui shell routing', () => {
     expect(readFileSync('src/styles.css', 'utf8')).toContain('.theme-dark')
     expect(readFileSync('src/styles.css', 'utf8')).toContain('.theme-dark .border-l-emerald-500')
     expect(readFileSync('src/styles.css', 'utf8')).toContain('.subscription-info-block')
+    await user.selectOptions(screen.getByLabelText('主题模式'), 'system')
+    expect(document.documentElement.classList.contains('theme-system')).toBe(true)
+    expect(readFileSync('src/styles.css', 'utf8')).toContain('.theme-system .bg-slate-50')
 
     await user.click(screen.getByRole('button', {name: '管理员', expanded: false}))
     expect(screen.getByRole('menu')).toBeInTheDocument()

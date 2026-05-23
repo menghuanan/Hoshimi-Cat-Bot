@@ -62,7 +62,6 @@ export function SubscriptionsPage() {
       <PageSection
         title="订阅管理"
         description="管理动态、番剧和分组订阅，并编辑过滤器、模板、at全体和主题色。"
-        actionsPlacement="bottom"
         actions={<button type="button" onClick={() => setCreateOpen(true)} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增订阅</button>}
       >
         {loading ? <p className="text-sm text-slate-500">正在加载</p> : null}

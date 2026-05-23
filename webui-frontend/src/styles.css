@@ -80,6 +80,11 @@ body {
     background: #111827;
   }
 
+  /* 系统模式需要同步覆盖浅灰底色，避免侧栏底部按钮和局部卡片在暗色系统主题下仍然发白。 */
+  .theme-system .bg-slate-50 {
+    background: #1f2937;
+  }
+
   .theme-system .border-slate-100,
   .theme-system .border-slate-200,
   .theme-system .border-slate-300 {
