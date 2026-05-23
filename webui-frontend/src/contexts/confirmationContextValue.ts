@@ -1,7 +1,6 @@
 import { createContext } from 'react'
 
 export type ConfirmationContextValue = {
-  requestCenteredConfirmation: (message: string) => Promise<boolean>
   requestHighRiskConfirmation: (message: string) => Promise<string>
 }
 

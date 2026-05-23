@@ -1,24 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ConfirmationContext, type ConfirmationContextValue } from './confirmationContextValue'
 
-type ConfirmationMode = 'centered' | 'password'
-
 type ConfirmationRequest = {
-  mode: ConfirmationMode
   message: string
   title: string
-  confirmText: string
 }
 
 /**
  * 单个 provider 托管所有高风险确认弹窗，避免每个页面各自挂一套 modal state。
  */
 export function ConfirmationProvider({children}: {children: ReactNode}) {
-  const resolverRef = useRef<((value: boolean | string) => void) | null>(null)
+  const resolverRef = useRef<((value: string) => void) | null>(null)
   const [request, setRequest] = useState<ConfirmationRequest | null>(null)
   const [password, setPassword] = useState('')
 
-  const closeRequest = useCallback((value: boolean | string) => {
+  const closeRequest = useCallback((value: string) => {
     const resolver = resolverRef.current
     resolverRef.current = null
     setRequest(null)
@@ -28,27 +24,19 @@ export function ConfirmationProvider({children}: {children: ReactNode}) {
 
   const openRequest = useCallback((nextRequest: ConfirmationRequest) => {
     if (resolverRef.current) {
-      closeRequest(nextRequest.mode === 'password' ? '' : false)
+      closeRequest('')
     }
-    return new Promise<boolean | string>((resolve) => {
+    return new Promise<string>((resolve) => {
       resolverRef.current = resolve
       setRequest(nextRequest)
     })
   }, [closeRequest])
 
   const value = useMemo<ConfirmationContextValue>(() => ({
-    requestCenteredConfirmation: (message: string) => openRequest({
-      mode: 'centered',
-      message,
-      title: '确认操作',
-      confirmText: '确认',
-    }).then((result) => Boolean(result)),
     requestHighRiskConfirmation: (message: string) => openRequest({
-      mode: 'password',
       message,
       title: '密码确认',
-      confirmText: '确认',
-    }).then((result) => String(result || '')),
+    }),
   }), [openRequest])
 
   useEffect(() => {
@@ -57,7 +45,7 @@ export function ConfirmationProvider({children}: {children: ReactNode}) {
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        closeRequest(request.mode === 'password' ? '' : false)
+        closeRequest('')
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -73,7 +61,7 @@ export function ConfirmationProvider({children}: {children: ReactNode}) {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 px-4 py-6"
           role="presentation"
-          onMouseDown={() => closeRequest(request.mode === 'password' ? '' : false)}
+          onMouseDown={() => closeRequest('')}
         >
           <section
             aria-modal="true"
@@ -86,33 +74,31 @@ export function ConfirmationProvider({children}: {children: ReactNode}) {
               {request.title}
             </h2>
             <p className="mt-3 text-sm leading-6 text-zinc-600">{request.message}</p>
-            {request.mode === 'password' ? (
-              <label className="mt-5 block">
-                <span className="mb-2 block text-sm font-medium text-zinc-700">确认密码</span>
-                <input
-                  autoFocus
-                  aria-label="确认密码"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </label>
-            ) : null}
+            <label className="mt-5 block">
+              <span className="mb-2 block text-sm font-medium text-zinc-700">确认密码</span>
+              <input
+                autoFocus
+                aria-label="确认密码"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              />
+            </label>
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
                 className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700"
-                onClick={() => closeRequest(request.mode === 'password' ? '' : false)}
+                onClick={() => closeRequest('')}
               >
                 取消
               </button>
               <button
                 type="button"
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
-                onClick={() => closeRequest(request.mode === 'password' ? password.trim() : true)}
+                onClick={() => closeRequest(password.trim())}
               >
-                {request.confirmText}
+                确认
               </button>
             </div>
           </section>

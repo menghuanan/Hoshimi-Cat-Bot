@@ -145,7 +145,7 @@ class WebUiFoundationSourceRegressionTest {
         assertTrue(reactSource.contains("Admin"))
         assertTrue(reactSource.contains("修改密码"))
         assertTrue(reactSource.contains("requestHighRiskConfirmation"))
-        assertTrue(reactSource.contains("requestCenteredConfirmation"))
+        assertFalse(reactSource.contains("requestCenteredConfirmation"))
         assertTrue(reactSource.contains("proxyUpdateMode"))
         assertTrue(reactSource.contains("randomEnabled"))
         assertTrue(reactSource.contains("buildLogClearPayload"))
