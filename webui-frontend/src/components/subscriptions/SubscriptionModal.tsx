@@ -41,17 +41,15 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6" role="presentation" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6" role="presentation">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="subscription-create-title"
-        className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
-        onMouseDown={(event) => event.stopPropagation()}
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
       >
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4">
           <h3 id="subscription-create-title" className="text-base font-semibold text-slate-950">新增订阅</h3>
-          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700">关闭新增订阅</button>
         </div>
         <form className="grid gap-4" onSubmit={submitForm}>
           <label className="grid gap-1 text-sm font-medium text-slate-700">

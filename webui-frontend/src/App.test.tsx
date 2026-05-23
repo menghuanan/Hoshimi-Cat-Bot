@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
@@ -24,6 +24,19 @@ function stubRuntimeSummary(payload: Record<string, unknown>) {
     }
     return {ok: true, status: 200, json: async () => ({success: true})}
   }))
+}
+
+/**
+ * 订阅编辑相关测试需要可控异步，手动控制 resolve 顺序来复现旧数据回写。
+ */
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return {promise, resolve, reject}
 }
 
 describe('webui shell routing', () => {
@@ -366,6 +379,7 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('WebUI 主机')).toBeInTheDocument()
     expect(screen.getByLabelText('WebUI 端口')).toBeInTheDocument()
     expect(screen.getByLabelText('会话有效秒数')).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('max-w-7xl')
   })
 
   /**
@@ -399,6 +413,63 @@ describe('webui shell routing', () => {
     expect(await screen.findByLabelText('群聊')).toHaveValue('124515')
     expect(screen.getByLabelText('个人QQ号')).toHaveValue('1245512')
     expect(screen.getByText('群聊：124515 管理员：1245512')).toBeInTheDocument()
+  })
+
+  /**
+   * 群普通管理员卡片先暂存到页面态，只有右上角保存才会触发后端写入。
+   */
+  it('stages group admin pairs from the card save button before the page save writes them', async () => {
+    const postRequests: Array<{url: string, body: string}> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (init?.method === 'POST') {
+        postRequests.push({url, body: String(init.body || '')})
+        return {ok: true, status: 200, json: async () => ({success: true, message: 'bot saved'})}
+      }
+      if (url.includes('/api/config/bili-config')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: 'bili-token', fields: []})}
+      }
+      if (url.includes('/api/config/bot')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token',
+            fields: [
+              {key: 'admins', label: 'admins', value: '[]', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+    await user.click(await screen.findByRole('button', {name: '管理员', pressed: false}))
+
+    await user.type(await screen.findByLabelText('群聊'), '123456')
+    await user.type(screen.getByLabelText('个人QQ号'), '654321')
+    expect(screen.getByText('暂无群普通管理员')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '暂存'}))
+    expect(screen.getByText('群聊：123456 管理员：654321')).toBeInTheDocument()
+    expect(postRequests).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    await waitFor(() => expect(postRequests.length).toBeGreaterThan(0))
+    if (!postRequests.some((request) => request.url.includes('/api/config/bot'))) {
+      await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
+      await user.click(screen.getByRole('button', {name: '确认'}))
+    }
+
+    await waitFor(() => expect(postRequests.some((request) => request.url.includes('/api/config/bot'))).toBe(true))
+    const botPost = postRequests.find((request) => request.url.includes('/api/config/bot'))
+    expect(botPost?.body).toContain('123456')
+    expect(botPost?.body).toContain('654321')
   })
 
   /**
@@ -545,6 +616,9 @@ describe('webui shell routing', () => {
 
     await user.click(screen.getByRole('button', {name: '新增订阅'}))
     expect(screen.getByRole('dialog', {name: '新增订阅'})).toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '关闭新增订阅'})).not.toBeInTheDocument()
+    fireEvent.mouseDown(document.querySelector('div[role="presentation"]') as Element)
+    expect(screen.getByRole('dialog', {name: '新增订阅'})).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('订阅类型'), 'group')
     expect(screen.getByLabelText('分组名称')).toBeInTheDocument()
     expect(screen.getByLabelText('分组 UID')).toBeInTheDocument()
@@ -559,8 +633,17 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '编辑主题色'})).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '编辑过滤器'}))
+    const filterRow = (await screen.findByText('广告')).closest('div')
+    expect(filterRow).not.toBeNull()
+    expect(within(filterRow as HTMLElement).getByRole('button', {name: '编辑'})).toBeInTheDocument()
+    expect(within(filterRow as HTMLElement).getByRole('button', {name: '删除'})).toBeInTheDocument()
+    await user.click(within(filterRow as HTMLElement).getByRole('button', {name: '编辑'}))
+    expect(screen.getByLabelText('规则内容')).toHaveValue('广告')
+    expect(screen.getByRole('button', {name: '取消'})).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '取消'}))
     expect(screen.getByRole('button', {name: '添加过滤器'})).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '添加过滤器'}))
+    expect(screen.getByRole('button', {name: '取消'})).toBeInTheDocument()
     await user.type(screen.getByLabelText('规则内容'), '广告')
     await user.click(screen.getByRole('button', {name: '保存过滤器'}))
     await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
@@ -571,6 +654,7 @@ describe('webui shell routing', () => {
     expect(await screen.findByLabelText('随机模板')).toBeChecked()
     expect(screen.getByRole('button', {name: '添加模板'})).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '添加模板'}))
+    expect(screen.getByRole('button', {name: '取消'})).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('模板类型'), 'dynamic')
     await user.type(screen.getByLabelText('模板名称'), '默认模板')
     await user.type(screen.getByLabelText('模板内容'), '{{title}}')
@@ -582,6 +666,7 @@ describe('webui shell routing', () => {
     await user.click(screen.getByRole('button', {name: '编辑at全体'}))
     expect(await screen.findByRole('button', {name: '添加at全体'})).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '添加at全体'}))
+    expect(screen.getByRole('button', {name: '取消'})).toBeInTheDocument()
     await user.click(screen.getByLabelText('onebot11:group:1072150397'))
     expect(screen.getByLabelText('onebot11:group:1072150397')).toBeInTheDocument()
     expect(screen.getByLabelText('onebot11:group:1245551')).toBeInTheDocument()
@@ -591,13 +676,73 @@ describe('webui shell routing', () => {
     expect(await screen.findByText('@全体已保存')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '编辑主题色'}))
+    const editorDialog = screen.getByRole('dialog', {name: '编辑订阅配置'})
     expect(await screen.findByLabelText('主题颜色')).toHaveValue('#33aaff')
+    await user.clear(screen.getByLabelText('主题颜色'))
+    await user.type(screen.getByLabelText('主题颜色'), 'not-a-color')
+    await user.click(screen.getByRole('button', {name: '保存主题色'}))
+    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('主题颜色必须是 HEX 颜色')
     await user.clear(screen.getByLabelText('主题颜色'))
     await user.type(screen.getByLabelText('主题颜色'), '#33aaff')
     await user.click(screen.getByRole('button', {name: '保存主题色'}))
     await user.type(await screen.findByLabelText('确认密码'), 'theme-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
     expect(await screen.findByText('主题色已保存')).toBeInTheDocument()
+  })
+
+  /**
+   * 编辑器切换订阅时必须清空旧面板，并忽略前一个订阅尚未完成的异步加载。
+   */
+  it('resets subscription editor state and ignores stale nested config loads when the item changes', async () => {
+    const sub1Filters = createDeferred<{filters: Record<string, unknown>[]}>()
+    const sub2Filters = createDeferred<{filters: Record<string, unknown>[]}>()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [
+              {id: 'sub-1', title: '订阅1', sourceId: 1, targets: [], tags: [], filterCount: 1, templateCount: 0},
+              {id: 'sub-2', title: '订阅2', sourceId: 2, targets: [], tags: [], filterCount: 1, templateCount: 0},
+            ],
+          }),
+        }
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/filters')) {
+        return sub1Filters.promise.then((payload) => ({ok: true, status: 200, json: async () => payload}))
+      }
+      if (url.endsWith('/api/subscriptions/sub-2/filters')) {
+        return sub2Filters.promise.then((payload) => ({ok: true, status: 200, json: async () => payload}))
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('订阅1')).toBeInTheDocument()
+    const cardEditButtons = screen.getAllByRole('button', {name: '编辑'})
+    await user.click(cardEditButtons[0])
+    await user.click(screen.getByRole('button', {name: '编辑过滤器'}))
+    await user.click(cardEditButtons[1])
+    expect(screen.getByRole('dialog', {name: '编辑订阅配置'})).toHaveTextContent('订阅2')
+
+    await act(async () => {
+      sub1Filters.resolve({filters: [{key: 'filter-1', content: '订阅1过滤器'}]})
+      await sub1Filters.promise
+    })
+    expect(screen.queryByText('订阅1过滤器')).not.toBeInTheDocument()
+    expect(screen.getByText('选择左侧编辑器开始配置')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '编辑过滤器'}))
+    await act(async () => {
+      sub2Filters.resolve({filters: [{key: 'filter-2', content: '订阅2过滤器'}]})
+      await sub2Filters.promise
+    })
+    expect(await screen.findByText('订阅2过滤器')).toBeInTheDocument()
+    expect(screen.queryByText('订阅1过滤器')).not.toBeInTheDocument()
   })
 
   /**

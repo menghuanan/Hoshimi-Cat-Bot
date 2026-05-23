@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
@@ -239,12 +239,32 @@ function SettingsGroup({title, fields, values, onChange}: {
  * 群普通管理员按“群聊 + 个人QQ号”双输入编辑首条映射，并在下方列出现有映射。
  */
 function GroupAdminField({value, onChange}: {value: string, onChange: (value: string) => void}) {
+  const [draftText, setDraftText] = useState(value)
   const pairs = adminPairsFromText(value)
-  const firstPair = pairs[0] || {groupId: '', userId: ''}
+  const draftPairs = adminPairsFromText(draftText)
+  const firstPair = draftPairs[0] || {groupId: '', userId: ''}
+
+  /**
+   * 父级快照变更时同步卡片草稿，避免切换分区后继续显示旧输入。
+   */
+  useEffect(() => {
+    setDraftText(value)
+  }, [value])
+
+  /**
+   * 输入区只更新卡片草稿，必须点击暂存后才写回页面待保存值。
+   */
   const updatePair = (part: 'groupId' | 'userId', nextValue: string) => {
-    const nextPairs = pairs.length > 0 ? [...pairs] : [{groupId: '', userId: ''}]
+    const nextPairs = draftPairs.length > 0 ? [...draftPairs] : [{groupId: '', userId: ''}]
     nextPairs[0] = {...nextPairs[0], [part]: nextValue}
-    onChange(nextPairs.map((pair) => `${pair.groupId}:${pair.userId}`).join('\n'))
+    setDraftText(nextPairs.map((pair) => `${pair.groupId}:${pair.userId}`).join('\n'))
+  }
+
+  /**
+   * 暂存只提交到当前页面态，真正写入文件仍由页面右上角保存按钮处理。
+   */
+  const stageDraft = () => {
+    onChange(draftText)
   }
 
   return (
@@ -271,6 +291,9 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950"
           />
         </label>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button type="button" onClick={stageDraft} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">暂存</button>
       </div>
       <div className="mt-3 space-y-1">
         {pairs.length > 0 ? pairs.map((pair, index) => (

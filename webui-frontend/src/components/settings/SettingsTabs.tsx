@@ -12,7 +12,7 @@ type SettingsTabsProps = {
 export function SettingsTabs({categories, activeCategoryId, onSelectCategory}: SettingsTabsProps) {
   // 标签组居中排列，给系统配置页留出更均衡的横向视觉重心。
   return (
-    <div className="mx-auto flex min-w-0 max-w-5xl flex-wrap justify-center gap-2">
+    <div className="mx-auto flex min-w-0 w-full max-w-7xl flex-wrap justify-center gap-2">
       {categories.map((category) => (
         <button
           key={category.id}

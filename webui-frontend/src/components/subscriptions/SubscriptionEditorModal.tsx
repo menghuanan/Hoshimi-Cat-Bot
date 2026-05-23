@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { formatPasswordErrorMessage } from '../../utils/errorMessages'
 
 type EditorAction = 'overview' | 'filters' | 'templates' | 'atall' | 'theme'
+type EditorFormMode = 'none' | 'filter' | 'template' | 'atall'
+type EditorConfigKind = 'filter' | 'template' | 'atall'
 type SubscriptionItem = Record<string, unknown>
 type SubscriptionEditorActions = {
   loadFilters: (itemId: string) => Promise<unknown>
@@ -26,51 +28,98 @@ type SubscriptionEditorModalProps = {
  * 订阅配置编辑弹窗承载过滤器、模板、at全体和主题色四类嵌套编辑入口。
  */
 export function SubscriptionEditorModal({item, actions, onClose, onReload}: SubscriptionEditorModalProps) {
+  const itemId = item ? readStableSubscriptionId(item) : ''
+  const targets = item ? readItemArray(item, 'targets') : []
+  const loadSequenceRef = useRef(0)
   const [activeAction, setActiveAction] = useState<EditorAction>('overview')
   const [filters, setFilters] = useState<Record<string, unknown>[]>([])
   const [templates, setTemplates] = useState<Record<string, unknown>[]>([])
   const [randomEnabled, setRandomEnabled] = useState(false)
   const [atAllItems, setAtAllItems] = useState<Record<string, unknown>[]>([])
   const [themeColor, setThemeColor] = useState('')
-  const [formMode, setFormMode] = useState<'none' | 'filter' | 'template' | 'atall'>('none')
+  const [formMode, setFormMode] = useState<EditorFormMode>('none')
+  const [editingDraft, setEditingDraft] = useState<Record<string, unknown> | null>(null)
   const [status, setStatus] = useState('')
   const [statusTone, setStatusTone] = useState<'neutral' | 'success' | 'error'>('neutral')
+
+  /**
+   * 订阅切换或关闭时清空所有嵌套面板，避免上一个订阅的编辑态继续显示。
+   */
+  useEffect(() => {
+    loadSequenceRef.current += 1
+    setActiveAction('overview')
+    setFilters([])
+    setTemplates([])
+    setRandomEnabled(false)
+    setAtAllItems([])
+    setThemeColor('')
+    setFormMode('none')
+    setEditingDraft(null)
+    setStatus('')
+    setStatusTone('neutral')
+  }, [itemId])
 
   if (!item) {
     return null
   }
 
-  const itemId = readStableSubscriptionId(item)
-  const targets = readItemArray(item, 'targets')
+  /**
+   * 异步加载只允许最新一次请求写回 state，防止旧订阅响应覆盖当前订阅。
+   */
+  const isCurrentLoad = (sequence: number) => sequence === loadSequenceRef.current
 
   /**
    * 配置面板切换时按需加载对应后端数据，并保留操作按钮常驻。
    */
   const openAction = async (nextAction: EditorAction) => {
+    const sequence = ++loadSequenceRef.current
     setStatus('')
     setStatusTone('neutral')
     setFormMode('none')
+    setEditingDraft(null)
     setActiveAction(nextAction)
     if (!itemId || nextAction === 'overview') {
       return
     }
     if (nextAction === 'filters') {
       const payload = await actions.loadFilters(itemId) as {filters?: Record<string, unknown>[]}
+      if (!isCurrentLoad(sequence)) return
       setFilters(Array.isArray(payload?.filters) ? payload.filters : [])
     }
     if (nextAction === 'templates') {
       const payload = await actions.loadTemplates(itemId) as {templates?: Record<string, unknown>[], randomEnabled?: boolean}
+      if (!isCurrentLoad(sequence)) return
       setTemplates(Array.isArray(payload?.templates) ? payload.templates : [])
       setRandomEnabled(Boolean(payload?.randomEnabled))
     }
     if (nextAction === 'atall') {
       const payload = await actions.loadAtAll(itemId) as {items?: Record<string, unknown>[]}
+      if (!isCurrentLoad(sequence)) return
       setAtAllItems(Array.isArray(payload?.items) ? payload.items : [])
     }
     if (nextAction === 'theme') {
       const payload = await actions.loadTheme(itemId) as {color?: string}
+      if (!isCurrentLoad(sequence)) return
       setThemeColor(String(payload?.color || ''))
     }
+  }
+
+  /**
+   * 新增表单从空草稿进入，编辑表单则由行内按钮传入当前条目。
+   */
+  const startForm = (mode: Exclude<EditorFormMode, 'none'>, draft: Record<string, unknown> | null = null) => {
+    setStatus('')
+    setStatusTone('neutral')
+    setEditingDraft(draft)
+    setFormMode(mode)
+  }
+
+  /**
+   * 表单取消回到当前列表面板，不改变已经加载或暂存的后端配置。
+   */
+  const cancelForm = () => {
+    setEditingDraft(null)
+    setFormMode('none')
   }
 
   /**
@@ -95,6 +144,28 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   }
 
   /**
+   * 删除嵌套配置项只使用当前行的 key，避免误删同订阅下其他配置。
+   */
+  const deleteConfigItem = async (kind: EditorConfigKind, draft: Record<string, unknown>) => {
+    const key = readConfigKey(draft)
+    if (!itemId || !key) {
+      setStatus('当前配置项缺少可删除标识')
+      setStatusTone('error')
+      return
+    }
+    try {
+      await actions.removeConfig(itemId, kind, key)
+      await openAction(actionForConfigKind(kind))
+      await onReload()
+      setStatus(`${configKindLabel(kind)}已删除`)
+      setStatusTone('success')
+    } catch (error) {
+      setStatus(formatPasswordErrorMessage(error, `删除${configKindLabel(kind)}失败`))
+      setStatusTone('error')
+    }
+  }
+
+  /**
    * 保存过滤器后刷新当前面板，确保列表和订阅卡片都同步更新。
    */
   const submitFilter = async (event: FormEvent<HTMLFormElement>) => {
@@ -107,11 +178,13 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
     try {
       const form = new FormData(event.currentTarget)
       await actions.saveFilter(itemId, {
-        key: '',
+        key: readItemField(editingDraft || {}, 'key'),
         kind: String(form.get('kind') || 'regex'),
         mode: String(form.get('mode') || 'black'),
         content: String(form.get('content') || '').trim(),
       })
+      setFormMode('none')
+      setEditingDraft(null)
       await openAction('filters')
       await onReload()
       setStatus('过滤器已保存')
@@ -135,11 +208,13 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
     try {
       const form = new FormData(event.currentTarget)
       await actions.saveTemplate(itemId, {
-        key: '',
+        key: readItemField(editingDraft || {}, 'key'),
         type: String(form.get('type') || 'dynamic'),
         name: String(form.get('name') || '').trim(),
         content: String(form.get('content') || ''),
       })
+      setFormMode('none')
+      setEditingDraft(null)
       await openAction('templates')
       await onReload()
       setStatus('模板已保存')
@@ -167,6 +242,8 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
         type: String(form.get('type') || '全部'),
         targetGroups,
       })
+      setFormMode('none')
+      setEditingDraft(null)
       await openAction('atall')
       await onReload()
       setStatus('@全体已保存')
@@ -187,6 +264,11 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
       setStatusTone('error')
       return
     }
+    if (!isValidThemeColor(themeColor)) {
+      setStatus('主题颜色必须是 HEX 颜色')
+      setStatusTone('error')
+      return
+    }
     try {
       await actions.saveTheme(itemId, themeColor.trim())
       await onReload()
@@ -199,13 +281,12 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6" role="presentation" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6" role="presentation">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="subscription-editor-title"
         className="grid max-h-[90vh] w-full max-w-5xl gap-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl lg:grid-cols-[13rem_1fr]"
-        onMouseDown={(event) => event.stopPropagation()}
       >
         <aside className="space-y-3">
           <div>
@@ -225,8 +306,10 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
           {activeAction === 'overview' ? <EditorEmptyState text="选择左侧编辑器开始配置" /> : null}
           {activeAction === 'filters' ? (
             <div className="space-y-3">
-              <EditorList items={filters} emptyText="暂无过滤器" />
-              {formMode === 'filter' ? <FilterForm onSubmit={submitFilter} /> : <button type="button" onClick={() => setFormMode('filter')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加过滤器</button>}
+              <EditorList items={filters} kind="filter" emptyText="暂无过滤器" onEdit={(draft) => startForm('filter', draft)} onDelete={(draft) => void deleteConfigItem('filter', draft)} />
+              {formMode === 'filter'
+                ? <FilterForm draft={editingDraft} onSubmit={submitFilter} onCancel={cancelForm} />
+                : <button type="button" onClick={() => startForm('filter')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加过滤器</button>}
             </div>
           ) : null}
           {activeAction === 'templates' ? (
@@ -235,14 +318,18 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
                 <input type="checkbox" checked={randomEnabled} onChange={(event) => void toggleRandom(event.target.checked)} />
                 <span>随机模板</span>
               </label>
-              <EditorList items={templates} emptyText="暂无模板" />
-              {formMode === 'template' ? <TemplateForm onSubmit={submitTemplate} /> : <button type="button" onClick={() => setFormMode('template')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加模板</button>}
+              <EditorList items={templates} kind="template" emptyText="暂无模板" onEdit={(draft) => startForm('template', draft)} onDelete={(draft) => void deleteConfigItem('template', draft)} />
+              {formMode === 'template'
+                ? <TemplateForm draft={editingDraft} onSubmit={submitTemplate} onCancel={cancelForm} />
+                : <button type="button" onClick={() => startForm('template')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加模板</button>}
             </div>
           ) : null}
           {activeAction === 'atall' ? (
             <div className="space-y-3">
-              <EditorList items={atAllItems} emptyText="暂无atall信息" />
-              {formMode === 'atall' ? <AtAllForm targets={targets} onSubmit={submitAtAll} /> : <button type="button" onClick={() => setFormMode('atall')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加at全体</button>}
+              <EditorList items={atAllItems} kind="atall" emptyText="暂无atall信息" onEdit={(draft) => startForm('atall', draft)} onDelete={(draft) => void deleteConfigItem('atall', draft)} />
+              {formMode === 'atall'
+                ? <AtAllForm targets={targets} draft={editingDraft} onSubmit={submitAtAll} onCancel={cancelForm} />
+                : <button type="button" onClick={() => startForm('atall')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加at全体</button>}
             </div>
           ) : null}
           {activeAction === 'theme' ? (
@@ -254,7 +341,11 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
               <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">保存主题色</button>
             </form>
           ) : null}
-          {status ? <p className={`text-sm font-medium ${statusTone === 'success' ? 'text-emerald-600' : statusTone === 'error' ? 'text-rose-600' : 'text-slate-700'}`}>{status}</p> : null}
+          {status ? (
+            <p role={statusTone === 'error' ? 'alert' : 'status'} className={`rounded-lg px-3 py-2 text-sm font-medium ${statusTone === 'success' ? 'bg-emerald-50 text-emerald-700' : statusTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-700'}`}>
+              {status}
+            </p>
+          ) : null}
         </div>
       </section>
     </div>
@@ -264,28 +355,28 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
 /**
  * 过滤器表单保留旧 WebUI 的类型、模式和内容三组核心字段。
  */
-function FilterForm({onSubmit}: {onSubmit: (event: FormEvent<HTMLFormElement>) => void}) {
+function FilterForm({draft, onSubmit, onCancel}: {draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>过滤类型</span>
-        <select name="kind" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="kind" defaultValue={readItemField(draft || {}, 'kind') || 'regex'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <option value="regex">正则</option>
           <option value="type">动态类型</option>
         </select>
       </label>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>规则模式</span>
-        <select name="mode" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="mode" defaultValue={readItemField(draft || {}, 'mode') || 'black'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <option value="black">黑名单</option>
           <option value="white">白名单</option>
         </select>
       </label>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>规则内容</span>
-        <input name="content" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <input name="content" defaultValue={readItemField(draft || {}, 'content')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </label>
-      <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">保存过滤器</button>
+      <FormButtons submitText="保存过滤器" onCancel={onCancel} />
     </form>
   )
 }
@@ -293,12 +384,12 @@ function FilterForm({onSubmit}: {onSubmit: (event: FormEvent<HTMLFormElement>) =
 /**
  * 模板表单保持类型、名称和正文，正文不做前端重写。
  */
-function TemplateForm({onSubmit}: {onSubmit: (event: FormEvent<HTMLFormElement>) => void}) {
+function TemplateForm({draft, onSubmit, onCancel}: {draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>模板类型</span>
-        <select name="type" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="type" defaultValue={readItemField(draft || {}, 'type') || 'dynamic'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <option value="dynamic">动态</option>
           <option value="live">直播</option>
           <option value="liveClose">下播</option>
@@ -306,13 +397,13 @@ function TemplateForm({onSubmit}: {onSubmit: (event: FormEvent<HTMLFormElement>)
       </label>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>模板名称</span>
-        <input name="name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <input name="name" defaultValue={readItemField(draft || {}, 'name')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </label>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>模板内容</span>
-        <textarea name="content" className="min-h-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <textarea name="content" defaultValue={readItemField(draft || {}, 'content')} className="min-h-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </label>
-      <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">保存模板</button>
+      <FormButtons submitText="保存模板" onCancel={onCancel} />
     </form>
   )
 }
@@ -320,12 +411,13 @@ function TemplateForm({onSubmit}: {onSubmit: (event: FormEvent<HTMLFormElement>)
 /**
  * @全体表单按订阅目标生成多选项，支持一次选择多个目标群。
  */
-function AtAllForm({targets, onSubmit}: {targets: string[], onSubmit: (event: FormEvent<HTMLFormElement>) => void}) {
+function AtAllForm({targets, draft, onSubmit, onCancel}: {targets: string[], draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+  const selectedGroups = new Set([...readItemArray(draft || {}, 'targetGroups'), ...readItemArray(draft || {}, 'groups')])
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>at类型</span>
-        <select name="type" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="type" defaultValue={readItemField(draft || {}, 'type') || '全部'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <option value="全部">全部</option>
           <option value="全部动态">全部动态</option>
           <option value="直播">直播</option>
@@ -338,13 +430,25 @@ function AtAllForm({targets, onSubmit}: {targets: string[], onSubmit: (event: Fo
         <legend className="px-1 text-sm font-medium text-slate-700">目标群聊</legend>
         {targets.length > 0 ? targets.map((target) => (
           <label key={target} className="inline-flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" name="targetGroups" value={target} />
+            <input type="checkbox" name="targetGroups" value={target} defaultChecked={selectedGroups.has(target)} />
             <span>{target}</span>
           </label>
         )) : <p className="text-sm text-slate-500">暂无可选群聊</p>}
       </fieldset>
-      <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">保存at全体</button>
+      <FormButtons submitText="保存at全体" onCancel={onCancel} />
     </form>
+  )
+}
+
+/**
+ * 编辑器表单共用保存和取消按钮，保证新增和编辑页面都能返回列表。
+ */
+function FormButtons({submitText, onCancel}: {submitText: string, onCancel: () => void}) {
+  return (
+    <div className="flex justify-end gap-3">
+      <button type="button" onClick={onCancel} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">取消</button>
+      <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">{submitText}</button>
+    </div>
   )
 }
 
@@ -358,17 +462,30 @@ function EditorEmptyState({text}: {text: string}) {
 /**
  * 配置列表以 JSON 兜底展示未知字段，后续细化不会影响基础可见性。
  */
-function EditorList({items, emptyText}: {items: Record<string, unknown>[], emptyText: string}) {
+function EditorList({items, kind, emptyText, onEdit, onDelete}: {
+  items: Record<string, unknown>[]
+  kind: EditorConfigKind
+  emptyText: string
+  onEdit: (draft: Record<string, unknown>) => void
+  onDelete: (draft: Record<string, unknown>) => void
+}) {
   if (items.length === 0) {
     return <EditorEmptyState text={emptyText} />
   }
   return (
     <div className="grid gap-2">
-      {items.map((item, index) => (
-        <div key={readItemField(item, 'key') || index} className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
-          {readItemField(item, 'summary') || readItemField(item, 'name') || readItemField(item, 'content') || JSON.stringify(item)}
-        </div>
-      ))}
+      {items.map((item, index) => {
+        const label = readDisplayLabel(item)
+        return (
+          <div key={readItemField(item, 'key') || `${kind}-${index}`} className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+            <span className="min-w-0 break-words">{label}</span>
+            <div className="flex shrink-0 gap-2">
+              <button type="button" onClick={() => onEdit(item)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700">编辑</button>
+              <button type="button" onClick={() => onDelete(item)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-700">删除</button>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -380,6 +497,24 @@ function actionButtonClass(active: boolean): string {
   return active
     ? 'rounded-lg bg-slate-950 px-3 py-2 text-left text-sm font-semibold text-white'
     : 'rounded-lg border border-slate-300 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50'
+}
+
+/**
+ * 嵌套配置类型映射回对应编辑面板，删除或保存后用于刷新当前列表。
+ */
+function actionForConfigKind(kind: EditorConfigKind): EditorAction {
+  if (kind === 'filter') return 'filters'
+  if (kind === 'template') return 'templates'
+  return 'atall'
+}
+
+/**
+ * 配置类型转成用户可见的短标签，供成功和失败状态复用。
+ */
+function configKindLabel(kind: EditorConfigKind): string {
+  if (kind === 'filter') return '过滤器'
+  if (kind === 'template') return '模板'
+  return 'at全体'
 }
 
 /**
@@ -395,6 +530,34 @@ function readItemField(item: Record<string, unknown>, key: string): string {
 function readItemArray(item: Record<string, unknown>, key: string): string[] {
   const value = item[key]
   return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
+/**
+ * 列表显示优先使用后端摘要，再回退到常见字段和 JSON。
+ */
+function readDisplayLabel(item: Record<string, unknown>): string {
+  return readItemField(item, 'summary')
+    || readItemField(item, 'name')
+    || readItemField(item, 'content')
+    || readItemField(item, 'type')
+    || readItemField(item, 'label')
+    || readItemField(item, 'key')
+    || JSON.stringify(item)
+}
+
+/**
+ * 删除接口必须拿到稳定 key，缺失 key 时回退到后端聚合字段。
+ */
+function readConfigKey(item: Record<string, unknown>): string {
+  return readItemField(item, 'key') || readItemField(item, 'type') || readItemField(item, 'name') || readItemField(item, 'summary')
+}
+
+/**
+ * 主题色允许留空恢复默认，非空值必须是标准 #RRGGBB。
+ */
+function isValidThemeColor(value: string): boolean {
+  const text = value.trim()
+  return text.length === 0 || /^#[0-9A-Fa-f]{6}$/.test(text)
 }
 
 /**
