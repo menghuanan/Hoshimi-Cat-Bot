@@ -494,6 +494,125 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * 管理员页连续保存时必须沿用后端返回的新快照令牌，避免第二次保存被并发保护误判为旧快照。
+   */
+  it('uses the latest bot snapshot token when saving group admins repeatedly', async () => {
+    const botPostBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-config')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: '', fields: []})}
+      }
+      if (url.includes('/api/config/bot') && init?.method === 'POST') {
+        botPostBodies.push(JSON.parse(String(init.body || '{}')))
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({success: true, message: 'bot saved', snapshotToken: `bot-token-${botPostBodies.length + 1}`}),
+        }
+      }
+      if (url.includes('/api/config/bot')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token-1',
+            fields: [
+              {key: 'admins', label: 'admins', value: '[]', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+    await user.click(await screen.findByRole('button', {name: '管理员', pressed: false}))
+
+    await user.type(await screen.findByLabelText('群聊'), '123456')
+    await user.type(screen.getByLabelText('个人QQ号'), '654321')
+    await user.click(screen.getByRole('button', {name: '暂存'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    await waitFor(() => expect(botPostBodies).toHaveLength(1))
+
+    await user.type(await screen.findByLabelText('群聊'), '222222')
+    await user.type(screen.getByLabelText('个人QQ号'), '333333')
+    await user.click(screen.getByRole('button', {name: '暂存'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    await waitFor(() => expect(botPostBodies).toHaveLength(2))
+
+    expect(botPostBodies[0].snapshotToken).toBe('bot-token-1')
+    expect(botPostBodies[1].snapshotToken).toBe('bot-token-2')
+  })
+
+  /**
+   * 只修改群普通管理员时不应写入 BiliConfig，避免无关旧配置校验失败挡住 bot.yml 保存。
+   */
+  it('does not save BiliConfig when only group admins changed', async () => {
+    const postUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (init?.method === 'POST') {
+        postUrls.push(url)
+      }
+      if (url.includes('/api/config/bili-config') && init?.method === 'POST') {
+        return {ok: false, status: 400, json: async () => ({success: false, message: 'lowSpeedRange is invalid'})}
+      }
+      if (url.includes('/api/config/bili-config')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'BiliConfig.yml',
+            snapshotToken: 'bili-token',
+            fields: [
+              {key: 'adminContact', label: 'adminContact', value: 'onebot11:private:42', capability: 'EDITABLE', editable: true},
+              {key: 'admin', label: 'admin', value: '42', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      if (url.includes('/api/config/bot') && init?.method === 'POST') {
+        return {ok: true, status: 200, json: async () => ({success: true, message: 'bot saved', snapshotToken: 'bot-token-2'})}
+      }
+      if (url.includes('/api/config/bot')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token-1',
+            fields: [
+              {key: 'admins', label: 'admins', value: '[]', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+    await user.click(await screen.findByRole('button', {name: '管理员', pressed: false}))
+
+    await user.type(await screen.findByLabelText('群聊'), '123456')
+    await user.type(screen.getByLabelText('个人QQ号'), '654321')
+    await user.click(screen.getByRole('button', {name: '暂存'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    await waitFor(() => expect(postUrls.some((url) => url.includes('/api/config/bot'))).toBe(true))
+    expect(postUrls.some((url) => url.includes('/api/config/bili-config'))).toBe(false)
+  })
+
+  /**
    * 首页布局需要恢复旧 WebUI 的运行信息密度，核心指标标签不能被折叠掉。
    */
   it('renders the dashboard runtime metric labels required for parity', async () => {

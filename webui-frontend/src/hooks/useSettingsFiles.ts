@@ -63,24 +63,28 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
   /**
    * 保存成功后把最新字段值合并回本地快照，避免页面重新读取旧快照把输入刷回旧值。
    */
-  const patchBiliConfig = useCallback((values: Record<string, unknown>) => {
-    setBiliConfig((current) => patchSnapshotFields(current, values))
+  const patchBiliConfig = useCallback((values: Record<string, unknown>, snapshotToken?: string) => {
+    setBiliConfig((current) => patchSnapshotFields(current, values, snapshotToken))
   }, [])
 
   /**
    * bot.yml 保存成功后也要乐观更新快照，保证切换分区后仍然看到刚保存的值。
    */
-  const patchBotConfig = useCallback((values: Record<string, unknown>) => {
-    setBotConfig((current) => patchSnapshotFields(current, values))
+  const patchBotConfig = useCallback((values: Record<string, unknown>, snapshotToken?: string) => {
+    setBotConfig((current) => patchSnapshotFields(current, values, snapshotToken))
   }, [])
 
   return {biliConfig, botConfig, loading, reload, saveBili, saveBot, patchBiliConfig, patchBotConfig}
 }
 
 /**
- * 快照对象只需要同步 fields 数组中的 value 字段，其他元数据保持原样。
+ * 快照对象同步字段值和后端返回的新令牌，避免后续保存继续携带旧 snapshotToken。
  */
-function patchSnapshotFields(snapshot: Record<string, unknown> | null, values: Record<string, unknown>): Record<string, unknown> | null {
+function patchSnapshotFields(
+  snapshot: Record<string, unknown> | null,
+  values: Record<string, unknown>,
+  snapshotToken?: string,
+): Record<string, unknown> | null {
   if (!snapshot) {
     return snapshot
   }
@@ -91,5 +95,5 @@ function patchSnapshotFields(snapshot: Record<string, unknown> | null, values: R
       ? String(values[String(field.key || '')] ?? '')
       : field.value,
   }))
-  return {...snapshot, fields: nextFields}
+  return snapshotToken ? {...snapshot, snapshotToken, fields: nextFields} : {...snapshot, fields: nextFields}
 }

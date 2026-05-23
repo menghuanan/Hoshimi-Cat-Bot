@@ -103,21 +103,27 @@ export function SettingsPage() {
       const completeBotValues = pickValuesForFile(allSettingsFields, completeValues, 'botConfig')
       const biliToken = String(biliConfig?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
+      const shouldSaveBili = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'biliConfig')
+      const shouldSaveBot = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'botConfig')
       const saveResults: Array<WebUiSettingsSaveResult | null> = []
+      let biliSaveResult: WebUiSettingsSaveResult | null = null
+      let botSaveResult: WebUiSettingsSaveResult | null = null
 
-      if (biliToken && Object.keys(biliValues).length > 0) {
-        saveResults.push(await saveBili({
+      if (biliToken && shouldSaveBili) {
+        biliSaveResult = await saveBili({
           snapshotToken: biliToken,
           proxyText: String(completeBiliValues['proxyConfig.proxy'] || ''),
           fields: omitKey(completeBiliValues, 'proxyConfig.proxy'),
-        }))
+        })
+        saveResults.push(biliSaveResult)
       }
-      if (botToken && Object.keys(botValues).length > 0) {
-        saveResults.push(await saveBot({
+      if (botToken && shouldSaveBot) {
+        botSaveResult = await saveBot({
           snapshotToken: botToken,
           token: String(completeBotValues['platform.onebot11.token'] || ''),
           fields: omitKey(completeBotValues, 'platform.onebot11.token'),
-        }))
+        })
+        saveResults.push(botSaveResult)
       }
 
       const resultMessage = formatSaveResultMessage(saveResults)
@@ -130,8 +136,8 @@ export function SettingsPage() {
         return
       }
 
-      patchBiliConfig(completeBiliValues)
-      patchBotConfig(completeBotValues)
+      patchBiliConfig(completeBiliValues, biliSaveResult?.snapshotToken)
+      patchBotConfig(completeBotValues, botSaveResult?.snapshotToken)
       setEditedValues({})
       setSaveStatus({tone: 'success', message: resultMessage})
     } catch (error) {
@@ -490,6 +496,15 @@ function pickValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFo
   return Object.fromEntries(fields
     .filter((field) => field.file === file)
     .map((field) => [field.key, values[field.key] ?? '']))
+}
+
+/**
+ * 保存入口只提交本轮用户实际编辑过的文件，避免同页未改字段触发无关文件校验和密码确认。
+ */
+function hasEditedValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFormValues, file: 'biliConfig' | 'botConfig'): boolean {
+  return fields.some((field) => (
+    field.file === file && Object.prototype.hasOwnProperty.call(values, field.key)
+  ))
 }
 
 /**
