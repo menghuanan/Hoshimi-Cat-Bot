@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { formatPasswordErrorMessage } from '../../utils/errorMessages'
 
 type EditorAction = 'overview' | 'filters' | 'templates' | 'atall' | 'theme'
 type SubscriptionItem = Record<string, unknown>
@@ -33,12 +34,13 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const [themeColor, setThemeColor] = useState('')
   const [formMode, setFormMode] = useState<'none' | 'filter' | 'template' | 'atall'>('none')
   const [status, setStatus] = useState('')
+  const [statusTone, setStatusTone] = useState<'neutral' | 'success' | 'error'>('neutral')
 
   if (!item) {
     return null
   }
 
-  const itemId = readItemField(item, 'id') || readItemField(item, 'itemId') || readItemField(item, 'uid')
+  const itemId = readStableSubscriptionId(item)
   const targets = readItemArray(item, 'targets')
 
   /**
@@ -46,6 +48,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
    */
   const openAction = async (nextAction: EditorAction) => {
     setStatus('')
+    setStatusTone('neutral')
     setFormMode('none')
     setActiveAction(nextAction)
     if (!itemId || nextAction === 'overview') {
@@ -75,12 +78,20 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
    */
   const toggleRandom = async (enabled: boolean) => {
     if (!itemId) {
+      setStatus('当前条目缺少可保存标识')
+      setStatusTone('error')
       return
     }
-    await actions.toggleRandomTemplate(itemId, enabled)
-    setRandomEnabled(enabled)
-    setStatus(enabled ? '随机模板已开启' : '随机模板已关闭')
-    await onReload()
+    try {
+      await actions.toggleRandomTemplate(itemId, enabled)
+      setRandomEnabled(enabled)
+      await onReload()
+      setStatus(enabled ? '随机模板已开启' : '随机模板已关闭')
+      setStatusTone('success')
+    } catch (error) {
+      setStatus(formatPasswordErrorMessage(error, '切换随机模板失败'))
+      setStatusTone('error')
+    }
   }
 
   /**
@@ -89,18 +100,26 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const submitFilter = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!itemId) {
+      setStatus('当前条目缺少可保存标识')
+      setStatusTone('error')
       return
     }
-    const form = new FormData(event.currentTarget)
-    await actions.saveFilter(itemId, {
-      key: '',
-      kind: String(form.get('kind') || 'regex'),
-      mode: String(form.get('mode') || 'black'),
-      content: String(form.get('content') || '').trim(),
-    })
-    setStatus('过滤器已保存')
-    await openAction('filters')
-    await onReload()
+    try {
+      const form = new FormData(event.currentTarget)
+      await actions.saveFilter(itemId, {
+        key: '',
+        kind: String(form.get('kind') || 'regex'),
+        mode: String(form.get('mode') || 'black'),
+        content: String(form.get('content') || '').trim(),
+      })
+      await openAction('filters')
+      await onReload()
+      setStatus('过滤器已保存')
+      setStatusTone('success')
+    } catch (error) {
+      setStatus(formatPasswordErrorMessage(error, '保存过滤器失败'))
+      setStatusTone('error')
+    }
   }
 
   /**
@@ -109,18 +128,26 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const submitTemplate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!itemId) {
+      setStatus('当前条目缺少可保存标识')
+      setStatusTone('error')
       return
     }
-    const form = new FormData(event.currentTarget)
-    await actions.saveTemplate(itemId, {
-      key: '',
-      type: String(form.get('type') || 'dynamic'),
-      name: String(form.get('name') || '').trim(),
-      content: String(form.get('content') || ''),
-    })
-    setStatus('模板已保存')
-    await openAction('templates')
-    await onReload()
+    try {
+      const form = new FormData(event.currentTarget)
+      await actions.saveTemplate(itemId, {
+        key: '',
+        type: String(form.get('type') || 'dynamic'),
+        name: String(form.get('name') || '').trim(),
+        content: String(form.get('content') || ''),
+      })
+      await openAction('templates')
+      await onReload()
+      setStatus('模板已保存')
+      setStatusTone('success')
+    } catch (error) {
+      setStatus(formatPasswordErrorMessage(error, '保存模板失败'))
+      setStatusTone('error')
+    }
   }
 
   /**
@@ -129,17 +156,25 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const submitAtAll = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!itemId) {
+      setStatus('当前条目缺少可保存标识')
+      setStatusTone('error')
       return
     }
-    const form = new FormData(event.currentTarget)
-    const targetGroups = form.getAll('targetGroups').map(String)
-    await actions.saveAtAll(itemId, {
-      type: String(form.get('type') || '全部'),
-      targetGroups,
-    })
-    setStatus('@全体已保存')
-    await openAction('atall')
-    await onReload()
+    try {
+      const form = new FormData(event.currentTarget)
+      const targetGroups = form.getAll('targetGroups').map(String)
+      await actions.saveAtAll(itemId, {
+        type: String(form.get('type') || '全部'),
+        targetGroups,
+      })
+      await openAction('atall')
+      await onReload()
+      setStatus('@全体已保存')
+      setStatusTone('success')
+    } catch (error) {
+      setStatus(formatPasswordErrorMessage(error, '保存at全体失败'))
+      setStatusTone('error')
+    }
   }
 
   /**
@@ -148,11 +183,19 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const submitTheme = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!itemId) {
+      setStatus('当前条目缺少可保存标识')
+      setStatusTone('error')
       return
     }
-    await actions.saveTheme(itemId, themeColor.trim())
-    setStatus('主题色已保存')
-    await onReload()
+    try {
+      await actions.saveTheme(itemId, themeColor.trim())
+      await onReload()
+      setStatus('主题色已保存')
+      setStatusTone('success')
+    } catch (error) {
+      setStatus(formatPasswordErrorMessage(error, '保存主题色失败'))
+      setStatusTone('error')
+    }
   }
 
   return (
@@ -211,7 +254,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
               <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">保存主题色</button>
             </form>
           ) : null}
-          {status ? <p className="text-sm font-medium text-slate-700">{status}</p> : null}
+          {status ? <p className={`text-sm font-medium ${statusTone === 'success' ? 'text-emerald-600' : statusTone === 'error' ? 'text-rose-600' : 'text-slate-700'}`}>{status}</p> : null}
         </div>
       </section>
     </div>
@@ -352,4 +395,11 @@ function readItemField(item: Record<string, unknown>, key: string): string {
 function readItemArray(item: Record<string, unknown>, key: string): string[] {
   const value = item[key]
   return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
+/**
+ * 订阅编辑只接受后端主键或兼容 itemId，uid 这类展示字段不参与写入请求。
+ */
+function readStableSubscriptionId(item: SubscriptionItem): string {
+  return readItemField(item, 'id') || readItemField(item, 'itemId')
 }

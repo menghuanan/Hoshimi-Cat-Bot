@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { changePassword, loginWithPassword } from '../api/auth'
+import { useThemePreference } from '../hooks/useThemePreference'
+import { formatLoginErrorMessage } from '../utils/errorMessages'
 
 /**
  * 登录页直接调用认证 API，首次登录需要改密时留在同一 React 路由内完成流程。
  */
 export function LoginPage() {
+  useThemePreference()
   const [password, setPassword] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -30,7 +33,7 @@ export function LoginPage() {
         window.location.assign('/')
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '登录失败')
+      setMessage(formatLoginErrorMessage(error))
     } finally {
       setPending(false)
     }
@@ -56,7 +59,7 @@ export function LoginPage() {
       setConfirmPassword('')
       setMessage('密码已修改，请重新登录')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '修改密码失败')
+      setMessage(formatLoginErrorMessage(error))
     } finally {
       setPending(false)
     }

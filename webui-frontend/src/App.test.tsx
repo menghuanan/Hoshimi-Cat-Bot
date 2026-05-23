@@ -144,6 +144,116 @@ describe('webui shell routing', () => {
     }])).toBe('保存成功：bot.yml saved')
   })
 
+  /**
+   * 保存成功后页面应保留刚写入的值，不再被旧快照回刷。
+   */
+  it('keeps edited settings values visible after a successful save', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-config') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'BiliConfig.yml',
+            snapshotToken: 'bili-token',
+            fields: [
+              {key: 'accountConfig.followGroup', label: '关注分组', value: '旧分组', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      if (url.includes('/api/config/bot') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token',
+            fields: [
+              {key: 'platform.type', label: '平台类型', value: 'onebot11', capability: 'EDITABLE', editable: true},
+              {key: 'webui.enabled', label: '启用 WebUI', value: 'false', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      if (url.includes('/api/config/bili-config') && init?.method === 'POST') {
+        return {ok: true, status: 200, json: async () => ({success: true, message: 'bili 已保存'})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+
+    fireEvent.click(await screen.findByRole('button', {name: 'B站配置'}))
+    const followGroup = await screen.findByLabelText('关注分组')
+    await user.clear(followGroup)
+    await user.type(followGroup, '新分组')
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    await waitFor(() => expect(screen.getByLabelText('关注分组')).toHaveValue('新分组'))
+    expect(screen.getByText(/保存成功/)).toBeInTheDocument()
+  })
+
+  /**
+   * 高风险保存如果被错误密码拒绝，页面应该提示密码错误而不是 HTTP 状态码。
+   */
+  it('shows a friendly password error when settings save is rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-config') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'BiliConfig.yml',
+            snapshotToken: 'bili-token',
+            fields: [
+              {key: 'accountConfig.followGroup', label: '关注分组', value: '旧分组', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      if (url.includes('/api/config/bot') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token',
+            fields: [
+              {key: 'platform.type', label: '平台类型', value: 'onebot11', capability: 'EDITABLE', editable: true},
+              {key: 'webui.enabled', label: '启用 WebUI', value: 'false', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      if (url.includes('/api/config/bili-config') && init?.method === 'POST') {
+        return {ok: false, status: 401, json: async () => ({message: 'bad password'})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+
+    fireEvent.click(await screen.findByRole('button', {name: 'B站配置'}))
+    const followGroup = await screen.findByLabelText('关注分组')
+    await user.clear(followGroup)
+    await user.type(followGroup, '新分组')
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await user.type(await screen.findByLabelText('确认密码'), 'wrong-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    expect(await screen.findByText('密码错误')).toBeInTheDocument()
+    expect(screen.queryByText('HTTP 401')).not.toBeInTheDocument()
+  })
+
   it('keeps a dense React layout for dashboard cards and account modal', () => {
     renderAtPath('/')
 
@@ -310,6 +420,35 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * 登录页必须沿用 cookie 里的主题模式，并把认证失败翻成普通提示。
+   */
+  it('renders the login page in the cookie theme and shows a friendly auth error', async () => {
+    window.localStorage.removeItem('dynamic_bot_webui_theme')
+    document.cookie = 'dynamic_bot_webui_theme=dark; path=/'
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/auth/login')) {
+        return {ok: false, status: 401, json: async () => ({message: 'bad password'})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/login')
+
+    expect(document.documentElement.classList.contains('theme-dark')).toBe(true)
+    await user.type(screen.getByLabelText('WebUI 密码'), 'bad-password')
+    await user.click(screen.getByRole('button', {name: '登录'}))
+
+    expect(await screen.findByText('密码错误，请重试')).toBeInTheDocument()
+    expect(screen.queryByText('HTTP 401')).not.toBeInTheDocument()
+    document.cookie = 'dynamic_bot_webui_theme=; Max-Age=0; path=/'
+    window.localStorage.removeItem('dynamic_bot_webui_theme')
+    document.documentElement.classList.remove('theme-system', 'theme-light', 'theme-dark')
+    delete document.documentElement.dataset.theme
+  })
+
+  /**
    * 日志页需要提供旧 WebUI 等价的来源、过滤、搜索、自动刷新、导出和清空控件。
    */
   it('renders log filtering, auto-refresh, export, and clear controls', async () => {
@@ -406,18 +545,46 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '编辑at全体'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '编辑主题色'})).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', {name: '编辑过滤器'}))
+    expect(screen.getByRole('button', {name: '添加过滤器'})).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '添加过滤器'}))
+    await user.type(screen.getByLabelText('规则内容'), '广告')
+    await user.click(screen.getByRole('button', {name: '保存过滤器'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    expect(await screen.findByText('过滤器已保存')).toBeInTheDocument()
+
     await user.click(screen.getByRole('button', {name: '编辑模板'}))
     expect(await screen.findByLabelText('随机模板')).toBeChecked()
     expect(screen.getByRole('button', {name: '添加模板'})).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '添加模板'}))
+    await user.selectOptions(screen.getByLabelText('模板类型'), 'dynamic')
+    await user.type(screen.getByLabelText('模板名称'), '默认模板')
+    await user.type(screen.getByLabelText('模板内容'), '{{title}}')
+    await user.click(screen.getByRole('button', {name: '保存模板'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'template-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    expect(await screen.findByText('模板已保存')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '编辑at全体'}))
     expect(await screen.findByRole('button', {name: '添加at全体'})).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '添加at全体'}))
+    await user.click(screen.getByLabelText('10001'))
     expect(screen.getByLabelText('10001')).toBeInTheDocument()
     expect(screen.getByLabelText('10002')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '保存at全体'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'atall-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    expect(await screen.findByText('@全体已保存')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '编辑主题色'}))
     expect(await screen.findByLabelText('主题颜色')).toHaveValue('#33aaff')
+    await user.clear(screen.getByLabelText('主题颜色'))
+    await user.type(screen.getByLabelText('主题颜色'), '#33aaff')
+    await user.click(screen.getByRole('button', {name: '保存主题色'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'theme-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+    expect(await screen.findByText('主题色已保存')).toBeInTheDocument()
   })
 
   /**
@@ -438,11 +605,67 @@ describe('webui shell routing', () => {
 
     await user.click(screen.getByRole('button', {name: 'Admin'}))
     expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: 'Admin'}))
+    await user.click(screen.getByRole('button', {name: '修改密码'}))
+    expect(screen.getByRole('dialog', {name: '修改密码'})).toBeInTheDocument()
+
+    const overlay = document.querySelector('div[role="presentation"]')
+    expect(overlay).not.toBeNull()
+    fireEvent.mouseDown(overlay as Element)
+    expect(screen.queryByRole('dialog', {name: '修改密码'})).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: 'Admin'}))
     await user.click(screen.getByRole('button', {name: '修改密码'}))
     expect(screen.getByRole('dialog', {name: '修改密码'})).toBeInTheDocument()
 
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog', {name: '修改密码'})).not.toBeInTheDocument()
+  })
+
+  /**
+   * 订阅删除只能使用明确的订阅主键，不能在缺少主键时继续调用删除接口。
+   */
+  it('does not delete subscriptions when the item lacks a stable deletion id', async () => {
+    const deleteCalls: Array<[string, RequestInit | undefined]> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [{
+              uid: 'uid-only',
+              title: '无主键订阅',
+              identifierLabel: 'UID: 123',
+              sourceId: 123,
+              targets: [],
+              filterInfo: '',
+              templateNames: [],
+              atAllInfo: '',
+              themeColor: '',
+            }],
+          }),
+        }
+      }
+      if (url.endsWith('/api/subscriptions') && init?.method === 'DELETE') {
+        deleteCalls.push([url, init])
+        return {ok: true, status: 200, json: async () => ({success: true})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('无主键订阅')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '删除'}))
+
+    expect(screen.getByText('当前条目缺少可删除标识')).toBeInTheDocument()
+    expect(deleteCalls).toHaveLength(0)
   })
 
   /**

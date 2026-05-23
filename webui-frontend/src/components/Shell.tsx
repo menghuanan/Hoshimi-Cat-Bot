@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { changePassword, logout } from '../api/auth'
 import { useThemePreference } from '../hooks/useThemePreference'
 import type { WebUiPageName } from '../router/webuiRouter'
@@ -22,6 +22,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [accountMessage, setAccountMessage] = useState('')
   const [accountPending, setAccountPending] = useState(false)
+  const adminMenuRef = useRef<HTMLDivElement | null>(null)
 
   /**
    * 改密弹窗支持 Escape 关闭，和全局确认弹窗保持一致的键盘行为。
@@ -40,6 +41,29 @@ export function Shell({page, onNavigate, children}: ShellProps) {
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [passwordModalOpen])
+
+  /**
+   * Admin 下拉菜单跟随页面空白区域点击关闭，保持顶部弹层和旧版交互一致。
+   */
+  useEffect(() => {
+    if (!adminMenuOpen) {
+      return undefined
+    }
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) {
+        return
+      }
+      if (adminMenuRef.current?.contains(target)) {
+        return
+      }
+      setAdminMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+    }
+  }, [adminMenuOpen])
 
   /**
    * 改密弹窗复用认证 API，成功后清理 token 并回到登录页重新认证。
@@ -124,36 +148,36 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                   <option value="system">跟随系统</option>
                 </select>
               </label>
-              <div className="relative max-sm:w-full">
-              <button
-                type="button"
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
-                aria-haspopup="menu"
-                aria-expanded={adminMenuOpen}
-                onClick={() => setAdminMenuOpen((current) => !current)}
-              >
-                Admin
-              </button>
-              {adminMenuOpen ? (
-                <div
-                  role="menu"
-                  className="absolute right-0 z-30 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
+              <div ref={adminMenuRef} className="relative max-sm:w-full">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
+                  aria-haspopup="menu"
+                  aria-expanded={adminMenuOpen}
+                  onClick={() => setAdminMenuOpen((current) => !current)}
                 >
-                  <button
-                    type="button"
-                    className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
-                    onClick={() => {
-                      setPasswordModalOpen(true)
-                      setAdminMenuOpen(false)
-                    }}
+                  Admin
+                </button>
+                {adminMenuOpen ? (
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-30 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
                   >
-                    修改密码
-                  </button>
-                  <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
-                    退出登录
-                  </button>
-                </div>
-              ) : null}
+                    <button
+                      type="button"
+                      className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                      onClick={() => {
+                        setPasswordModalOpen(true)
+                        setAdminMenuOpen(false)
+                      }}
+                    >
+                      修改密码
+                    </button>
+                    <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
+                      退出登录
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </header>

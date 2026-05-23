@@ -91,7 +91,7 @@ export async function saveBiliConfig(
     method: 'POST',
     body: buildBiliConfigSavePayload(input),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -107,6 +107,6 @@ export async function saveBotConfig(
     method: 'POST',
     body: buildBotConfigSavePayload(input),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }

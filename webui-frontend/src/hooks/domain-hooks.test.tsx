@@ -351,7 +351,7 @@ describe('webui domain hooks', () => {
     result.current.setKeyword('slow')
 
     await waitFor(() => expect(result.current.filteredRows.map((row) => row.raw)).toEqual(['[WARN] [push] push slow']))
-    expect(result.current.exportFilteredRows()).toContain('[WARN] [push] push slow')
+    expect(result.current.exportFilteredRows()).toBe('[WARN] [push] push slow')
   })
 
   /**

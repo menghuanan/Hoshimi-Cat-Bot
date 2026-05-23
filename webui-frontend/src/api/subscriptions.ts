@@ -52,7 +52,7 @@ export async function createSubscription(
     method: 'POST',
     body: payload,
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -69,7 +69,7 @@ export async function deleteSubscription(
     method: 'DELETE',
     body: buildSubscriptionDeletePayload(itemId, confirmationPassword),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -101,7 +101,7 @@ export async function saveSubscriptionFilter(
     method: 'POST',
     body: buildSubscriptionFilterPayload(payload),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -119,7 +119,7 @@ export async function deleteSubscriptionFilter(
     method: 'DELETE',
     body: buildSubscriptionConfigDeletePayload(confirmationPassword),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -151,7 +151,7 @@ export async function saveSubscriptionTemplate(
     method: 'POST',
     body: buildSubscriptionTemplatePayload(payload),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -187,7 +187,7 @@ export async function setSubscriptionTemplateRandom(
     method: 'POST',
     body: buildSubscriptionRandomTemplatePayload(enabled, confirmationPassword),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -219,7 +219,7 @@ export async function saveSubscriptionAtAll(
     method: 'POST',
     body: buildSubscriptionAtAllPayload(payload),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -237,7 +237,7 @@ export async function deleteSubscriptionAtAll(
     method: 'DELETE',
     body: buildSubscriptionConfigDeletePayload(confirmationPassword),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 
@@ -270,6 +270,6 @@ export async function saveSubscriptionTheme(
     method: 'POST',
     body: buildSubscriptionThemePayload(color, confirmationPassword),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }

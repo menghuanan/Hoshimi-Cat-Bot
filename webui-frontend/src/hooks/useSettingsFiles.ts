@@ -5,6 +5,11 @@ import { useHighRiskConfirmation } from './useHighRiskConfirmation'
 
 type UseSettingsFilesOptions = WebUiJsonRequestOptions
 
+type ConfigSnapshotField = {
+  key?: string
+  value?: string
+}
+
 /**
  * 系统配置页把读取、保存和确认逻辑收敛到一个 hook，避免页面再散落 fetch。
  */
@@ -55,5 +60,36 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
     return saveBotConfig({...input, confirmationPassword}, requestOptions)
   }, [requestHighRiskConfirmation, requestOptions])
 
-  return {biliConfig, botConfig, loading, reload, saveBili, saveBot}
+  /**
+   * 保存成功后把最新字段值合并回本地快照，避免页面重新读取旧快照把输入刷回旧值。
+   */
+  const patchBiliConfig = useCallback((values: Record<string, unknown>) => {
+    setBiliConfig((current) => patchSnapshotFields(current, values))
+  }, [])
+
+  /**
+   * bot.yml 保存成功后也要乐观更新快照，保证切换分区后仍然看到刚保存的值。
+   */
+  const patchBotConfig = useCallback((values: Record<string, unknown>) => {
+    setBotConfig((current) => patchSnapshotFields(current, values))
+  }, [])
+
+  return {biliConfig, botConfig, loading, reload, saveBili, saveBot, patchBiliConfig, patchBotConfig}
+}
+
+/**
+ * 快照对象只需要同步 fields 数组中的 value 字段，其他元数据保持原样。
+ */
+function patchSnapshotFields(snapshot: Record<string, unknown> | null, values: Record<string, unknown>): Record<string, unknown> | null {
+  if (!snapshot) {
+    return snapshot
+  }
+  const fields = Array.isArray(snapshot.fields) ? snapshot.fields as ConfigSnapshotField[] : []
+  const nextFields = fields.map((field) => ({
+    ...field,
+    value: Object.prototype.hasOwnProperty.call(values, String(field.key || ''))
+      ? String(values[String(field.key || '')] ?? '')
+      : field.value,
+  }))
+  return {...snapshot, fields: nextFields}
 }

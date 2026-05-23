@@ -6,6 +6,7 @@ import { useSettingsFiles } from '../hooks/useSettingsFiles'
 import { formatSaveResultMessage } from '../settings/settingsSaveResult'
 import { settingsCategories, validateSettingsValues, type SettingsCategoryDefinition, type SettingsCategoryId, type SettingsFieldDefinition } from '../settings/settingsSchema'
 import type { WebUiSettingsSaveResult } from '../types/settings'
+import { formatPasswordErrorMessage } from '../utils/errorMessages'
 
 type SettingsFieldSnapshot = {
   key?: string
@@ -22,11 +23,11 @@ type SettingsFieldGroup = {
  * 配置页按元数据渲染八个分区，敏感字段只允许空输入触发保留语义。
  */
 export function SettingsPage() {
-  const {loading, biliConfig, botConfig, saveBili, saveBot, reload} = useSettingsFiles()
+  const {loading, biliConfig, botConfig, saveBili, saveBot, patchBiliConfig, patchBotConfig} = useSettingsFiles()
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
   const [editedValues, setEditedValues] = useState<SettingsFormValues>({})
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
+  const [saveStatus, setSaveStatus] = useState<{tone: 'neutral' | 'success' | 'error', message: string}>({tone: 'neutral', message: ''})
   const activeCategory = settingsCategories.find((category) => category.id === activeCategoryId) || settingsCategories[0]
   const allSettingsFields = useMemo(() => settingsCategories.flatMap((category) => category.fields), [])
 
@@ -80,17 +81,17 @@ export function SettingsPage() {
    */
   const saveActiveCategory = async () => {
     setSaving(true)
-    setMessage('')
+    setSaveStatus({tone: 'neutral', message: ''})
     try {
       const biliValues = pickValuesForFile(visibleSettingsFields, values, 'biliConfig')
       const botValues = pickValuesForFile(visibleSettingsFields, values, 'botConfig')
       const validationErrors = validateSettingsValues({...biliValues, ...botValues})
       if (validationErrors.length > 0) {
-        setMessage(validationErrors.join('；'))
+        setSaveStatus({tone: 'error', message: validationErrors.join('；')})
         return
       }
-      const completeBiliValues = pickValuesForFile(visibleSettingsFields, completeValues, 'biliConfig')
-      const completeBotValues = pickValuesForFile(visibleSettingsFields, completeValues, 'botConfig')
+      const completeBiliValues = pickValuesForFile(allSettingsFields, completeValues, 'biliConfig')
+      const completeBotValues = pickValuesForFile(allSettingsFields, completeValues, 'botConfig')
       const biliToken = String(biliConfig?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
       const saveResults: Array<WebUiSettingsSaveResult | null> = []
@@ -110,18 +111,19 @@ export function SettingsPage() {
       }
       const resultMessage = formatSaveResultMessage(saveResults)
       if (saveResults.some((result) => result === null)) {
-        setMessage(resultMessage)
+        setSaveStatus({tone: 'neutral', message: resultMessage})
         return
       }
       if (saveResults.some((result) => result?.success === false)) {
-        setMessage(resultMessage)
+        setSaveStatus({tone: 'error', message: resultMessage})
         return
       }
-      await reload()
+      patchBiliConfig(completeBiliValues)
+      patchBotConfig(completeBotValues)
       setEditedValues({})
-      setMessage(resultMessage)
+      setSaveStatus({tone: 'success', message: resultMessage})
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '保存失败')
+      setSaveStatus({tone: 'error', message: formatPasswordErrorMessage(error, '保存失败')})
     } finally {
       setSaving(false)
     }
@@ -132,6 +134,7 @@ export function SettingsPage() {
       <PageSection
         title="写入设置"
         actions={(
+          <>
           <button
             type="button"
             className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -140,6 +143,12 @@ export function SettingsPage() {
           >
             {saving ? '保存中' : '保存'}
           </button>
+          {saveStatus.message ? (
+            <span className={`text-sm font-medium ${saveStatus.tone === 'success' ? 'text-emerald-600' : saveStatus.tone === 'error' ? 'text-rose-600' : 'text-slate-600'}`}>
+              {saveStatus.message}
+            </span>
+          ) : null}
+          </>
         )}
       >
         <SettingsTabs categories={settingsCategories} activeCategoryId={activeCategoryId} onSelectCategory={selectCategory} />
@@ -154,7 +163,6 @@ export function SettingsPage() {
             />
           ))}
         </div>
-        {message ? <p className="break-words text-sm font-medium text-slate-700">{message}</p> : null}
       </PageSection>
     </div>
   )

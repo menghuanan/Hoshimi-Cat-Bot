@@ -37,11 +37,8 @@ export function SubscriptionsPage() {
     }
   }
 
-  /**
-   * 删除入口优先使用后端 id，缺失时回退到兼容字段。
-   */
   const deleteItem = async (item: SubscriptionItem) => {
-    const itemId = readItemField(item, 'id') || readItemField(item, 'itemId') || readItemField(item, 'uid')
+    const itemId = readStableDeletionId(item)
     if (!itemId) {
       setMessage('当前条目缺少可删除标识')
       return
@@ -172,4 +169,11 @@ function readItemField(item: SubscriptionItem, key: string): string {
 function readItemArray(item: SubscriptionItem, key: string): string[] {
   const value = item[key]
   return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}
+
+/**
+ * 删除目标只接受后端主键或兼容 itemId，展示字段 uid 不参与删除请求。
+ */
+function readStableDeletionId(item: SubscriptionItem): string {
+  return readItemField(item, 'id') || readItemField(item, 'itemId')
 }
