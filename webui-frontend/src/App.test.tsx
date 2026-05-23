@@ -370,9 +370,11 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('justify-start')
     expect(screen.getByRole('heading', {name: '系统配置'})).toBeInTheDocument()
     expect(screen.getByText('本页面所有配置项都需重启程序生效')).toBeInTheDocument()
+    expect(screen.getByText('本页面所有配置项都需重启程序生效')).toHaveClass('text-rose-600')
     expect(screen.getByText('当前 QQ 官方机器人没有做适配，不推荐使用。')).toBeInTheDocument()
     expect(screen.getByText('默认关闭，按需开启独立 WebUI。')).toBeInTheDocument()
     expect(screen.queryByText('保存后需要重启')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '保存'}).parentElement).toHaveClass('justify-start')
 
     const platformGroup = screen.getByText('平台配置').closest('fieldset')
     expect(platformGroup).not.toBeNull()
@@ -763,6 +765,7 @@ describe('webui shell routing', () => {
     expect(screen.queryByText('onebot11:group:1072150397')).not.toBeInTheDocument()
     expect(screen.queryByText('group:1072150397 类型黑名单: 空，正则黑名单: 测试')).not.toBeInTheDocument()
     expect(screen.queryByText('默认模板')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '新增订阅'}).parentElement).toHaveClass('justify-start')
 
     await user.click(screen.getByRole('button', {name: '新增订阅'}))
     expect(screen.getByRole('dialog', {name: '新增订阅'})).toBeInTheDocument()
@@ -780,7 +783,8 @@ describe('webui shell routing', () => {
     const editorOverlay = document.querySelector('[data-subscription-editor-overlay]')
     const editorPanel = document.querySelector('[data-subscription-editor-panel]')
     expect(editorOverlay).not.toBeNull()
-    expect(editorOverlay).toHaveClass('lg:left-60')
+    expect(editorOverlay).toHaveClass('inset-0')
+    expect(editorOverlay).not.toHaveClass('lg:left-60')
     expect(editorPanel).not.toBeNull()
     expect(editorPanel).toHaveClass('lg:row-start-2')
     expect(editorPanel).toHaveClass('lg:max-w-md')
@@ -925,8 +929,12 @@ describe('webui shell routing', () => {
 
     const aside = document.querySelector('aside')
     expect(aside).not.toBeNull()
+    expect(document.querySelector('aside > div.fixed.bottom-0.left-0')).not.toBeNull()
     expect(within(aside as HTMLElement).getByLabelText('主题模式')).toBeInTheDocument()
     expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
+    expect(within(aside as HTMLElement).getByLabelText('主题模式').parentElement).toHaveClass('space-y-1')
+    expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toHaveClass('w-full')
+    expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toHaveClass('justify-start')
     expect(document.querySelector('header')).toBeNull()
 
     // 侧边栏底部控件需要脱离主内容流，始终固定在视口左下角。

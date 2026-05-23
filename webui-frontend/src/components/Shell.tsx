@@ -131,25 +131,25 @@ export function Shell({page, onNavigate, children}: ShellProps) {
               </button>
             ))}
           </nav>
-          {/* 主题切换和管理员操作改为固定在视口左下角，避免主内容长度把入口一起推到页面底部。 */}
-          <div className="fixed bottom-0 left-0 z-20 w-72 border-t border-r border-slate-200 bg-white px-5 pb-6 pt-4 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] max-lg:static max-lg:w-full max-lg:border-t-0 max-lg:border-r-0 max-lg:bg-transparent max-lg:px-0 max-lg:pb-0 max-lg:pt-4 max-lg:shadow-none">
-            <div className="space-y-4">
-              <label className="flex flex-wrap items-center gap-2 text-base font-medium text-slate-700 max-sm:w-full">
-                <span>主题模式</span>
+          {/* 底部控制区改成完整卡片，主题和管理员入口都贴左对齐，视觉上更像一个独立用户块。 */}
+          <div className="fixed bottom-0 left-0 z-20 w-72 border-t border-r border-slate-200 bg-white/95 px-4 pb-4 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur max-lg:static max-lg:w-full max-lg:border-t-0 max-lg:border-r-0 max-lg:bg-transparent max-lg:px-0 max-lg:pb-0 max-lg:pt-4 max-lg:shadow-none">
+            <div className="space-y-3">
+              <label className="block space-y-1 text-sm font-medium text-slate-700">
+                <span className="block pl-1 text-xs font-semibold uppercase tracking-wide text-slate-500">主题模式</span>
                 <select
                   value={preference}
                   onChange={(event) => setPreference(event.target.value as 'system' | 'light' | 'dark')}
-                  className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-base text-slate-800 max-sm:w-full"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 shadow-sm transition hover:bg-slate-50"
                 >
                   <option value="light">亮色</option>
                   <option value="dark">暗色</option>
                   <option value="system">跟随系统</option>
                 </select>
               </label>
-              <div ref={adminMenuRef} className="relative max-sm:w-full">
+              <div ref={adminMenuRef} className="relative">
                 <button
                   type="button"
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-base font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
+                  className="flex w-full items-center justify-start rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-100"
                   aria-haspopup="menu"
                   aria-expanded={adminMenuOpen}
                   onClick={() => setAdminMenuOpen((current) => !current)}
@@ -159,11 +159,11 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                 {adminMenuOpen ? (
                   <div
                     role="menu"
-                    className="absolute bottom-full left-0 z-30 mb-2 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-lg max-sm:w-full"
+                    className="absolute bottom-full left-0 z-30 mb-2 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-lg"
                   >
                     <button
                       type="button"
-                      className="block w-full rounded-md px-3 py-2 text-left text-base hover:bg-slate-100"
+                      className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100"
                       onClick={() => {
                         setPasswordModalOpen(true)
                         setAdminMenuOpen(false)
@@ -171,7 +171,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                     >
                       修改密码
                     </button>
-                    <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-base text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
+                    <button type="button" disabled={accountPending} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
                       退出登录
                     </button>
                   </div>
