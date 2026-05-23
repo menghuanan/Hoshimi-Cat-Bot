@@ -370,6 +370,8 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('justify-start')
     expect(screen.getByRole('heading', {name: '系统配置'})).toBeInTheDocument()
     expect(screen.getByText('本页面所有配置项都需重启程序生效')).toBeInTheDocument()
+    expect(screen.getByText('当前 QQ 官方机器人没有做适配，不推荐使用。')).toBeInTheDocument()
+    expect(screen.getByText('默认关闭，按需开启独立 WebUI。')).toBeInTheDocument()
     expect(screen.queryByText('保存后需要重启')).not.toBeInTheDocument()
 
     const platformGroup = screen.getByText('平台配置').closest('fieldset')

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { settingsCategories, validateSettingsValues } from './settingsSchema'
+import { settingsFieldDescriptions } from './settingsFieldDescriptions'
 import { buildSettingsSavePayload } from './settingsPayload'
 
 describe('settings payload helpers', () => {
@@ -17,6 +18,17 @@ describe('settings payload helpers', () => {
       'admin',
       'translate',
     ])
+  })
+
+  /**
+   * 每个可见配置项都必须有底部说明，避免页面只剩下字段名和输入框。
+   */
+  it('provides a bottom description for every settings field', () => {
+    const missingDescriptions = settingsCategories
+      .flatMap((category) => category.fields.map((field) => field.key))
+      .filter((key) => !settingsFieldDescriptions[key]?.trim())
+
+    expect(missingDescriptions).toEqual([])
   })
 
   /**

@@ -1,3 +1,4 @@
+import { settingsFieldDescriptions } from '../../settings/settingsFieldDescriptions'
 import type { SettingsFieldDefinition } from '../../settings/settingsSchema'
 
 type SettingsFieldProps = {
@@ -7,14 +8,14 @@ type SettingsFieldProps = {
 }
 
 const baseInputClass = 'mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950'
-// 卡片宽度交给外层分组控制，这里保持全宽，方便小标题和左边框对齐。
-const settingsCardWidthClass = 'w-full'
 
 /**
  * 单个设置字段按元数据渲染控件，写入专用字段始终由父级提供空值。
  */
 export function SettingsField({field, value, onChange}: SettingsFieldProps) {
   const id = `settings-field-${field.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+  const description = settingsFieldDescriptions[field.key]
+  const descriptionId = description ? `${id}-description` : undefined
   const numberAttributes = {
     min: field.min,
     max: field.max,
@@ -23,29 +24,34 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
 
   if (field.type === 'boolean') {
     return (
-      <label htmlFor={id} className={`flex min-w-0 items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${settingsCardWidthClass}`}>
-        <span className="min-w-0">
-          <span className="block text-sm font-medium text-slate-800">{field.label}</span>
-        </span>
-        <input
-          id={id}
-          aria-label={field.label}
-          type="checkbox"
-          checked={value === true}
-          onChange={(event) => onChange(field.key, event.target.checked)}
-          className="h-5 w-5 rounded border-slate-300"
-        />
-      </label>
+      <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex min-w-0 items-center justify-between gap-4">
+          <label htmlFor={id} className="min-w-0">
+            <span className="block text-sm font-medium text-slate-800">{field.label}</span>
+          </label>
+          <input
+            id={id}
+            aria-label={field.label}
+            aria-describedby={descriptionId}
+            type="checkbox"
+            checked={value === true}
+            onChange={(event) => onChange(field.key, event.target.checked)}
+            className="h-5 w-5 rounded border-slate-300"
+          />
+        </div>
+        {description ? <p id={descriptionId} className="mt-2 break-words text-xs leading-5 text-slate-500">{description}</p> : null}
+      </div>
     )
   }
 
   return (
-    <label htmlFor={id} className={`block min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${settingsCardWidthClass}`}>
-      <span className="text-sm font-medium text-slate-800">{field.label}</span>
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <label htmlFor={id} className="text-sm font-medium text-slate-800">{field.label}</label>
       {field.type === 'select' ? (
         <select
           id={id}
           aria-label={field.label}
+          aria-describedby={descriptionId}
           value={String(value)}
           onChange={(event) => onChange(field.key, event.target.value)}
           className={baseInputClass}
@@ -56,6 +62,7 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
         <textarea
           id={id}
           aria-label={field.label}
+          aria-describedby={descriptionId}
           value={String(value)}
           onChange={(event) => onChange(field.key, event.target.value)}
           className={`${baseInputClass} min-h-28 resize-y`}
@@ -65,6 +72,7 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
         <input
           id={id}
           aria-label={field.label}
+          aria-describedby={descriptionId}
           type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
           value={String(value)}
           onChange={(event) => onChange(field.key, event.target.value)}
@@ -73,6 +81,7 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
           {...(field.type === 'number' ? numberAttributes : {})}
         />
       )}
-    </label>
+      {description ? <p id={descriptionId} className="mt-2 break-words text-xs leading-5 text-slate-500">{description}</p> : null}
+    </div>
   )
 }
