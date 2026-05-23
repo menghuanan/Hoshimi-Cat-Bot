@@ -10,6 +10,7 @@ import top.bilibili.data.ShortLinkData
 import top.bilibili.data.WbiImg
 import top.bilibili.utils.*
 import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 生成 Twemoji CDN 图片地址。
@@ -18,7 +19,34 @@ import java.time.LocalDate
  */
 fun twemoji(code: String) = "$TWEMOJI/$code.png"
 
-private var isLogin = true
+private val loginInvalidationNoticeSent = AtomicBoolean(false)
+
+/**
+ * 判断本次登录失效是否需要提醒管理员，并立即占用本轮进程内的提醒名额。
+ */
+internal fun shouldNotifyLoginInvalidation(): Boolean {
+    return loginInvalidationNoticeSent.compareAndSet(false, true)
+}
+
+/**
+ * 普通 B 站 API 成功不代表账号已重新登录，因此不能重新打开登录失效提醒。
+ */
+internal fun markBiliApiRequestSucceeded() {
+}
+
+/**
+ * 扫码登录成功后账号状态已恢复，允许未来再次失效时重新提醒一次。
+ */
+internal fun markBiliLoginSucceeded() {
+    loginInvalidationNoticeSent.set(false)
+}
+
+/**
+ * 测试间重置进程级登录失效提醒门闩，避免用例顺序影响断言。
+ */
+internal fun resetLoginInvalidationNoticeForTest() {
+    loginInvalidationNoticeSent.set(false)
+}
 
 /**
  * 请求通用数据接口，并将响应解码为指定类型。
@@ -36,13 +64,12 @@ internal suspend inline fun <reified T> BiliClient.getData(
 
     return if (res.code == -101) {
         // 只在首次检测到登录失效时提醒，避免后续每次请求都重复刷屏。
-        if (isLogin) actionNotify("账号登录失效，请使用 /login 重新登录")
-        isLogin = false
+        if (shouldNotifyLoginInvalidation()) actionNotify("账号登录失效，请使用 /login 重新登录")
         throw Exception("账号登录失效，请使用 /login 重新登录")
     } else if (res.code != 0 || res.data == null) {
         throw Exception("URL: $url, CODE: ${res.code}, MSG: ${res.message}")
     } else {
-        isLogin = true
+        markBiliApiRequestSucceeded()
         res.data.decode()
     }
 }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.withTimeout
 import top.bilibili.BiliConfigManager
 import top.bilibili.api.getLoginQrcode
 import top.bilibili.api.loginInfo
+import top.bilibili.api.markBiliLoginSucceeded
 import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformContact
@@ -111,6 +112,8 @@ object LoginService {
                                             BiliBiliBot.uid = dedeUserId
                                         }
                                         initTagid()
+                                        // 登录成功后才恢复失效提醒门闩，避免启动期普通成功请求造成重复提醒。
+                                        markBiliLoginSucceeded()
                                         sendMessage(contact, "BiliBili 登录成功")
                                         logger.info("BiliBili 登录成功")
                                     } else {
