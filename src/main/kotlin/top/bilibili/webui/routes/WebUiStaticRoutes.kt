@@ -21,17 +21,22 @@ fun Route.registerWebUiStaticRoutes(
     authService: WebUiAuthService,
 ) {
     val externalStaticRoot = settings.staticDir.takeIf { it.isNotBlank() }?.let(::File)
-    get("/") {
-        val session = authService.resolveSession(call.extractWebUiToken())
-        if (session == null || session.mustChangePassword) {
-            call.respondRedirect("/login", permanent = false)
-            return@get
+    val reactShellRoutes = listOf("/", "/settings", "/subscriptions", "/logs")
+
+    // React 运行时支持直接路径刷新；API 和 assets 仍由各自路由独立处理。
+    reactShellRoutes.forEach { path ->
+        get(path) {
+            val session = authService.resolveSession(call.extractWebUiToken())
+            if (session == null || session.mustChangePassword) {
+                call.respondRedirect("/login", permanent = false)
+                return@get
+            }
+            call.respondManagedHtmlPage(
+                externalStaticRoot = externalStaticRoot,
+                externalFileNames = listOf("index.html"),
+                bundledResourcePath = "webui/react/index.html",
+            )
         }
-        call.respondManagedHtmlPage(
-            externalStaticRoot = externalStaticRoot,
-            externalFileName = "index.html",
-            bundledResourcePath = "webui/index.html",
-        )
     }
 
     get("/login") {
@@ -42,28 +47,31 @@ fun Route.registerWebUiStaticRoutes(
         }
         call.respondManagedHtmlPage(
             externalStaticRoot = externalStaticRoot,
-            externalFileName = "login.html",
-            bundledResourcePath = "webui/login.html",
+            externalFileNames = listOf("login.html", "index.html"),
+            bundledResourcePath = "webui/react/index.html",
         )
     }
 
     if (externalStaticRoot != null) {
-        // 外部静态目录存在时优先服务该目录，便于后续前端独立调试而不改变鉴权边界。
+        // 外部静态目录存在时优先服务 React 构建产物，便于前端独立调试而不改变鉴权边界。
         staticFiles("/assets", externalStaticRoot.resolve("assets"))
     } else {
-        staticResources("/assets", "webui/assets")
+        staticResources("/assets", "webui/react/assets")
     }
 }
 
 /**
- * HTML 页面统一在受控入口里选择外部文件或 bundled 资源，保证登录壳与主壳走同一套门禁。
+ * HTML 页面统一在受控入口里选择外部文件或 bundled 资源，保证登录壳与主壳走同一套 React 入口。
  */
 private suspend fun ApplicationCall.respondManagedHtmlPage(
     externalStaticRoot: File?,
-    externalFileName: String,
+    externalFileNames: List<String>,
     bundledResourcePath: String,
 ) {
-    val externalFile = externalStaticRoot?.resolve(externalFileName)
+    val externalFile = externalFileNames
+        .asSequence()
+        .mapNotNull { fileName -> externalStaticRoot?.resolve(fileName) }
+        .firstOrNull { file -> file.isFile }
     if (externalFile?.isFile == true) {
         respondFile(externalFile)
         return

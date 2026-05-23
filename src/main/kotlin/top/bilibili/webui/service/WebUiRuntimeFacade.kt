@@ -10,7 +10,6 @@ import top.bilibili.tasker.DailyPushStatsSnapshot
 import top.bilibili.tasker.PushDeliveryRecordSnapshot
 import top.bilibili.tasker.PushStatistics
 import top.bilibili.webui.model.WebUiBiliAccountStatusDto
-import top.bilibili.webui.model.WebUiDockerRuntimeStatusDto
 import top.bilibili.webui.model.WebUiHostRuntimeStatusDto
 import top.bilibili.webui.model.WebUiRecentPushRecordDto
 import top.bilibili.webui.model.WebUiResourceUsageDto
@@ -169,8 +168,6 @@ internal fun readHostRuntimeStatus(
     systemTimeMillisProvider: () -> Long = { System.currentTimeMillis() },
     osBeanProvider: () -> OperatingSystemMXBean = { ManagementFactory.getOperatingSystemMXBean() },
     rootFileProvider: () -> File = { File(".").absoluteFile },
-    dockerEnvExistsProvider: () -> Boolean = { File("/.dockerenv").exists() },
-    cgroupTextProvider: () -> String? = { readContainerCgroupText() },
     cpuLoadProvider: () -> Double? = { readCpuLoadRatio(osBeanProvider()) },
     systemLoadAverageProvider: () -> Double? = { readSystemLoadAverage(osBeanProvider()) },
     memoryUsageProvider: () -> WebUiResourceUsageDto = { readMemoryUsage(osBeanProvider()) },
@@ -182,7 +179,6 @@ internal fun readHostRuntimeStatus(
         cpuUsagePercent = cpuLoadProvider()?.let { ratio -> clampPercent(ratio * 100.0) },
         memory = sanitizeUsage(memoryUsageProvider()),
         storage = readStorageUsage(rootFileProvider()),
-        docker = readDockerRuntimeStatus(dockerEnvExistsProvider, cgroupTextProvider),
     )
 }
 
@@ -230,44 +226,6 @@ private fun readStorageUsage(rootFile: File): WebUiResourceUsageDto {
     val usable = rootFile.usableSpace.coerceAtLeast(0L)
     val used = (total - usable).coerceAtLeast(0L)
     return usageOf(used, total)
-}
-
-/**
- * Docker 检测只看当前进程可见的容器痕迹，避免要求宿主开放 Docker socket。
- */
-private fun readDockerRuntimeStatus(
-    dockerEnvExistsProvider: () -> Boolean,
-    cgroupTextProvider: () -> String?,
-): WebUiDockerRuntimeStatusDto {
-    if (dockerEnvExistsProvider()) {
-        return WebUiDockerRuntimeStatusDto(detected = true, evidence = ".dockerenv")
-    }
-
-    val cgroupText = cgroupTextProvider().orEmpty().lowercase()
-    val evidence = when {
-        "docker" in cgroupText -> "cgroup:docker"
-        "containerd" in cgroupText -> "cgroup:containerd"
-        "kubepods" in cgroupText -> "cgroup:kubepods"
-        else -> null
-    }
-    return WebUiDockerRuntimeStatusDto(
-        detected = evidence != null,
-        evidence = evidence,
-    )
-}
-
-/**
- * 读取 Linux cgroup 文本时显式使用 UTF-8，并在非 Linux 或不可读环境下安静降级。
- */
-private fun readContainerCgroupText(): String? {
-    return listOf("/proc/1/cgroup", "/proc/self/cgroup")
-        .asSequence()
-        .map { path -> File(path) }
-        .firstNotNullOfOrNull { file ->
-            runCatching {
-                if (file.isFile) file.readText(Charsets.UTF_8) else null
-            }.getOrNull()
-        }
 }
 
 /**

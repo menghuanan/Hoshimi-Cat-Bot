@@ -40,7 +40,6 @@ import top.bilibili.webui.model.WebUiActionResultDto
 import top.bilibili.webui.service.WebUiAuditRecord
 import top.bilibili.webui.model.WebUiAuthResponseDto
 import top.bilibili.webui.model.WebUiBiliAccountStatusDto
-import top.bilibili.webui.model.WebUiDockerRuntimeStatusDto
 import top.bilibili.webui.model.WebUiHostRuntimeStatusDto
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiConfigFileDto
@@ -178,6 +177,17 @@ class WebUiRouteSmokeTest {
         val rootResponse = webUiClient.get("/") {
             header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
         }
+        val settingsPathResponse = webUiClient.get("/settings") {
+            header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
+        }
+        val subscriptionsPathResponse = webUiClient.get("/subscriptions") {
+            header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
+        }
+        val logsPathResponse = webUiClient.get("/logs") {
+            header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
+        }
+        val reactScriptResponse = webUiClient.get("/assets/app.js")
+        val reactStyleResponse = webUiClient.get("/assets/app.css")
         val sessionProbe = webUiClient.get("/api/auth/session") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }.body<WebUiSessionDto>()
@@ -188,6 +198,16 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.OK, runtimeResponse.status)
         assertEquals(HttpStatusCode.OK, configResponse.status)
         assertEquals(HttpStatusCode.OK, rootResponse.status)
+        assertEquals(HttpStatusCode.OK, settingsPathResponse.status)
+        assertEquals(HttpStatusCode.OK, subscriptionsPathResponse.status)
+        assertEquals(HttpStatusCode.OK, logsPathResponse.status)
+        assertEquals(HttpStatusCode.OK, reactScriptResponse.status)
+        assertEquals(HttpStatusCode.OK, reactStyleResponse.status)
+        assertTrue(settingsPathResponse.bodyAsText().contains("""id="root""""))
+        assertTrue(subscriptionsPathResponse.bodyAsText().contains("""id="root""""))
+        assertTrue(logsPathResponse.bodyAsText().contains("""id="root""""))
+        assertTrue(reactScriptResponse.bodyAsText().contains("createRoot"))
+        assertTrue(reactStyleResponse.bodyAsText().contains("tailwindcss"))
         assertEquals(false, sessionProbe.mustChangePassword)
         assertEquals(true, sessionProbe.authenticated)
         val runtimeBody = runtimeResponse.body<WebUiRuntimeSummaryDto>()
@@ -207,7 +227,6 @@ class WebUiRouteSmokeTest {
         assertEquals(55.0, runtimeBody.host.cpuUsagePercent)
         assertEquals(50.0, runtimeBody.host.memory.usagePercent)
         assertEquals(25.0, runtimeBody.host.storage.usagePercent)
-        assertEquals(true, runtimeBody.host.docker.detected)
         assertEquals(2, runtimeBody.recentPushRecords.size)
         assertEquals("直播", runtimeBody.recentPushRecords.first().typeLabel)
         assertEquals("已发送", runtimeBody.recentPushRecords.first().statusLabel)
@@ -865,10 +884,6 @@ class WebUiRouteSmokeTest {
                         usedBytes = 256L,
                         totalBytes = 1024L,
                         usagePercent = 25.0,
-                    ),
-                    docker = WebUiDockerRuntimeStatusDto(
-                        detected = true,
-                        evidence = ".dockerenv",
                     ),
                 )
             },

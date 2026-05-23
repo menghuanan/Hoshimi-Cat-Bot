@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+/* 暗色主题覆盖现有 Tailwind 实用类，保证主题模式选择立即改变整个 WebUI 外观。 */
+.theme-dark body,
+.theme-dark .bg-slate-100 {
+  background: #0f172a;
+}
+
+.theme-dark .bg-white,
+.theme-dark .bg-white\/95 {
+  background: #111827;
+}
+
+.theme-dark .bg-slate-50 {
+  background: #1f2937;
+}
+
+.theme-dark .border-slate-100,
+.theme-dark .border-slate-200,
+.theme-dark .border-slate-300 {
+  border-color: #334155;
+}
+
+/* 状态卡片左侧强调色需要覆盖暗色主题的通用 border-color 重写。 */
+.theme-dark .border-l-emerald-500 {
+  border-left-color: #10b981;
+}
+
+.theme-dark .border-l-sky-500 {
+  border-left-color: #0ea5e9;
+}
+
+.theme-dark .border-l-amber-500 {
+  border-left-color: #f59e0b;
+}
+
+.theme-dark .border-l-rose-500 {
+  border-left-color: #f43f5e;
+}
+
+.theme-dark .text-slate-950,
+.theme-dark .text-slate-900,
+.theme-dark .text-slate-800 {
+  color: #f8fafc;
+}
+
+.theme-dark .text-slate-700,
+.theme-dark .text-slate-600,
+.theme-dark .text-slate-500 {
+  color: #cbd5e1;
+}
+
+.theme-dark select,
+.theme-dark input,
+.theme-dark textarea {
+  background: #0f172a;
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+.theme-dark .subscription-info-block {
+  background: #1f2937;
+  border-color: #334155;
+}
+
+/* 跟随系统时只在系统暗色偏好下应用同一组覆盖，保持选项语义清晰。 */
+@media (prefers-color-scheme: dark) {
+  .theme-system body,
+  .theme-system .bg-slate-100 {
+    background: #0f172a;
+  }
+
+  .theme-system .bg-white,
+  .theme-system .bg-white\/95 {
+    background: #111827;
+  }
+
+  .theme-system .border-slate-100,
+  .theme-system .border-slate-200,
+  .theme-system .border-slate-300 {
+    border-color: #334155;
+  }
+
+  .theme-system .border-l-emerald-500 {
+    border-left-color: #10b981;
+  }
+
+  .theme-system .border-l-sky-500 {
+    border-left-color: #0ea5e9;
+  }
+
+  .theme-system .border-l-amber-500 {
+    border-left-color: #f59e0b;
+  }
+
+  .theme-system .border-l-rose-500 {
+    border-left-color: #f43f5e;
+  }
+
+  .theme-system .text-slate-950,
+  .theme-system .text-slate-900,
+  .theme-system .text-slate-800 {
+    color: #f8fafc;
+  }
+
+  .theme-system .text-slate-700,
+  .theme-system .text-slate-600,
+  .theme-system .text-slate-500 {
+    color: #cbd5e1;
+  }
+
+  .theme-system select,
+  .theme-system input,
+  .theme-system textarea {
+    background: #0f172a;
+    color: #f8fafc;
+    border-color: #475569;
+  }
+
+  .theme-system .subscription-info-block {
+    background: #1f2937;
+    border-color: #334155;
+  }
+}

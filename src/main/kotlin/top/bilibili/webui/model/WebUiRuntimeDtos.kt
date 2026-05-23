@@ -86,7 +86,6 @@ data class WebUiHostRuntimeStatusDto(
     val cpuUsagePercent: Double?,
     val memory: WebUiResourceUsageDto,
     val storage: WebUiResourceUsageDto,
-    val docker: WebUiDockerRuntimeStatusDto,
 )
 
 /**
@@ -97,13 +96,4 @@ data class WebUiResourceUsageDto(
     val usedBytes: Long,
     val totalBytes: Long,
     val usagePercent: Double?,
-)
-
-/**
- * Docker 状态只表达当前进程是否看起来运行在容器内，不连接 Docker daemon。
- */
-@Serializable
-data class WebUiDockerRuntimeStatusDto(
-    val detected: Boolean,
-    val evidence: String?,
 )
