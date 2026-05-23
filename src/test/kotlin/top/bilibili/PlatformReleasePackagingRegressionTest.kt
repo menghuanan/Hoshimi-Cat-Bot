@@ -51,5 +51,9 @@ class PlatformReleasePackagingRegressionTest {
             buildScript.contains("dynamic-bot-linux-x64-v"),
             "Linux distribution should use a platform-specific archive name",
         )
+        assertTrue(
+            buildScript.contains("jdk.charsets"),
+            "release runtime should include jdk.charsets so ZXing QR generation keeps working in the bundled jlink image",
+        )
     }
 }

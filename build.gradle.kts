@@ -228,8 +228,9 @@ val detectRuntimeModules = tasks.register("detectRuntimeModules") {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
-        // HTTPS/TLS 在运行期依赖 jdk.crypto.ec，jdeps 对该类动态使用场景通常无法完整覆盖。
-        val finalModules = (detectedModules + listOf("jdk.crypto.ec"))
+        // HTTPS/TLS 在运行期依赖 jdk.crypto.ec，二维码编码在精简 runtime 下还需要 jdk.charsets 补足 GB2312 支持。
+        // 这两个模块都不是 jdeps 稳定可见的显式依赖，必须手动并入 jlink 运行时清单。
+        val finalModules = (detectedModules + listOf("jdk.crypto.ec", "jdk.charsets"))
             .distinct()
             .sorted()
             .joinToString(",")
