@@ -28,10 +28,11 @@ import top.bilibili.webui.service.WebUiRuntimeFacade
 import top.bilibili.webui.service.WebUiSubscriptionManagementFacade
 
 /**
- * WebUI 管理器只拥有嵌入式服务器生命周期，不承载业务编排或配置写回职责。
+ * WebUI 管理器只拥有嵌入式服务器生命周期，并把本次启动时间传给日志面做会话裁切。
  */
 class WebUiManager(
     private val settings: WebUiSettings,
+    private val logWindowStartEpochMillis: Long = 0L,
 ) {
     private val logger = LoggerFactory.getLogger(WebUiManager::class.java)
     private var server: EmbeddedServer<*, *>? = null
@@ -72,7 +73,8 @@ class WebUiManager(
                     configFacade = configFacade,
                 ),
                 subscriptionManagementFacade = WebUiSubscriptionManagementFacade(),
-                logFacade = WebUiLogFacade(),
+                // 日志面按 Bot 本次启动时间裁切窗口，避免把上一轮进程残留拼进管理页。
+                logFacade = WebUiLogFacade(startupEpochMillis = logWindowStartEpochMillis),
                 actionFacade = WebUiActionFacade(),
                 auditService = WebUiAuditService(),
             )

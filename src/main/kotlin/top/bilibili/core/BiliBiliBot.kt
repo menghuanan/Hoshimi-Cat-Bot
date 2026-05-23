@@ -259,7 +259,10 @@ object BiliBiliBot : CoroutineScope {
             if (config.webui.enabled) {
                 logger.info("正在启动 WebUI...")
                 // WebUI 仅作为可选管理面启动，具体服务器与路由细节保持在 webui 包内部。
-                webUiManager = WebUiManager(config.webui.toSettings()).also { manager ->
+                webUiManager = WebUiManager(
+                    config.webui.toSettings(),
+                    logWindowStartEpochMillis = startTime,
+                ).also { manager ->
                     manager.start()
                 }
             } else {

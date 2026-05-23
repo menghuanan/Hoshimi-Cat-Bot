@@ -5,14 +5,18 @@ import top.bilibili.webui.model.WebUiLogSourceListDto
 import top.bilibili.webui.model.WebUiLogWindowDto
 import top.bilibili.webui.model.WebUiLogClearResultDto
 import java.io.File
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.nio.charset.StandardCharsets
 
 /**
- * WebUI 日志 facade 只允许读取固定白名单来源，避免管理页演变成任意路径文件浏览器。
+ * WebUI 日志 facade 只允许读取固定白名单来源，并按当前运行周期裁掉上次启动遗留的旧日志。
  */
 class WebUiLogFacade(
     private val sourceResolvers: Map<String, () -> File?> = defaultLogSourceResolvers(),
     private val maxTailLines: Int = 500,
+    private val startupEpochMillis: Long = 0L,
 ) {
     /**
      * 返回当前允许暴露给管理页的固定日志来源。
@@ -50,7 +54,9 @@ class WebUiLogFacade(
 
         val boundedTailLines = boundedTailLines(tailLines)
         val lines = logFile.readLines(StandardCharsets.UTF_8)
-        val windowLines = lines.takeLast(boundedTailLines)
+        // 启动边界以下的旧日志会在服务端统一裁掉，页面只保留本次运行产生的可见行。
+        val visibleLines = filterLogLines(lines)
+        val windowLines = visibleLines.takeLast(boundedTailLines)
         return WebUiLogWindowDto(
             sourceId = sourceId,
             title = defaultLogSourceTitle(sourceId),
@@ -59,7 +65,7 @@ class WebUiLogFacade(
             lineCount = windowLines.size,
             text = windowLines.joinToString(System.lineSeparator()),
             lastModifiedEpochMillis = logFile.lastModified(),
-            hasMore = lines.size > windowLines.size,
+            hasMore = visibleLines.size > windowLines.size,
             sourceMissing = false,
         )
     }
@@ -118,6 +124,46 @@ class WebUiLogFacade(
     }
 
     /**
+     * 日志窗口先按启动时间裁去旧会话，再保留同一事件的堆栈续行，避免把上次关机前的尾巴拼进当前页面。
+     */
+    private fun filterLogLines(lines: List<String>): List<String> {
+        if (startupEpochMillis <= 0L) {
+            return lines
+        }
+
+        val visibleLines = mutableListOf<String>()
+        var currentEntryVisible = false
+        var sawTimestampedLine = false
+
+        for (line in lines) {
+            val lineTimestamp = parseLogTimestampMillis(line)
+            if (lineTimestamp != null) {
+                sawTimestampedLine = true
+                currentEntryVisible = lineTimestamp >= startupEpochMillis
+                if (currentEntryVisible) {
+                    visibleLines.add(line)
+                }
+                continue
+            }
+
+            if (currentEntryVisible) {
+                visibleLines.add(line)
+            }
+        }
+
+        return if (sawTimestampedLine) visibleLines else lines
+    }
+
+    /**
+     * 固定日志格式带有本地时区时间戳，先解析成毫秒值再和启动边界比较。
+     */
+    private fun parseLogTimestampMillis(line: String): Long? {
+        val match = LOG_TIMESTAMP_PATTERN.find(line) ?: return null
+        val parsedTime = LocalDateTime.parse(match.groupValues[1], LOG_TIMESTAMP_FORMATTER)
+        return parsedTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    }
+
+    /**
      * 日志窗口提供固定尾部预设，方便前端直接切换常用历史长度而不暴露任意分页接口。
      */
     private fun tailLinePresets(): List<Int> {
@@ -129,6 +175,9 @@ class WebUiLogFacade(
     }
 
     companion object {
+        private val LOG_TIMESTAMP_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
+        private val LOG_TIMESTAMP_PATTERN = Regex("""^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+\[[^\]]+]""")
+
         /**
          * 默认日志来源固定到主日志、错误日志和最新守护日志，避免暴露任意文件路径。
          */

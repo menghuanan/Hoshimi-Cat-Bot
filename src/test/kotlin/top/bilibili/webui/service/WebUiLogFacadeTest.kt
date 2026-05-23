@@ -1,6 +1,8 @@
 package top.bilibili.webui.service
 
 import java.nio.charset.StandardCharsets
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -76,6 +78,46 @@ class WebUiLogFacadeTest {
         assertTrue(window.hasMore)
         assertFalse(window.sourceMissing)
         assertTrue(window.lastModifiedEpochMillis > 0L)
+    }
+
+    /**
+     * 启动边界之前的旧会话日志应在服务端被裁掉，窗口只展示本次运行的新日志。
+     */
+    @Test
+    fun `startup boundary should hide previous session log lines`() {
+        val logFile = tempRoot.resolve("bilibili-bot.log")
+        Files.writeString(
+            logFile,
+            buildString {
+                appendLine("2026-05-23 09:59:59.000 [main] INFO top.bilibili.Main - before start")
+                appendLine("before stack")
+                appendLine("2026-05-23 10:00:00.000 [main] INFO top.bilibili.Main - after start")
+                appendLine("after stack")
+                appendLine("2026-05-23 10:00:01.000 [main] INFO top.bilibili.Main - later")
+            },
+            StandardCharsets.UTF_8,
+        )
+        val startupEpochMillis = LocalDateTime.of(2026, 5, 23, 10, 0, 0)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val facade = WebUiLogFacade(
+            sourceResolvers = mapOf(
+                "main" to { logFile.toFile() },
+            ),
+            startupEpochMillis = startupEpochMillis,
+        )
+
+        val window = facade.readLogWindow("main", tailLines = 20)
+
+        assertNotNull(window)
+        assertFalse(window.text.contains("before start"))
+        assertFalse(window.text.contains("before stack"))
+        assertTrue(window.text.contains("after start"))
+        assertTrue(window.text.contains("after stack"))
+        assertTrue(window.text.contains("later"))
+        assertEquals(3, window.lineCount)
+        assertFalse(window.hasMore)
     }
 
     /**

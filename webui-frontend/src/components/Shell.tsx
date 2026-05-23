@@ -12,7 +12,7 @@ type ShellProps = {
 }
 
 /**
- * 壳层负责导航、顶部管理员菜单和内容承载区，页面内容由子页面组件填充。
+ * 壳层负责导航、侧边栏系统入口和内容承载区，页面内容由子页面组件填充。
  */
 export function Shell({page, onNavigate, children}: ShellProps) {
   const {preference, setPreference} = useThemePreference()
@@ -44,7 +44,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
   }, [passwordModalOpen])
 
   /**
-   * 管理员下拉菜单跟随页面空白区域点击关闭，保持顶部弹层和旧版交互一致。
+   * 管理员下拉菜单跟随页面空白区域点击关闭，保持侧边栏弹层和旧版交互一致。
    */
   useEffect(() => {
     if (!adminMenuOpen) {
@@ -104,7 +104,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-100 text-slate-950">
       <div className="grid min-h-screen w-full grid-cols-[15rem_minmax(0,1fr)] max-lg:grid-cols-1">
-        <aside className="border-r border-slate-200 bg-white px-4 py-5 max-lg:border-b max-lg:border-r-0">
+        <aside className="flex h-full flex-col border-r border-slate-200 bg-white px-4 py-5 max-lg:border-b max-lg:border-r-0">
           <div className="mb-6">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">dynamic-bot</p>
             <h1 className="mt-2 text-lg font-semibold text-slate-950">动态机器人 WebUI</h1>
@@ -130,58 +130,57 @@ export function Shell({page, onNavigate, children}: ShellProps) {
               </button>
             ))}
           </nav>
-        </aside>
-        <div className="flex min-w-0 flex-col">
-          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur" aria-label={`当前页面：${pageLabel(page)}`}>
-            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-end gap-3 px-6 py-4 max-sm:flex-col max-sm:items-stretch max-sm:px-4">
-              <div className="flex shrink-0 flex-wrap items-center gap-3 max-sm:w-full">
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 max-sm:w-full">
-                  <span>主题模式</span>
-                  <select
-                    value={preference}
-                    onChange={(event) => setPreference(event.target.value as 'system' | 'light' | 'dark')}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+          {/* 主题切换和管理员操作放在侧边栏底部，避免顶部工具区占用主内容视线。 */}
+          <div className="mt-auto pt-6 max-lg:pt-4">
+            <div className="space-y-3">
+              <label className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700 max-sm:w-full">
+                <span>主题模式</span>
+                <select
+                  value={preference}
+                  onChange={(event) => setPreference(event.target.value as 'system' | 'light' | 'dark')}
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 max-sm:w-full"
+                >
+                  <option value="light">亮色</option>
+                  <option value="dark">暗色</option>
+                  <option value="system">跟随系统</option>
+                </select>
+              </label>
+              <div ref={adminMenuRef} className="relative max-sm:w-full">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
+                  aria-haspopup="menu"
+                  aria-expanded={adminMenuOpen}
+                  onClick={() => setAdminMenuOpen((current) => !current)}
+                >
+                  管理员
+                </button>
+                {adminMenuOpen ? (
+                  <div
+                    role="menu"
+                    className="absolute bottom-full left-0 z-30 mb-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-lg max-sm:w-full"
                   >
-                    <option value="light">亮色</option>
-                    <option value="dark">暗色</option>
-                    <option value="system">跟随系统</option>
-                  </select>
-                </label>
-                <div ref={adminMenuRef} className="relative max-sm:w-full">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
-                    aria-haspopup="menu"
-                    aria-expanded={adminMenuOpen}
-                    onClick={() => setAdminMenuOpen((current) => !current)}
-                  >
-                    管理员
-                  </button>
-                  {adminMenuOpen ? (
-                    <div
-                      role="menu"
-                      className="absolute right-0 z-30 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
+                    <button
+                      type="button"
+                      className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                      onClick={() => {
+                        setPasswordModalOpen(true)
+                        setAdminMenuOpen(false)
+                      }}
                     >
-                      <button
-                        type="button"
-                        className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
-                        onClick={() => {
-                          setPasswordModalOpen(true)
-                          setAdminMenuOpen(false)
-                        }}
-                      >
-                        修改密码
-                      </button>
-                      <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
-                        退出登录
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                      修改密码
+                    </button>
+                    <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
+                      退出登录
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
-          </header>
-          {/* 主内容区与顶部标题保持同宽居中，避免大屏时页面内容过度贴左。 */}
+          </div>
+        </aside>
+        <div className="flex min-w-0 flex-col">
+          {/* 主内容区直接贴靠壳层顶部，页面会在删除标题后自然上移。 */}
           <section className="min-w-0 flex-1 px-6 py-6 max-sm:px-4">
             <div className="mx-auto w-full max-w-7xl">
               {children}
@@ -219,17 +218,4 @@ export function Shell({page, onNavigate, children}: ShellProps) {
       ) : null}
     </main>
   )
-}
-
-/**
- * 页面标题和导航标签共用同一份枚举映射，避免中文文案在各处重复。
- */
-function pageLabel(page: Exclude<WebUiPageName, 'login'>): string {
-  const labels = {
-    home: '首页',
-    settings: '系统配置',
-    subscriptions: '订阅管理',
-    logs: '实时日志',
-  }
-  return labels[page]
 }

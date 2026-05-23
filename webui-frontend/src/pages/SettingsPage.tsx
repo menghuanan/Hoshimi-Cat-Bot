@@ -293,6 +293,7 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
         <p className="text-sm font-medium text-slate-800">群普通管理员</p>
         <button type="button" onClick={addPair} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">添加一行</button>
       </div>
+      {/* 已暂存的群普通管理员先展示在上方，底部再放置暂存按钮，避免空状态贴着按钮。 */}
       <div className="mt-3 space-y-3">
         {draftPairs.map((pair, index) => (
           <div key={`admin-draft-${index}`} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -326,15 +327,15 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
           </div>
         ))}
       </div>
-      <div className="mt-4 flex justify-end">
-        <button type="button" onClick={stageDraft} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">暂存</button>
-      </div>
       <div className="mt-3 space-y-1">
         {pairs.length > 0 ? pairs.map((pair, index) => (
           <p key={`${pair.groupId}-${pair.userId}-${index}`} className="text-sm text-slate-700">
             群聊：{pair.groupId || '--'} 管理员：{pair.userId || '--'}
           </p>
         )) : <p className="text-sm text-slate-500">暂无群普通管理员</p>}
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button type="button" onClick={stageDraft} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">暂存</button>
       </div>
     </div>
   )

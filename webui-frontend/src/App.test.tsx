@@ -49,9 +49,7 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '订阅管理'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '日志'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
-    const header = document.querySelector('header')
-    expect(header).not.toBeNull()
-    expect(within(header as HTMLElement).queryByText('首页')).not.toBeInTheDocument()
+    expect(document.querySelector('header')).toBeNull()
   })
 
   it('switches pages when the shell navigation is used', () => {
@@ -467,9 +465,11 @@ describe('webui shell routing', () => {
     const userInputs = screen.getAllByLabelText('个人QQ号')
     await user.type(groupInputs[1], '111111')
     await user.type(userInputs[1], '222222')
-    expect(screen.getByText('暂无群普通管理员')).toBeInTheDocument()
+    const emptyState = screen.getByText('暂无群普通管理员')
+    const stageButton = screen.getByRole('button', {name: '暂存'})
+    expect(emptyState.compareDocumentPosition(stageButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
-    await user.click(screen.getByRole('button', {name: '暂存'}))
+    await user.click(stageButton)
     expect(screen.getByText('群聊：123456 管理员：654321')).toBeInTheDocument()
     expect(screen.getByText('群聊：111111 管理员：222222')).toBeInTheDocument()
     expect(postRequests).toHaveLength(0)
@@ -795,12 +795,18 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * Shell 顶部需要保留管理员操作、主题偏好和可键盘关闭的账号弹窗。
+   * Shell 侧边栏需要保留管理员操作、主题偏好和可键盘关闭的账号弹窗。
    */
   it('supports admin menu actions, theme preference, and Escape modal close', async () => {
     const user = userEvent.setup()
 
     renderAtPath('/')
+
+    const aside = document.querySelector('aside')
+    expect(aside).not.toBeNull()
+    expect(within(aside as HTMLElement).getByLabelText('主题模式')).toBeInTheDocument()
+    expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
+    expect(document.querySelector('header')).toBeNull()
 
     await user.selectOptions(screen.getByLabelText('主题模式'), 'dark')
     expect(document.documentElement.classList.contains('theme-dark')).toBe(true)
