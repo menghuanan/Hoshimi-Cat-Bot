@@ -38,6 +38,52 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
     await page.reload()
     await expect(page.getByRole('heading', {name: heading}).first()).toBeVisible()
   }
+
+  await page.goto('/subscriptions')
+  await expect(page.getByText('群聊：1072150397、1245551')).toBeVisible()
+  await expect(page.getByText('2 个过滤器')).toBeVisible()
+  await expect(page.getByText('2 个模板')).toBeVisible()
+  await expect(page.getByText('onebot11:group:1072150397')).toHaveCount(0)
+  await expect(page.getByText('group:1072150397 类型黑名单: 空，正则黑名单: 测试')).toHaveCount(0)
+})
+
+test('centers shell pages and keeps settings fields in one column', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 1000})
+  await page.goto('/login')
+  await page.getByLabel('WebUI 密码').fill('secret-password')
+  await page.getByRole('button', {name: '登录'}).click()
+  await expect(page.getByRole('heading', {name: '运行概览'})).toBeVisible()
+
+  const pageLayouts: Array<{path: string, selector: string}> = [
+    {path: '/', selector: '[data-page="home"]'},
+    {path: '/settings', selector: '[data-page="settings"]'},
+    {path: '/subscriptions', selector: '[data-page="subscriptions"]'},
+    {path: '/logs', selector: '[data-page="logs"]'},
+  ]
+
+  for (const layout of pageLayouts) {
+    await page.goto(layout.path)
+    const pageBox = await page.locator(layout.selector).boundingBox()
+    expect(pageBox).not.toBeNull()
+    expect(pageBox?.x).toBeGreaterThan(240)
+    expect(pageBox?.width).toBeLessThanOrEqual(1280)
+  }
+
+  await page.goto('/settings')
+  const tabsBox = await page.getByRole('button', {name: '对接配置'}).locator('..').boundingBox()
+  const contentBox = await page.locator('[data-page="settings"]').boundingBox()
+  expect(tabsBox).not.toBeNull()
+  expect(contentBox).not.toBeNull()
+  const tabsCenter = (tabsBox?.x || 0) + (tabsBox?.width || 0) / 2
+  const contentCenter = (contentBox?.x || 0) + (contentBox?.width || 0) / 2
+  expect(Math.abs(tabsCenter - contentCenter)).toBeLessThan(2)
+
+  const platformTypeBox = await page.getByLabel('平台类型').boundingBox()
+  const adapterBox = await page.getByLabel('适配器').boundingBox()
+  expect(platformTypeBox).not.toBeNull()
+  expect(adapterBox).not.toBeNull()
+  expect(Math.abs((platformTypeBox?.x || 0) - (adapterBox?.x || 0))).toBeLessThan(2)
+  expect(adapterBox?.y).toBeGreaterThan((platformTypeBox?.y || 0) + (platformTypeBox?.height || 0))
 })
 
 test('keeps API and static asset routes out of the React fallback', async ({page}) => {

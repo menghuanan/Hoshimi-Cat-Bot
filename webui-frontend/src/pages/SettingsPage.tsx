@@ -221,9 +221,10 @@ function SettingsGroup({title, fields, values, onChange}: {
   onChange: (key: string, value: string | boolean) => void
 }) {
   return (
-    <section className="space-y-3">
+    <section data-layout="single-column" className="space-y-3">
       <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
-      <div className="grid gap-4 xl:grid-cols-2">
+      {/* 字段按单列堆叠，避免大屏下配置项被拆成左右两栏。 */}
+      <div className="grid gap-4">
         {fields.map((field) => field.key === 'adminsText' ? (
           <GroupAdminField key={field.key} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
         ) : (
@@ -247,7 +248,7 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
   }
 
   return (
-    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2">
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-sm font-medium text-slate-800">群普通管理员</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1 text-xs font-medium text-slate-600">

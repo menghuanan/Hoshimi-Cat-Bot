@@ -350,6 +350,13 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('OneBot11 主机')).toBeInTheDocument()
     expect(screen.queryByLabelText('QQ App ID')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('WebUI 主机')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('justify-center')
+
+    const platformSection = screen.getByText('平台配置').closest('section')
+    expect(platformSection).not.toBeNull()
+    expect(platformSection).toHaveAttribute('data-layout', 'single-column')
+    expect(platformSection?.children[1]).toHaveClass('grid')
+    expect(platformSection?.children[1]).not.toHaveClass('xl:grid-cols-2')
 
     await user.selectOptions(screen.getByLabelText('平台类型'), 'qq_official')
     expect(screen.getByLabelText('QQ App ID')).toBeInTheDocument()
@@ -487,11 +494,11 @@ describe('webui shell routing', () => {
               sourceId: 123,
               tags: ['动态'],
               targetSectionTitle: '推送目标',
-              targets: ['10001', '10002'],
-              filterInfo: '1 条过滤器',
-              filterCount: 1,
-              templateNames: ['默认模板'],
-              templateCount: 1,
+              targets: ['onebot11:group:1072150397', 'onebot11:group:1245551'],
+              filterInfo: 'group:1072150397 类型黑名单: 空，正则黑名单: 测试',
+              filterCount: 2,
+              templateNames: ['默认模板', '备用模板'],
+              templateCount: 2,
               atAllInfo: '全部动态',
               themeColor: '#33aaff',
               themeColorCount: 1,
@@ -529,6 +536,12 @@ describe('webui shell routing', () => {
     expect(screen.getByText('模板信息')).toBeInTheDocument()
     expect(screen.getByText('at全体')).toBeInTheDocument()
     expect(screen.getByText('主题色')).toBeInTheDocument()
+    expect(screen.getByText('群聊：1072150397、1245551')).toBeInTheDocument()
+    expect(screen.getByText('2 个过滤器')).toBeInTheDocument()
+    expect(screen.getByText('2 个模板')).toBeInTheDocument()
+    expect(screen.queryByText('onebot11:group:1072150397')).not.toBeInTheDocument()
+    expect(screen.queryByText('group:1072150397 类型黑名单: 空，正则黑名单: 测试')).not.toBeInTheDocument()
+    expect(screen.queryByText('默认模板')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '新增订阅'}))
     expect(screen.getByRole('dialog', {name: '新增订阅'})).toBeInTheDocument()
@@ -569,9 +582,9 @@ describe('webui shell routing', () => {
     await user.click(screen.getByRole('button', {name: '编辑at全体'}))
     expect(await screen.findByRole('button', {name: '添加at全体'})).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '添加at全体'}))
-    await user.click(screen.getByLabelText('10001'))
-    expect(screen.getByLabelText('10001')).toBeInTheDocument()
-    expect(screen.getByLabelText('10002')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('onebot11:group:1072150397'))
+    expect(screen.getByLabelText('onebot11:group:1072150397')).toBeInTheDocument()
+    expect(screen.getByLabelText('onebot11:group:1245551')).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '保存at全体'}))
     await user.type(await screen.findByLabelText('确认密码'), 'atall-password')
     await user.click(screen.getByRole('button', {name: '确认'}))

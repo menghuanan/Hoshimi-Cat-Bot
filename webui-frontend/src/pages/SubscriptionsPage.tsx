@@ -100,7 +100,7 @@ function SubscriptionCard({item, pending, onEdit, onDelete}: {
   onDelete: () => void
 }) {
   const title = readItemField(item, 'title') || readItemField(item, 'subject') || readItemField(item, 'uid') || '未命名订阅'
-  const targets = readItemArray(item, 'targets')
+  const targets = formatSubscriptionTargets(readItemArray(item, 'targets'))
   const tags = readItemArray(item, 'tags')
 
   return (
@@ -125,8 +125,8 @@ function SubscriptionCard({item, pending, onEdit, onDelete}: {
         </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <InfoBlock label="过滤器信息" value={formatCount(item, 'filterCount', '过滤器', readItemField(item, 'filterInfo'))} />
-        <InfoBlock label="模板信息" value={formatCount(item, 'templateCount', '模板', readItemArray(item, 'templateNames').join('、'))} />
+        <InfoBlock label="过滤器信息" value={formatCount(item, 'filterCount', '过滤器')} />
+        <InfoBlock label="模板信息" value={formatCount(item, 'templateCount', '模板')} />
         <InfoBlock label="at全体" value={readItemField(item, 'atAllInfo') || '未开启'} />
         <InfoBlock label="主题色" value={readItemField(item, 'themeColor') || '默认'} />
       </div>
@@ -147,14 +147,46 @@ function InfoBlock({label, value}: {label: string, value: string}) {
 }
 
 /**
- * 数量摘要优先展示显式说明，缺失时退回到 “N 个类型”。
+ * 订阅卡片只展示数量摘要，避免后端拼接的过滤器或模板详情泄漏到普通用户视图。
  */
-function formatCount(item: SubscriptionItem, countKey: string, unit: string, fallback: string): string {
-  if (fallback) {
-    return fallback
-  }
-  const count = Number(item[countKey] || 0)
+function formatCount(item: SubscriptionItem, countKey: string, unit: string): string {
+  const count = Number.isFinite(Number(item[countKey])) ? Math.max(0, Number(item[countKey])) : 0
   return `${count} 个${unit}`
+}
+
+/**
+ * 平台联系人按用户能理解的类型合并展示，同类目标只保留一次中文标签。
+ */
+function formatSubscriptionTargets(targets: string[]): string[] {
+  const targetGroups = new Map<string, string[]>()
+  const targetLabels = new Map<string, string>()
+  const targetOrder: string[] = []
+  targets.forEach((target) => {
+    const parsed = parseSubscriptionTarget(target)
+    const key = parsed.key
+    if (!targetGroups.has(key)) {
+      targetGroups.set(key, [])
+      targetLabels.set(key, parsed.label)
+      targetOrder.push(key)
+    }
+    targetGroups.get(key)?.push(parsed.value)
+  })
+  return targetOrder.map((key) => `${targetLabels.get(key) || '目标'}：${(targetGroups.get(key) || []).join('、')}`)
+}
+
+/**
+ * 识别常见 OneBot11 联系人 subject，其他值保留为普通目标避免丢失信息。
+ */
+function parseSubscriptionTarget(target: string): {key: string, label: string, value: string} {
+  const group = target.match(/^onebot11:group:(\d+)$/)
+  if (group) {
+    return {key: 'group', label: '群聊', value: group[1]}
+  }
+  const privateChat = target.match(/^onebot11:private:(\d+)$/)
+  if (privateChat) {
+    return {key: 'private', label: 'QQ', value: privateChat[1]}
+  }
+  return {key: `target:${target}`, label: '目标', value: target}
 }
 
 /**

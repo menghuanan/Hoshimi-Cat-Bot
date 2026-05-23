@@ -132,58 +132,63 @@ export function Shell({page, onNavigate, children}: ShellProps) {
           </nav>
         </aside>
         <div className="flex min-w-0 flex-col">
-          <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur max-sm:flex-col max-sm:items-stretch max-sm:px-4">
-            <div className="min-w-0">
-              <h2 className="text-lg font-semibold text-slate-950">{pageLabel(page)}</h2>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-3 max-sm:w-full">
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 max-sm:w-full">
-                <span>主题模式</span>
-                <select
-                  value={preference}
-                  onChange={(event) => setPreference(event.target.value as 'system' | 'light' | 'dark')}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-                >
-                  <option value="light">亮色</option>
-                  <option value="dark">暗色</option>
-                  <option value="system">跟随系统</option>
-                </select>
-              </label>
-              <div ref={adminMenuRef} className="relative max-sm:w-full">
-                <button
-                  type="button"
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
-                  aria-haspopup="menu"
-                  aria-expanded={adminMenuOpen}
-                  onClick={() => setAdminMenuOpen((current) => !current)}
-                >
-                  管理员
-                </button>
-                {adminMenuOpen ? (
-                  <div
-                    role="menu"
-                    className="absolute right-0 z-30 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-4 max-sm:flex-col max-sm:items-stretch max-sm:px-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-slate-950">{pageLabel(page)}</h2>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-3 max-sm:w-full">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 max-sm:w-full">
+                  <span>主题模式</span>
+                  <select
+                    value={preference}
+                    onChange={(event) => setPreference(event.target.value as 'system' | 'light' | 'dark')}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
                   >
-                    <button
-                      type="button"
-                      className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
-                      onClick={() => {
-                        setPasswordModalOpen(true)
-                        setAdminMenuOpen(false)
-                      }}
+                    <option value="light">亮色</option>
+                    <option value="dark">暗色</option>
+                    <option value="system">跟随系统</option>
+                  </select>
+                </label>
+                <div ref={adminMenuRef} className="relative max-sm:w-full">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 max-sm:w-full"
+                    aria-haspopup="menu"
+                    aria-expanded={adminMenuOpen}
+                    onClick={() => setAdminMenuOpen((current) => !current)}
+                  >
+                    管理员
+                  </button>
+                  {adminMenuOpen ? (
+                    <div
+                      role="menu"
+                      className="absolute right-0 z-30 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
                     >
-                      修改密码
-                    </button>
-                    <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
-                      退出登录
-                    </button>
-                  </div>
-                ) : null}
+                      <button
+                        type="button"
+                        className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                        onClick={() => {
+                          setPasswordModalOpen(true)
+                          setAdminMenuOpen(false)
+                        }}
+                      >
+                        修改密码
+                      </button>
+                      <button type="button" disabled={accountPending} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" onClick={() => void submitLogout()}>
+                        退出登录
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </header>
+          {/* 主内容区与顶部标题保持同宽居中，避免大屏时页面内容过度贴左。 */}
           <section className="min-w-0 flex-1 px-6 py-6 max-sm:px-4">
-            {children}
+            <div className="mx-auto w-full max-w-7xl">
+              {children}
+            </div>
           </section>
         </div>
       </div>
