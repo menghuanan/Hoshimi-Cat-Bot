@@ -929,7 +929,9 @@ describe('webui shell routing', () => {
 
     const aside = document.querySelector('aside')
     expect(aside).not.toBeNull()
-    expect(document.querySelector('aside > div.fixed.bottom-0.left-0')).not.toBeNull()
+    expect(aside).toHaveClass('fixed')
+    expect(aside).toHaveClass('inset-y-0')
+    expect(aside).toHaveClass('left-0')
     expect(within(aside as HTMLElement).getByLabelText('主题模式')).toBeInTheDocument()
     expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
     expect(within(aside as HTMLElement).getByLabelText('主题模式').parentElement).toHaveClass('space-y-1')
@@ -937,8 +939,8 @@ describe('webui shell routing', () => {
     expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toHaveClass('justify-start')
     expect(document.querySelector('header')).toBeNull()
 
-    // 侧边栏底部控件需要脱离主内容流，始终固定在视口左下角。
-    expect(readFileSync('src/components/Shell.tsx', 'utf8')).toContain('fixed bottom-0 left-0')
+    // 侧边栏顶部和底部都需要常驻视口左侧，避免随主页面滚动。
+    expect(readFileSync('src/components/Shell.tsx', 'utf8')).toContain('fixed inset-y-0 left-0')
 
     await user.selectOptions(screen.getByLabelText('主题模式'), 'dark')
     expect(document.documentElement.classList.contains('theme-dark')).toBe(true)

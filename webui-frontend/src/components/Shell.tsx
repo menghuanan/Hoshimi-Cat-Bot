@@ -104,8 +104,8 @@ export function Shell({page, onNavigate, children}: ShellProps) {
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-100 text-slate-950">
       <div className="grid min-h-screen w-full grid-cols-[18rem_minmax(0,1fr)] max-lg:grid-cols-1">
-        {/* 桌面侧边栏整体放大一档，移动端折叠布局保持原样。 */}
-        <aside className="flex h-full flex-col border-r border-slate-200 bg-white px-5 py-6 max-lg:border-b max-lg:border-r-0">
+        {/* 桌面侧边栏整体固定在视口左侧，移动端折叠布局保持原样。 */}
+        <aside className="fixed inset-y-0 left-0 z-30 flex h-full w-72 flex-col border-r border-slate-200 bg-white px-5 py-6 max-lg:static max-lg:w-full max-lg:border-b max-lg:border-r-0">
           <div className="mb-6">
             <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">dynamic-bot</p>
             <h1 className="mt-2 text-xl font-semibold text-slate-950">动态机器人 WebUI</h1>
@@ -132,7 +132,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
             ))}
           </nav>
           {/* 底部控制区改成完整卡片，主题和管理员入口都贴左对齐，视觉上更像一个独立用户块。 */}
-          <div className="fixed bottom-0 left-0 z-20 w-72 border-t border-r border-slate-200 bg-white/95 px-4 pb-4 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur max-lg:static max-lg:w-full max-lg:border-t-0 max-lg:border-r-0 max-lg:bg-transparent max-lg:px-0 max-lg:pb-0 max-lg:pt-4 max-lg:shadow-none">
+          <div className="mt-auto border-t border-r border-slate-200 bg-white/95 px-4 pb-4 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur max-lg:mt-6 max-lg:w-full max-lg:border-t-0 max-lg:border-r-0 max-lg:bg-transparent max-lg:px-0 max-lg:pb-0 max-lg:pt-4 max-lg:shadow-none">
             <div className="space-y-3">
               <label className="block space-y-1 text-sm font-medium text-slate-700">
                 <span className="block pl-1 text-xs font-semibold uppercase tracking-wide text-slate-500">主题模式</span>
