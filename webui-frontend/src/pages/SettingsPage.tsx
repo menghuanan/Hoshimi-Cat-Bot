@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
@@ -226,7 +226,8 @@ function SettingsGroup({title, fields, values, onChange}: {
       {/* 字段按单列堆叠，避免大屏下配置项被拆成左右两栏。 */}
       <div className="grid gap-4">
         {fields.map((field) => field.key === 'adminsText' ? (
-          <GroupAdminField key={field.key} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
+          // 群管理员草稿跟随父级保存值重挂载，避免 effect 中同步派生 state。
+          <GroupAdminField key={`${field.key}:${String(values[field.key] || '')}`} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
         ) : (
           <SettingsField key={field.key} field={field} value={values[field.key] ?? ''} onChange={onChange} />
         ))}
@@ -243,13 +244,6 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
   const pairs = adminPairsFromText(value)
   const draftPairs = adminPairsFromText(draftText)
   const firstPair = draftPairs[0] || {groupId: '', userId: ''}
-
-  /**
-   * 父级快照变更时同步卡片草稿，避免切换分区后继续显示旧输入。
-   */
-  useEffect(() => {
-    setDraftText(value)
-  }, [value])
 
   /**
    * 输入区只更新卡片草稿，必须点击暂存后才写回页面待保存值。

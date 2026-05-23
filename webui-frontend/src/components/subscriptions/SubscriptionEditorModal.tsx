@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { formatPasswordErrorMessage } from '../../utils/errorMessages'
 
 type EditorAction = 'overview' | 'filters' | 'templates' | 'atall' | 'theme'
@@ -41,23 +41,6 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const [editingDraft, setEditingDraft] = useState<Record<string, unknown> | null>(null)
   const [status, setStatus] = useState('')
   const [statusTone, setStatusTone] = useState<'neutral' | 'success' | 'error'>('neutral')
-
-  /**
-   * 订阅切换或关闭时清空所有嵌套面板，避免上一个订阅的编辑态继续显示。
-   */
-  useEffect(() => {
-    loadSequenceRef.current += 1
-    setActiveAction('overview')
-    setFilters([])
-    setTemplates([])
-    setRandomEnabled(false)
-    setAtAllItems([])
-    setThemeColor('')
-    setFormMode('none')
-    setEditingDraft(null)
-    setStatus('')
-    setStatusTone('neutral')
-  }, [itemId])
 
   if (!item) {
     return null

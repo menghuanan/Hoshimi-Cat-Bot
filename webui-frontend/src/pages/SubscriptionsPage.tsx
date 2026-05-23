@@ -85,7 +85,16 @@ export function SubscriptionsPage() {
       </PageSection>
 
       <SubscriptionModal open={createOpen} pending={pending} onClose={() => setCreateOpen(false)} onSubmit={submitSubscription} />
-      <SubscriptionEditorModal item={editingItem} actions={subscriptionActions} onClose={() => setEditingItem(null)} onReload={reload} />
+      {editingItem ? (
+        // 不同订阅使用独立组件实例，保证嵌套编辑草稿和异步加载序列随条目重置。
+        <SubscriptionEditorModal
+          key={readStableDeletionId(editingItem)}
+          item={editingItem}
+          actions={subscriptionActions}
+          onClose={() => setEditingItem(null)}
+          onReload={reload}
+        />
+      ) : null}
     </div>
   )
 }
