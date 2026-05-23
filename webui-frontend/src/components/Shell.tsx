@@ -131,8 +131,8 @@ export function Shell({page, onNavigate, children}: ShellProps) {
               </button>
             ))}
           </nav>
-          {/* 主题切换和管理员操作放在侧边栏底部，避免顶部工具区占用主内容视线。 */}
-          <div className="mt-auto pt-7 max-lg:pt-4">
+          {/* 主题切换和管理员操作改为固定在视口左下角，避免主内容长度把入口一起推到页面底部。 */}
+          <div className="fixed bottom-0 left-0 z-20 w-72 border-t border-r border-slate-200 bg-white px-5 pb-6 pt-4 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] max-lg:static max-lg:w-full max-lg:border-t-0 max-lg:border-r-0 max-lg:bg-transparent max-lg:px-0 max-lg:pb-0 max-lg:pt-4 max-lg:shadow-none">
             <div className="space-y-4">
               <label className="flex flex-wrap items-center gap-2 text-base font-medium text-slate-700 max-sm:w-full">
                 <span>主题模式</span>

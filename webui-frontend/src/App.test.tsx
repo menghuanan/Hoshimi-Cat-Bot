@@ -929,6 +929,9 @@ describe('webui shell routing', () => {
     expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
     expect(document.querySelector('header')).toBeNull()
 
+    // 侧边栏底部控件需要脱离主内容流，始终固定在视口左下角。
+    expect(readFileSync('src/components/Shell.tsx', 'utf8')).toContain('fixed bottom-0 left-0')
+
     await user.selectOptions(screen.getByLabelText('主题模式'), 'dark')
     expect(document.documentElement.classList.contains('theme-dark')).toBe(true)
     expect(screen.getByRole('option', {name: '亮色'})).toBeInTheDocument()
