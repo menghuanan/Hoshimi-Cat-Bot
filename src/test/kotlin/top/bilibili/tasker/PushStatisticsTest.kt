@@ -36,7 +36,7 @@ class PushStatisticsTest {
     }
 
     @Test
-    fun `recent push deliveries should keep newest records and trim history to five entries`() {
+    fun `recent push deliveries should keep newest records and trim history to four entries`() {
         var currentDate = LocalDate.of(2026, 5, 20)
         var timestamp = 1_000L
         val counter = DailyPushStatsCounter(
@@ -68,10 +68,10 @@ class PushStatisticsTest {
 
         val snapshot = counter.snapshot()
 
-        assertEquals(5, snapshot.recentRecords.size)
+        assertEquals(4, snapshot.recentRecords.size)
         assertEquals("record-6", snapshot.recentRecords.first().summary)
         assertEquals("onebot11:group:7", snapshot.recentRecords.first().target)
-        assertEquals("record-2", snapshot.recentRecords.last().summary)
-        assertEquals("onebot11:group:3", snapshot.recentRecords.last().target)
+        assertEquals("record-3", snapshot.recentRecords.last().summary)
+        assertEquals("onebot11:group:4", snapshot.recentRecords.last().target)
     }
 }

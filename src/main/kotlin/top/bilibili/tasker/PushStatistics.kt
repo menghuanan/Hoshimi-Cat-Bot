@@ -29,7 +29,7 @@ enum class PushStatisticType {
 }
 
 /**
- * 单日推送统计快照保留今日计数，recentRecords 额外附带进程内最新 5 条推送历史。
+ * 单日推送统计快照保留今日计数，recentRecords 额外附带进程内最新 4 条推送历史。
  */
 data class DailyPushStatsSnapshot(
     val date: String,
@@ -61,8 +61,8 @@ internal class DailyPushStatsCounter(
     private val currentTimeMillisProvider: () -> Long = { System.currentTimeMillis() },
 ) {
     private companion object {
-        // 首页只展示最近几条推送，避免任务进程长期运行时把内存历史无限放大。
-        const val MAX_RECENT_RECORDS = 5
+        // 首页只展示最近 4 条推送，避免任务进程长期运行时把内存历史无限放大。
+        const val MAX_RECENT_RECORDS = 4
     }
 
     private var currentDate: LocalDate = todayProvider()
@@ -135,7 +135,7 @@ internal class DailyPushStatsCounter(
     }
 
     /**
-     * 自然日变化时只清空上一天的内存计数，最近推送记录保持进程内最新 5 条不回滚。
+     * 自然日变化时只清空上一天的内存计数，最近推送记录保持进程内最新 4 条不回滚。
      */
     private fun ensureCurrentDate() {
         val today = todayProvider()
