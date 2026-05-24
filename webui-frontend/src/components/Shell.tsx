@@ -180,7 +180,8 @@ export function Shell({page, onNavigate, children}: ShellProps) {
             </div>
           </div>
         </aside>
-        <div className="flex min-w-0 flex-col">
+        {/* 主内容区在桌面端占据第二列，给固定侧栏留出稳定的视觉空间。 */}
+        <div className="flex min-w-0 flex-col max-lg:col-start-auto lg:col-start-2">
           {/* 主内容区直接贴靠壳层顶部，页面会在删除标题后自然上移。 */}
           <section className="min-w-0 flex-1 px-6 py-6 max-sm:px-4">
             <div className="mx-auto w-full max-w-7xl">
