@@ -6,7 +6,7 @@
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
 代码部分由 [claude](https://github.com/claude) 主刀构建改造后的主体框架， GPT-5系列模型（GPT-5.2-Codex、GPT-5.3-Codex、GPT-5.4、GPT-5.5） 协助完善功能细则与日常修复bug。  
-这是一个支持多平台连接器的 QQ 机器人 ，当前默认推荐使用 NapCat / llbot / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理（尚未测试，不建议使用）。
+这是一个支持多平台连接器的 QQ 机器人，当前默认推荐使用 NapCat / llbot / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理（尚未测试，不建议使用），同时内置了本机 WebUI 管理界面。
 
 ## 文档目录
 
@@ -16,10 +16,10 @@
 - [快速开始](#快速开始)
 - [主要功能](#主要功能)
 - [配置说明](#配置说明)
+- [WebUI 配置](#webui-配置)
 - [Docker 部署](#docker-部署)
 - [开发说明](#开发说明)
 - [与原项目的区别](#与原项目的区别)
-- [更新日志](#更新日志)
 - [故障排查](#故障排查)
 - [常见问题](#常见问题)
 - [免责声明](#免责声明)
@@ -46,7 +46,7 @@ dynamic-bot/
 ├── src/main/kotlin/top/bilibili/     # Kotlin 源代码
 │   ├── api/                          # B站 API 接口
 │   ├── client/                       # HTTP 客户端
-│   ├── config/                       # NapCat / Bot 配置
+│   ├── config/                       # Bot 配置与平台配置
 │   ├── connector/                    # 平台连接器与 OneBot11 vendor 实现
 │   ├── core/                         # 核心启动与资源生命周期
 │   ├── data/                         # 数据模型
@@ -54,6 +54,7 @@ dynamic-bot/
 │   ├── service/                      # 业务服务与命令处理
 │   ├── skia/                         # Skia 资源管理
 │   ├── tasker/                       # 定时任务与守护任务
+│   ├── webui/                        # WebUI 认证、路由、服务与运行时管理
 │   ├── utils/                        # 工具类
 │   ├── BiliConfig.kt                 # 主配置模型
 │   ├── BiliData.kt                   # 运行数据模型
@@ -63,7 +64,9 @@ dynamic-bot/
 │   ├── font/                         # 字体文件
 │   ├── icon/                         # 图标文件
 │   ├── image/                        # 帮助图、内置图片
+│   ├── webui/react/                  # WebUI 打包后的静态资源
 │   └── logback.xml                   # 日志配置
+├── webui-frontend/                   # WebUI 前端工程（React + Vite）
 ├── docs/                             # 补充文档
 ├── gradle/                           # Gradle Wrapper
 ├── build.gradle.kts                  # Gradle 构建脚本
@@ -192,9 +195,10 @@ docker run -d --name dynamic-bot \
 
 ```
 config/
-├── bot.yml              # Bot 基础配置（NapCat 连接信息）
+├── bot.yml              # Bot 基础配置（平台与 WebUI 相关配置）
 ├── BiliData.yml         # 订阅数据和推送配置
-└── BiliConfig.yml       # 配置文件
+├── BiliConfig.yml       # 配置文件
+└── webui-credentials.json # WebUI 本地认证凭据（首次使用自动创建）
 
 data/
 ├── font/                # 字体文件目录
@@ -402,10 +406,29 @@ platform:
     app_id: ""
     app_secret: ""
     bot_token: ""
+webui:
+  enabled: false
+  host: "127.0.0.1"
+  port: 18080
+  credential_file: "webui-credentials.json"
+  token_ttl_seconds: 3600
 targets: []                  # 预留字段，当前版本未启用
 admins: []                   # 群普通管理员配置
 first_run_flag: 0            # 首次运行标记，程序自动维护
 ```
+
+### WebUI 配置
+
+WebUI 默认只监听本机 `127.0.0.1:18080`。如果要启用界面，请打开 `config/bot.yml`，把 `webui.enabled` 改成 `true`，并保留默认的主机和端口。
+
+```yaml
+webui:
+  enabled: true
+  host: "127.0.0.1"
+  port: 18080
+```
+
+保存后重启程序，然后在本机浏览器访问 `http://127.0.0.1:18080/`。
 
 ### BiliData.yml 示例
 
@@ -605,13 +628,13 @@ docker-compose up -d
 - `NativeMemoryTracking=detail` 仅建议在专项排障时临时启用；它会带来更高的运行时开销，问题定位完成后应恢复到默认的 `summary`。
 - `docker-entrypoint.sh` 仍会补充 `-Dfile.encoding=UTF-8` 和 `-Duser.timezone=Asia/Shanghai`，不要在 `docker-compose.yml` 中用 `JAVA_OPTS` 覆盖整组默认参数。
 
-#### 5. 配置 NapCat 连接
+#### 5. 配置 onebot11 连接
 
 首次运行后，编辑 `config/bot.yml`：
 
 ```yaml
-napcat:
-  host: "NapCat WebSocket 主机地址"  
+onebot11:
+  host: "onebot11 WebSocket 主机地址"
   port: 3001    #默认3001
   token: ""     #如果有则填入，没有不填
   send_mode: "base64"  # 图片发送模式：file 或 base64
@@ -688,20 +711,26 @@ docker logs -f dynamic-bot
 
 ### 技术栈
 - Kotlin 2.0.0
-- Ktor 3.0.3（HTTP / WebSocket 客户端）
+- Ktor 3.0.3（HTTP / WebSocket 客户端与 WebUI 服务端）
+- React 19.2.6（WebUI 前端）
+- TypeScript 6.0.2（WebUI 前端）
+- Vite 8.0.12（WebUI 构建）
+- Tailwind CSS 4.3.0（WebUI 样式）
+- Vitest 3.2.4 + Playwright 1.56.0（WebUI 测试）
 - Skiko 0.8.15（图片渲染）
 - kotlinx.serialization 1.6.3（JSON 处理）
 - kotlinx.coroutines 1.8.0（协程）
 - KAML 0.61.0（YAML 配置解析）
 - ZXing 3.5.0（二维码生成）
 - Logback 1.4.14 + SLF4J 2.0.9（日志）
-- OneBot v11 协议（NapCat）
+- OneBot v11 协议（NapCat / llbot / OneBot11）
 
 ### 项目特点
 - 独立运行，不依赖 Mirai 框架
-- 使用 NapCat 作为 QQ 机器人框架
+- 使用 onebot11 作为 QQ 机器人框架
 - 基于 WebSocket 通信
 - 使用 Skiko 进行高质量图片渲染
+- 内置本机 WebUI 管理界面
 - 支持 Docker 部署
 
 ## 与原项目的区别
