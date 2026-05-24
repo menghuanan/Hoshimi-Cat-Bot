@@ -119,9 +119,9 @@ export function DashboardPage() {
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <StatusCard label="版本" value={loading ? '--' : dashboard.appVersion} tone="emerald" detail="当前运行版本" />
-          <StatusCard label="运行状态" value={loading ? '同步中' : dashboard.lifecycleState} tone="sky" detail="Bot 运行状态" />
-          <StatusCard label="B站账号信息" value={formatState(dashboard.accountLoggedIn, '已登录', '未登录')} tone="rose" detail={dashboard.accountUid ? `UID ${dashboard.accountUid}` : 'UID --'} />
-          <StatusCard label="WebSocket 状态" value={formatState(dashboard.webSocketConnected, '已连接', '未连接')} tone="sky" detail={`会话：${summary?.webSocket?.activeSessionCount ?? '--'} / 重连：${summary?.webSocket?.reconnectAttempts ?? '--'}`} />
+          <StatusCard label="运行状态" value={loading ? '同步中' : dashboard.lifecycleState} tone={loading ? 'sky' : dashboard.lifecycleTone} detail="Bot 运行状态" />
+          <StatusCard label="B站账号信息" value={formatState(dashboard.accountLoggedIn, '已登录', '未登录')} tone={dashboard.accountTone} detail={dashboard.accountUid ? `UID ${dashboard.accountUid}` : 'UID --'} />
+          <StatusCard label="WebSocket 状态" value={formatState(dashboard.webSocketConnected, '已连接', '未连接')} tone={dashboard.webSocketTone} detail={`会话：${summary?.webSocket?.activeSessionCount ?? '--'} / 重连：${summary?.webSocket?.reconnectAttempts ?? '--'}`} />
           <StatusCard label="今日推送" value={formatCount(dashboard.todayPushTotal, ' 条')} tone="amber" detail={`动态：${summary?.todayPushStats?.dynamic ?? '--'} / 直播：${summary?.todayPushStats?.live ?? '--'}`} />
         </div>
       </PageSection>

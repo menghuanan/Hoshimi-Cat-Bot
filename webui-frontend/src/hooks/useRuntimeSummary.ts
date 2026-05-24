@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchRuntimeSummary } from '../api/runtime'
 import type { WebUiJsonRequestOptions } from '../api/http'
-import type { WebUiDashboardRecentPushRecord, WebUiDashboardRuntimeFields, WebUiRuntimeSummary, WebUiRecentPushRecord } from '../types/runtime'
+import type { WebUiDashboardRecentPushRecord, WebUiDashboardRuntimeFields, WebUiDashboardStatusTone, WebUiRuntimeSummary, WebUiRecentPushRecord } from '../types/runtime'
 
 type UseRuntimeSummaryOptions = WebUiJsonRequestOptions & {
   pollIntervalMs?: number
@@ -26,12 +26,32 @@ function toDashboardRuntimeFields(summary: WebUiRuntimeSummary | null): WebUiDas
     storageTotalBytes: summary?.host?.storage?.totalBytes ?? null,
     accountLoggedIn: summary?.account?.loggedIn ?? null,
     accountUid: summary?.account?.uid ?? null,
+    lifecycleTone: resolveLifecycleTone(summary?.lifecycleState),
+    accountTone: resolveBooleanStatusTone(summary?.account?.loggedIn, 'emerald'),
     platformReady: summary?.platformReady ?? null,
     webSocketConnected: summary?.webSocket?.connected ?? null,
+    webSocketTone: resolveBooleanStatusTone(summary?.webSocket?.connected, 'sky'),
     todayPushTotal: summary?.todayPushStats?.total ?? null,
     recentPushRecordsCount: recentPushRecords.length,
     recentPushRecords,
   }
+}
+
+/**
+ * 生命周期色条按运行健康度映射：运行中为绿色，启动/停止过渡为蓝色，其余不可服务状态为红色。
+ */
+function resolveLifecycleTone(value: string | undefined): WebUiDashboardStatusTone {
+  const normalized = String(value || '').trim().toUpperCase()
+  if (normalized === 'RUNNING') return 'emerald'
+  if (normalized === 'STARTING' || normalized === 'STOPPING') return 'sky'
+  return 'rose'
+}
+
+/**
+ * 二态健康字段缺失或为 false 时统一按异常色处理，避免旧响应被误展示为正常状态。
+ */
+function resolveBooleanStatusTone(value: boolean | undefined, healthyTone: WebUiDashboardStatusTone): WebUiDashboardStatusTone {
+  return value ? healthyTone : 'rose'
 }
 
 /**

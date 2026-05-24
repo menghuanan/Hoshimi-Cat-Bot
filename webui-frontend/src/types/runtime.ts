@@ -66,6 +66,11 @@ export type WebUiHostRuntimeStatus = {
 }
 
 /**
+ * 首页状态卡左侧强调色只暴露允许的设计系统色名，避免页面散落任意 Tailwind 类。
+ */
+export type WebUiDashboardStatusTone = 'emerald' | 'sky' | 'amber' | 'rose'
+
+/**
  * 运行态摘要映射后端 `/api/runtime/summary` DTO，字段保持可选以兼容旧响应。
  */
 export type WebUiRuntimeSummary = {
@@ -104,8 +109,11 @@ export type WebUiDashboardRuntimeFields = {
   storageTotalBytes: number | null
   accountLoggedIn: boolean | null
   accountUid: number | null
+  lifecycleTone: WebUiDashboardStatusTone
+  accountTone: WebUiDashboardStatusTone
   platformReady: boolean | null
   webSocketConnected: boolean | null
+  webSocketTone: WebUiDashboardStatusTone
   todayPushTotal: number | null
   recentPushRecordsCount: number
   recentPushRecords: WebUiDashboardRecentPushRecord[]

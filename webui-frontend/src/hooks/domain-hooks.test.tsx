@@ -85,6 +85,54 @@ describe('webui domain hooks', () => {
   })
 
   /**
+   * 首页状态卡颜色由运行态视图模型统一决定，避免页面组件重复理解后端状态枚举。
+   */
+  it('useRuntimeSummary should derive dashboard status tones from runtime health', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(createJsonResponse(200, {
+        lifecycleState: 'RUNNING',
+        account: {loggedIn: true, uid: 12345, cookieConfigured: true},
+        webSocket: {connected: true, reconnectAttempts: 0, activeSessionCount: 1, transports: ['onebot11']},
+      }))
+      .mockResolvedValueOnce(createJsonResponse(200, {
+        lifecycleState: 'STARTING',
+        account: {loggedIn: false, uid: null, cookieConfigured: false},
+        webSocket: {connected: false, reconnectAttempts: 1, activeSessionCount: 0, transports: []},
+      }))
+      .mockResolvedValueOnce(createJsonResponse(200, {
+        lifecycleState: 'STOPPING',
+        account: {loggedIn: false, uid: null, cookieConfigured: false},
+        webSocket: {connected: false, reconnectAttempts: 1, activeSessionCount: 0, transports: []},
+      }))
+      .mockResolvedValueOnce(createJsonResponse(200, {
+        lifecycleState: 'STOPPED',
+        account: {loggedIn: false, uid: null, cookieConfigured: false},
+        webSocket: {connected: false, reconnectAttempts: 1, activeSessionCount: 0, transports: []},
+      }))
+
+    const {result} = renderHook(() => useRuntimeSummary({fetchImpl, pollIntervalMs: 100_000}))
+
+    await waitFor(() => expect(result.current.dashboard).toMatchObject({
+      lifecycleTone: 'emerald',
+      accountTone: 'emerald',
+      webSocketTone: 'sky',
+    }))
+
+    await result.current.refresh()
+    await waitFor(() => expect(result.current.dashboard).toMatchObject({
+      lifecycleTone: 'sky',
+      accountTone: 'rose',
+      webSocketTone: 'rose',
+    }))
+
+    await result.current.refresh()
+    await waitFor(() => expect(result.current.dashboard.lifecycleTone).toBe('sky'))
+
+    await result.current.refresh()
+    await waitFor(() => expect(result.current.dashboard.lifecycleTone).toBe('rose'))
+  })
+
+  /**
    * 首页只渲染清洗后的最近推送记录，不把后端原始 target 字段继续带到 dashboard 视图里。
    */
   it('useRuntimeSummary should sanitize recent push records before dashboard rendering', async () => {
