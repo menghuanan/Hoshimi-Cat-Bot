@@ -8,6 +8,7 @@ import top.bilibili.service.TemplateRuntimeCoordinator
 import top.bilibili.utils.normalizeContactSubject
 import java.io.File
 import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 
 /**
  * 配置与持久化数据的统一加载、保存和迁移入口。
@@ -15,6 +16,7 @@ import java.nio.file.Paths
 object BiliConfigManager {
     private val logger = LoggerFactory.getLogger(BiliConfigManager::class.java)
     private const val CURRENT_DATA_VERSION = 4
+    private const val MAX_CONFIG_BACKUPS = 3
 
     lateinit var config: BiliConfig
         private set
@@ -545,7 +547,7 @@ object BiliConfigManager {
      */
     fun saveConfig(configToSave: BiliConfig = config): Boolean {
         return try {
-            configFile.writeText(yaml.encodeToString(configToSave))
+            writeConfigFileAtomically(configFile, yaml.encodeToString(configToSave))
             // WebUI 保存后会立即从运行态读取快照，写盘成功后必须同步内存态。
             config = configToSave
             logger.debug("配置已保存")
@@ -599,9 +601,9 @@ object BiliConfigManager {
     private fun saveDataWrapper(wrapperToSave: BiliDataWrapper): Boolean {
         return try {
             val yamlContent = yaml.encodeToString(wrapperToSave)
-            dataFile.writeText(yamlContent)
+            writeConfigFileAtomically(dataFile, yamlContent)
 
-            val savedContent = dataFile.readText()
+            val savedContent = dataFile.readText(Charsets.UTF_8)
             if (savedContent.trim() == "{}") {
                 logger.error("警告：保存的数据文件为空！")
                 false
@@ -613,6 +615,77 @@ object BiliConfigManager {
             logger.error("保存数据文件失败", e)
             false
         }
+    }
+
+    /**
+     * 配置 owner 写盘统一采用 temp-file + rename，并保留有限备份，避免直接覆盖造成半写文件。
+     */
+    private fun writeConfigFileAtomically(targetFile: File, content: String) {
+        if (!targetFile.parentFile.exists()) {
+            targetFile.parentFile.mkdirs()
+        }
+        val tempFile = File.createTempFile(targetFile.nameWithoutExtension, ".tmp", targetFile.parentFile)
+        try {
+            tempFile.writeText(content, Charsets.UTF_8)
+            rotateConfigBackups(targetFile)
+            moveReplacing(tempFile, targetFile)
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+        }
+    }
+
+    /**
+     * 每个配置文件只保留最近几份 bak.N，避免 WebUI 多次保存无限堆积备份。
+     */
+    private fun rotateConfigBackups(targetFile: File) {
+        if (!targetFile.exists()) {
+            return
+        }
+        for (index in MAX_CONFIG_BACKUPS downTo 1) {
+            val backup = configBackupFile(targetFile, index)
+            if (!backup.exists()) {
+                continue
+            }
+            if (index == MAX_CONFIG_BACKUPS) {
+                backup.delete()
+            } else {
+                moveReplacing(backup, configBackupFile(targetFile, index + 1))
+            }
+        }
+        java.nio.file.Files.copy(
+            targetFile.toPath(),
+            configBackupFile(targetFile, 1).toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    }
+
+    /**
+     * 原子移动在文件系统不支持时降级为替换移动，保证 Windows 和 Linux 都能完成持久化。
+     */
+    private fun moveReplacing(source: File, target: File) {
+        runCatching {
+            java.nio.file.Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }.getOrElse {
+            java.nio.file.Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
+    }
+
+    /**
+     * 备份文件沿用原文件名追加 bak 序号，便于人工识别和回滚。
+     */
+    private fun configBackupFile(targetFile: File, index: Int): File {
+        return File(targetFile.parentFile, "${targetFile.name}.bak.$index")
     }
 
     /**

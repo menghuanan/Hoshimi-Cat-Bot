@@ -39,6 +39,7 @@ class BiliConfigManagerNamespaceMigrationTest {
         BiliData.group.clear()
         BiliData.bangumi.clear()
         BiliData.linkParseBlacklist.clear()
+        deleteConfigBackups()
     }
 
     @Test
@@ -260,6 +261,7 @@ class BiliConfigManagerNamespaceMigrationTest {
             } else {
                 Files.deleteIfExists(configFile)
             }
+            deleteConfigBackups()
             if (!originalConfigDirExists) {
                 runCatching { Files.deleteIfExists(configFile.parent) }
             }
@@ -292,6 +294,15 @@ class BiliConfigManagerNamespaceMigrationTest {
         val field = BiliConfigManager::class.java.getDeclaredField("config")
         field.isAccessible = true
         field.set(BiliConfigManager, config)
+    }
+
+    /**
+     * 备份轮转只验证行为，不允许把 .bak 文件留在仓库配置目录里污染后续用例。
+     */
+    private fun deleteConfigBackups() {
+        repeat(3) { index ->
+            Files.deleteIfExists(Path.of("config", "BiliConfig.yml.bak.${index + 1}"))
+        }
     }
 
     /**

@@ -15,7 +15,9 @@ import top.bilibili.config.BotConfig
 import top.bilibili.webui.model.WebUiConfigFieldDto
 import top.bilibili.webui.model.WebUiFieldCapability
 import top.bilibili.utils.json
-import top.bilibili.utils.md5
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.LinkedHashMap
 
 /**
@@ -23,6 +25,18 @@ import java.util.LinkedHashMap
  */
 private val snapshotJson = Json(json) {
     encodeDefaults = true
+}
+
+/**
+ * snapshot token 使用进程本地盐和版本化前缀，避免外部把响应 token 当成可复算的 secret 哈希。
+ */
+private const val SNAPSHOT_TOKEN_VERSION = "v1-sha256"
+
+/**
+ * 本进程内盐只服务于乐观并发版本判断；重启后旧页面 token 会自然失效并触发刷新。
+ */
+private val snapshotTokenSalt: ByteArray = ByteArray(32).also { bytes ->
+    SecureRandom().nextBytes(bytes)
 }
 
 /**
@@ -82,7 +96,7 @@ internal fun buildBotConfigSnapshot(config: BotConfig): WebUiConfigSnapshot {
 }
 
 /**
- * snapshot token 统一由原始快照值派生，避免脱敏后的显示文本让不同 secret 产生同一个并发版本号。
+ * snapshot token 统一由规范化快照值派生，敏感值先做字段级摘要，避免继续使用 secret-bearing raw MD5。
  */
 internal fun computeWebUiSnapshotToken(
     sourceFile: String,
@@ -92,12 +106,13 @@ internal fun computeWebUiSnapshotToken(
     val payload = WebUiConfigSnapshotTokenPayload(
         sourceFile = sourceFile,
         title = title,
-        rawSnapshot = rawSnapshot,
+        rawSnapshot = rawSnapshot.mapValues { (key, value) -> snapshotTokenValue(key, value) },
     )
-    return json.encodeToString(
+    val encodedPayload = json.encodeToString(
         WebUiConfigSnapshotTokenPayload.serializer(),
         payload,
-    ).md5()
+    )
+    return "$SNAPSHOT_TOKEN_VERSION:${saltedSha256Hex("payload", encodedPayload)}"
 }
 
 /**
@@ -336,6 +351,39 @@ private fun botConfigCapability(key: String): WebUiFieldCapability {
             else -> WebUiFieldCapability.READ_ONLY
         }
     }
+}
+
+/**
+ * 敏感字段参与并发版本判断前先做不可逆摘要，避免 token 输入仍是可猜测的原始 secret 文本。
+ */
+private fun snapshotTokenValue(key: String, value: String): String {
+    return if (isSensitiveSnapshotKey(key)) {
+        "sensitive:${saltedSha256Hex("field:$key", value)}"
+    } else {
+        value
+    }
+}
+
+/**
+ * token/cookie/password/secret 及其 camelCase 变体都按敏感字段处理，覆盖平台和业务配置中的凭据名。
+ */
+private fun isSensitiveSnapshotKey(key: String): Boolean {
+    return Regex("""(?i)(cookie|token|password|secret|appSecret|botToken|securityKey|proxy)""").containsMatchIn(key)
+}
+
+/**
+ * 带盐 SHA-256 十六进制输出作为 snapshot token 基础，不再依赖 MD5 或脱敏后的展示值。
+ */
+private fun saltedSha256Hex(purpose: String, value: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    digest.update(SNAPSHOT_TOKEN_VERSION.toByteArray(StandardCharsets.UTF_8))
+    digest.update(0)
+    digest.update(purpose.toByteArray(StandardCharsets.UTF_8))
+    digest.update(0)
+    digest.update(snapshotTokenSalt)
+    digest.update(0)
+    digest.update(value.toByteArray(StandardCharsets.UTF_8))
+    return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
 }
 
 /**

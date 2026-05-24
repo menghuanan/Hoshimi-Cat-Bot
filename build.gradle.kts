@@ -66,6 +66,10 @@ dependencies {
     implementation("io.ktor:ktor-server-cio:3.0.3") {
         exclude(group = "org.slf4j")
     }
+    // WebUI 请求体上限交给 Ktor 官方 body-limit 插件，在读取 body 前就能拒绝超限请求。
+    implementation("io.ktor:ktor-server-body-limit:3.0.3") {
+        exclude(group = "org.slf4j")
+    }
     implementation("io.ktor:ktor-server-content-negotiation:3.0.3") {
         exclude(group = "org.slf4j")
     }

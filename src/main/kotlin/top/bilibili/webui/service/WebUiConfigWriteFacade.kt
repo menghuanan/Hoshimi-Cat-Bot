@@ -275,7 +275,7 @@ class WebUiConfigWriteFacade(
                 snapshotToken = snapshotTokenForBotConfig(updatedConfig),
                 effectiveLevel = WebUiSaveEffectLevel.RESTART_REQUIRED,
                 recommendedAction = WebUiRecommendedAction.REQUEST_RESTART,
-                message = "bot.yml saved",
+                message = botConfigSaveMessage(updatedConfig),
             )
         }.getOrElse { error ->
             persistenceResult(
@@ -322,6 +322,9 @@ class WebUiConfigWriteFacade(
         if (request.webUiTokenTtlSeconds <= 0L) {
             errors += "webUiTokenTtlSeconds is invalid"
         }
+        if (requiresWildcardWebUiHostConfirmation(request)) {
+            errors += "webUiHost requires high-risk confirmation when set to 0.0.0.0"
+        }
         if (platformType == PlatformType.QQ_OFFICIAL) {
             if (request.qqOfficialAppId.isBlank()) {
                 errors += "qqOfficialAppId is invalid"
@@ -331,6 +334,13 @@ class WebUiConfigWriteFacade(
             }
         }
         return errors
+    }
+
+    /**
+     * 绑定 0.0.0.0 会把管理面暴露到非回环接口，必须由后端看到显式确认口令后才允许落盘。
+     */
+    private fun requiresWildcardWebUiHostConfirmation(request: WebUiBotConfigWriteRequestDto): Boolean {
+        return request.webUiHost.trim() == "0.0.0.0" && request.confirmationPassword.isBlank()
     }
 
     /**
@@ -534,6 +544,17 @@ class WebUiConfigWriteFacade(
      */
     private fun preserveSecret(previousValue: String, submittedValue: String): String {
         return if (submittedValue.isBlank()) previousValue else submittedValue
+    }
+
+    /**
+     * WebUI 监听 0.0.0.0 时在保存结果里保留显式高风险提示，便于前端和审计展示二次确认语义。
+     */
+    private fun botConfigSaveMessage(config: BotConfig): String {
+        return if (config.webui.host == "0.0.0.0") {
+            "bot.yml saved; high-risk warning: webui.host=0.0.0.0 exposes WebUI beyond loopback"
+        } else {
+            "bot.yml saved"
+        }
     }
 
     /**

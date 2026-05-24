@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -189,5 +190,45 @@ class WebUiLogFacadeTest {
         assertFalse(exportText.contains("line-1"))
         assertTrue(exportText.contains("line-2"))
         assertTrue(exportText.contains("line-3"))
+    }
+
+    /**
+     * 单行异常日志也必须受字节窗口保护，避免没有换行时从文件尾一路读完整个大文件。
+     */
+    @Test
+    fun `tail reader should cap oversized single line logs by bytes`() {
+        val logFile = tempRoot.resolve("bilibili-bot.log")
+        Files.writeString(
+            logFile,
+            "x".repeat(128 * 1024),
+            StandardCharsets.UTF_8,
+        )
+        val facade = WebUiLogFacade(
+            sourceResolvers = mapOf(
+                "main" to { logFile.toFile() },
+            ),
+            maxTailLines = 1,
+        )
+
+        val window = facade.readLogWindow("main", tailLines = 1)
+
+        assertNotNull(window)
+        assertEquals(1, window.lineCount)
+        assertTrue(window.text.isNotBlank())
+        assertTrue(window.text.length <= 40_000, "tail text length=${window.text.length}")
+        assertTrue(window.hasMore)
+    }
+
+    /**
+     * 日志读取实现必须保持 bounded tail 语义，避免未来回退成整文件 readLines()。
+     */
+    @Test
+    fun `log facade implementation should not read the entire file into memory`() {
+        val source = Files.readString(
+            Path.of("src/main/kotlin/top/bilibili/webui/service/WebUiLogFacade.kt"),
+            StandardCharsets.UTF_8,
+        )
+
+        assertFalse(source.contains(".readLines("))
     }
 }

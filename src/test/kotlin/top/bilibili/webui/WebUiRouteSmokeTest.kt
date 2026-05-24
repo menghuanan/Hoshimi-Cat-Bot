@@ -5,19 +5,24 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.delete
 import io.ktor.client.request.header
+import io.ktor.client.request.options
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.bilibili.BiliData
 import top.bilibili.BiliAccountConfig
@@ -126,6 +131,129 @@ class WebUiRouteSmokeTest {
         assertTrue(records.any { it.target == "/api/runtime/summary" && !it.success })
     }
 
+    /**
+     * WebUI HTML 与敏感 API 响应必须带统一安全头；CORS 只允许显式匹配的本机 Origin。
+     */
+    @Test
+    fun `webui responses should include security headers and explicit cors only`() = testApplication {
+        val authService = buildAuthService()
+        val bootstrapPassword = authService.bootstrapCredentials().initialPassword!!
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true, host = "127.0.0.1", port = 18080).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(sink = {}),
+            )
+        }
+
+        val client = createWebUiClient()
+        val auth = reloginForPhase3(authService, bootstrapPassword)
+        val loginPage = client.get("/login")
+        val runtimeResponse = client.get("/api/runtime/summary") {
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+        }
+        val allowedPreflight = client.options("/api/runtime/summary") {
+            header(HttpHeaders.Origin, "http://127.0.0.1:18080")
+            header(HttpHeaders.AccessControlRequestMethod, HttpMethod.Get.value)
+        }
+        val rejectedPreflight = client.options("/api/runtime/summary") {
+            header(HttpHeaders.Origin, "http://evil.example")
+            header(HttpHeaders.AccessControlRequestMethod, HttpMethod.Get.value)
+        }
+
+        assertEquals(HttpStatusCode.OK, loginPage.status)
+        assertEquals(HttpStatusCode.OK, runtimeResponse.status)
+        assertEquals("default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'", loginPage.headers["Content-Security-Policy"])
+        assertEquals("DENY", runtimeResponse.headers["X-Frame-Options"])
+        assertEquals("nosniff", runtimeResponse.headers["X-Content-Type-Options"])
+        assertEquals("no-referrer", runtimeResponse.headers["Referrer-Policy"])
+        assertEquals("camera=(), microphone=(), geolocation=()", runtimeResponse.headers["Permissions-Policy"])
+        assertEquals("no-store", runtimeResponse.headers[HttpHeaders.CacheControl])
+        assertEquals(HttpStatusCode.OK, allowedPreflight.status)
+        assertEquals("http://127.0.0.1:18080", allowedPreflight.headers[HttpHeaders.AccessControlAllowOrigin])
+        assertEquals(HttpStatusCode.Forbidden, rejectedPreflight.status)
+        assertEquals(null, rejectedPreflight.headers[HttpHeaders.AccessControlAllowOrigin])
+    }
+
+    /**
+     * 未处理异常对浏览器只返回脱敏错误，不能把本机路径、用户名或 token 字样透出。
+     */
+    @Test
+    fun `unhandled webui exceptions should return sanitized browser errors`() = testApplication {
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true).toSettings(tempRoot.toFile()),
+                authService = buildAuthService(),
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(sink = {}),
+            )
+            routing {
+                get("/boom") {
+                    // 测试专用路由模拟异常路径，验证全局异常响应不会泄露本机细节。
+                    error("""failed at C:\Users\alice\bot token=raw-token""")
+                }
+            }
+        }
+
+        val response = createWebUiClient().get("/boom")
+        val body = response.bodyAsText()
+
+        assertEquals(HttpStatusCode.InternalServerError, response.status)
+        assertFalse(body.contains("alice"))
+        assertFalse(body.contains("raw-token"))
+        assertTrue(body.contains("internal server error"))
+    }
+
+    /**
+     * 登录失败审计需要包含来源和 UA 摘要，便于后台区分本机误输与异常探测。
+     */
+    @Test
+    fun `failed login audit should include source user agent count and time`() = testApplication {
+        val records = mutableListOf<WebUiAuditRecord>()
+        val authService = buildAuthService()
+        authService.bootstrapCredentials()
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(
+                    sink = { record -> records += record },
+                    clockMillis = { 1779254400000L },
+                ),
+            )
+        }
+
+        val client = createWebUiClient()
+        val failed = client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.UserAgent, "Mozilla/5.0 WebUI-Smoke")
+            setBody(WebUiLoginRequestDto(password = "wrong-password"))
+        }
+
+        val loginAudit = records.first { it.target == "login" && !it.success }
+        assertEquals(HttpStatusCode.Unauthorized, failed.status)
+        assertTrue(loginAudit.detailSummary.contains("sourceIp="))
+        assertTrue(loginAudit.detailSummary.contains("userAgent=Mozilla/5.0"))
+        assertTrue(loginAudit.detailSummary.contains("failureCount=1"))
+        assertTrue(loginAudit.detailSummary.contains("occurredAtEpochMillis=1779254400000"))
+    }
+
     @Test
     fun `authenticated runtime and config routes should respond successfully after forced password change`() = testApplication {
         val authService = buildAuthService()
@@ -148,14 +276,15 @@ class WebUiRouteSmokeTest {
         val firstLogin = webUiClient.post("/api/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(WebUiLoginRequestDto(password = bootstrapPassword))
-        }.body<WebUiAuthResponseDto>()
-        val firstToken = firstLogin.token!!
+        }
+        val firstAuth = extractLoginCookies(firstLogin)
         val forcedBlocked = webUiClient.get("/api/runtime/summary") {
-            header(HttpHeaders.Authorization, "Bearer $firstToken")
+            header(HttpHeaders.Cookie, firstAuth.cookieHeader())
         }
         val changed = webUiClient.post("/api/auth/change-password") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $firstToken")
+            header(HttpHeaders.Cookie, firstAuth.cookieHeader())
+            header("X-CSRF-Token", firstAuth.csrfToken)
             setBody(
                 WebUiChangePasswordRequestDto(
                     currentPassword = bootstrapPassword,
@@ -166,33 +295,33 @@ class WebUiRouteSmokeTest {
         val relogin = webUiClient.post("/api/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(WebUiLoginRequestDto(password = "Better123!@"))
-        }.body<WebUiAuthResponseDto>()
-        val token = relogin.token!!
+        }
+        val auth = extractLoginCookies(relogin)
         val runtimeResponse = webUiClient.get("/api/runtime/summary") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val configResponse = webUiClient.get("/api/config/bot") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val rootResponse = webUiClient.get("/") {
-            header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val settingsPathResponse = webUiClient.get("/settings") {
-            header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val subscriptionsPathResponse = webUiClient.get("/subscriptions") {
-            header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val logsPathResponse = webUiClient.get("/logs") {
-            header(HttpHeaders.Cookie, "${top.bilibili.webui.routes.WebUiTokenCookieName}=$token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val reactScriptResponse = webUiClient.get("/assets/app.js")
         val reactStyleResponse = webUiClient.get("/assets/app.css")
         val sessionProbe = webUiClient.get("/api/auth/session") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiSessionDto>()
 
-        assertTrue(firstLogin.mustChangePassword)
+        assertTrue(firstLogin.body<WebUiAuthResponseDto>().mustChangePassword)
         assertEquals(HttpStatusCode.Forbidden, forcedBlocked.status)
         assertEquals(HttpStatusCode.OK, changed.status)
         assertEquals(HttpStatusCode.OK, runtimeResponse.status)
@@ -256,27 +385,31 @@ class WebUiRouteSmokeTest {
         }
 
         val client = createWebUiClient()
-        val token = reloginForPhase3(authService, bootstrapPassword)
+        val auth = reloginForPhase3(authService, bootstrapPassword)
         val unauthenticated = client.post("/api/subscriptions") {
             contentType(ContentType.Application.Json)
             setBody(WebUiSubscriptionCreateRequestDto(type = "dynamic"))
         }
         val invalidCreateMissingConfirmation = client.post("/api/subscriptions") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "md12345", targetGroup = "10001"))
         }
         val invalidDeleteMissingConfirmation = client.delete("/api/subscriptions/missing") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
         }
         val invalidCreate = client.post("/api/subscriptions") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody("""{"type":"bangumi","bangumiId":"md12345","targetGroup":"10001","confirmationPassword":"Better123!@"}""")
         }
         val invalidDelete = client.delete("/api/subscriptions/missing") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
 
@@ -337,67 +470,77 @@ class WebUiRouteSmokeTest {
             )
         }
 
-        val token = reloginForPhase3(authService, bootstrapPassword)
+        val auth = reloginForPhase3(authService, bootstrapPassword)
         val client = createWebUiClient()
         val filters = client.get("/api/subscriptions/dynamic%3A123/filters") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiSubscriptionFilterListDto>()
         val filterKey = filters.filters.first().key
         val filterMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/filters") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionFilterSaveRequestDto(key = filterKey, kind = "regex", mode = "white", content = "^new"))
         }
         val templates = client.get("/api/subscriptions/dynamic%3A123/templates") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiSubscriptionTemplateListDto>()
         val templateMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/templates") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionTemplateSaveRequestDto(type = "dynamic", name = "WebTpl", content = "{name}"))
         }
         val randomMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionTemplateRandomRequestDto(enabled = true))
         }
         val atAllMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/atall") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionAtAllSaveRequestDto(type = "直播", targetGroups = listOf("onebot11:group:10001")))
         }
         val themeMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/theme") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionThemeSaveRequestDto(color = "#AABBCC"))
         }
         val filterSaved = client.post("/api/subscriptions/dynamic%3A123/filters") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody("""{"key":"$filterKey","kind":"regex","mode":"white","content":"^new","confirmationPassword":"Better123!@"}""")
         }
         val templateSaved = client.post("/api/subscriptions/dynamic%3A123/templates") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody("""{"type":"dynamic","name":"WebTpl","content":"{name}","confirmationPassword":"Better123!@"}""")
         }
         val randomSaved = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody("""{"enabled":true,"confirmationPassword":"Better123!@"}""")
         }
         val atAllSaved = client.post("/api/subscriptions/dynamic%3A123/atall") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody("""{"type":"直播","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
         }
         val themeSaved = client.post("/api/subscriptions/dynamic%3A123/theme") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody("""{"color":"#AABBCC","confirmationPassword":"Better123!@"}""")
         }
         val theme = client.get("/api/subscriptions/dynamic%3A123/theme") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiSubscriptionThemeDto>()
 
         assertEquals(listOf("r0"), filters.filters.map { it.prefix })
@@ -445,10 +588,12 @@ class WebUiRouteSmokeTest {
         val firstLogin = client.post("/api/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(WebUiLoginRequestDto(password = bootstrapPassword))
-        }.body<WebUiAuthResponseDto>()
+        }
+        val firstAuth = extractLoginCookies(firstLogin)
         val failedChange = client.post("/api/auth/change-password") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer ${firstLogin.token!!}")
+            header(HttpHeaders.Cookie, firstAuth.cookieHeader())
+            header("X-CSRF-Token", firstAuth.csrfToken)
             setBody(
                 WebUiChangePasswordRequestDto(
                     currentPassword = "wrong-password",
@@ -458,7 +603,8 @@ class WebUiRouteSmokeTest {
         }
         val changed = client.post("/api/auth/change-password") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer ${firstLogin.token!!}")
+            header(HttpHeaders.Cookie, firstAuth.cookieHeader())
+            header("X-CSRF-Token", firstAuth.csrfToken)
             setBody(
                 WebUiChangePasswordRequestDto(
                     currentPassword = bootstrapPassword,
@@ -469,13 +615,15 @@ class WebUiRouteSmokeTest {
         val relogin = client.post("/api/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(WebUiLoginRequestDto(password = "Better123!@"))
-        }.body<WebUiAuthResponseDto>()
+        }
+        val reloginAuth = extractLoginCookies(relogin)
         val biliConfigSnapshot = client.get("/api/config/bili-config") {
-            header(HttpHeaders.Authorization, "Bearer ${relogin.token!!}")
+            header(HttpHeaders.Cookie, reloginAuth.cookieHeader())
         }.body<WebUiConfigFileDto>()
         val deniedSave = client.post("/api/config/bili-config") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer ${relogin.token!!}")
+            header(HttpHeaders.Cookie, reloginAuth.cookieHeader())
+            header("X-CSRF-Token", reloginAuth.csrfToken)
             setBody(
                 WebUiBiliConfigWriteRequestDto(
                     snapshotToken = biliConfigSnapshot.snapshotToken,
@@ -520,21 +668,22 @@ class WebUiRouteSmokeTest {
             )
         }
 
-        val token = reloginForPhase3(authService, bootstrapPassword)
+        val auth = reloginForPhase3(authService, bootstrapPassword)
         val client = createWebUiClient()
         val logout = client.post("/api/auth/logout") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
         }
         val runtimeAfterLogout = client.get("/api/runtime/summary") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val sessionAfterLogout = client.get("/api/auth/session") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiSessionDto>()
 
         assertEquals(HttpStatusCode.OK, logout.status)
         assertTrue(logout.headers.getAll(HttpHeaders.SetCookie).orEmpty().any { cookie ->
-            cookie.contains("${top.bilibili.webui.routes.WebUiTokenCookieName}=") && cookie.contains("Max-Age=0")
+            cookie.contains("${top.bilibili.webui.routes.WebUiSessionCookieName}=") && cookie.contains("Max-Age=0")
         })
         assertEquals(HttpStatusCode.Unauthorized, runtimeAfterLogout.status)
         assertEquals(false, sessionAfterLogout.authenticated)
@@ -603,19 +752,20 @@ class WebUiRouteSmokeTest {
             )
         }
 
-        val token = reloginForPhase3(authService, bootstrapPassword)
+        val auth = reloginForPhase3(authService, bootstrapPassword)
         val currentSnapshot = createWebUiClient().get("/api/config/bili-config") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiConfigFileDto>()
         val dataSnapshot = createWebUiClient().get("/api/config/bili-data") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiConfigFileDto>()
         val botSnapshot = createWebUiClient().get("/api/config/bot") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiConfigFileDto>()
         val missingConfirmation = createWebUiClient().post("/api/config/bili-config") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(
                 WebUiBiliConfigWriteRequestDto(
                     snapshotToken = currentSnapshot.snapshotToken,
@@ -630,7 +780,8 @@ class WebUiRouteSmokeTest {
         }
         val staleSnapshot = createWebUiClient().post("/api/config/bili-config") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(
                 WebUiBiliConfigWriteRequestDto(
                     snapshotToken = "stale-token",
@@ -645,7 +796,8 @@ class WebUiRouteSmokeTest {
         }
         val dataSaved = createWebUiClient().post("/api/config/bili-data") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(
                 top.bilibili.webui.model.WebUiBiliDataWriteRequestDto(
                     snapshotToken = dataSnapshot.snapshotToken,
@@ -656,7 +808,8 @@ class WebUiRouteSmokeTest {
         }
         val botStaleSnapshot = createWebUiClient().post("/api/config/bot") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(
                 top.bilibili.webui.model.WebUiBotConfigWriteRequestDto(
                     snapshotToken = "stale-token",
@@ -671,7 +824,8 @@ class WebUiRouteSmokeTest {
         }
         val botSaved = createWebUiClient().post("/api/config/bot") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(
                 top.bilibili.webui.model.WebUiBotConfigWriteRequestDto(
                     snapshotToken = botSnapshot.snapshotToken,
@@ -686,7 +840,8 @@ class WebUiRouteSmokeTest {
         }
         val saved = createWebUiClient().post("/api/config/bili-config") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(
                 WebUiBiliConfigWriteRequestDto(
                     snapshotToken = currentSnapshot.snapshotToken,
@@ -743,35 +898,38 @@ class WebUiRouteSmokeTest {
             )
         }
 
-        val token = reloginForPhase3(authService, bootstrapPassword)
+        val auth = reloginForPhase3(authService, bootstrapPassword)
         val sourceList = createWebUiClient().get("/api/logs/sources") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val logWindow = createWebUiClient().get("/api/logs/main?tail=20") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val exportedLog = createWebUiClient().get("/api/logs/main/export?tail=20") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val clearMissingConfirmation = createWebUiClient().post("/api/logs/main/clear") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val clearedLog = createWebUiClient().post("/api/logs/main/clear") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
         val logWindowAfterClear = createWebUiClient().get("/api/logs/main?tail=20") {
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val reload = createWebUiClient().post("/api/actions/reload-config") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
         val restart = createWebUiClient().post("/api/actions/request-restart") {
             contentType(ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
 
@@ -926,16 +1084,17 @@ class WebUiRouteSmokeTest {
     private suspend fun io.ktor.server.testing.ApplicationTestBuilder.reloginForPhase3(
         authService: WebUiAuthService,
         bootstrapPassword: String,
-    ): String {
+    ): LoginCookies {
         val client = createWebUiClient()
-        client.post("/api/auth/login") {
+        val initialLogin = client.post("/api/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(WebUiLoginRequestDto(password = bootstrapPassword))
         }
+        val initialAuth = extractLoginCookies(initialLogin)
         client.post("/api/auth/change-password") {
             contentType(ContentType.Application.Json)
-            val bootstrapToken = authService.login(bootstrapPassword).token!!
-            header(HttpHeaders.Authorization, "Bearer $bootstrapToken")
+            header(HttpHeaders.Cookie, initialAuth.cookieHeader())
+            header("X-CSRF-Token", initialAuth.csrfToken)
             setBody(
                 WebUiChangePasswordRequestDto(
                     currentPassword = bootstrapPassword,
@@ -943,10 +1102,11 @@ class WebUiRouteSmokeTest {
                 ),
             )
         }
-        return client.post("/api/auth/login") {
+        val relogin = client.post("/api/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(WebUiLoginRequestDto(password = "Better123!@"))
-        }.body<WebUiAuthResponseDto>().token!!
+        }
+        return extractLoginCookies(relogin)
     }
 
     /**
@@ -957,5 +1117,28 @@ class WebUiRouteSmokeTest {
         install(ContentNegotiation) {
             json(top.bilibili.utils.json)
         }
+    }
+
+    /**
+     * 登录响应只通过 Set-Cookie 下发会话，测试用 cookie 结构集中封装便于复用。
+     */
+    private fun extractLoginCookies(response: io.ktor.client.statement.HttpResponse): LoginCookies {
+        val setCookies = response.headers.getAll(HttpHeaders.SetCookie).orEmpty()
+        val sessionCookie = setCookies.first { it.startsWith("${top.bilibili.webui.routes.WebUiSessionCookieName}=") }.substringBefore(";")
+        val csrfCookie = setCookies.first { it.startsWith("${top.bilibili.webui.routes.WebUiCsrfCookieName}=") }.substringBefore(";")
+        return LoginCookies(
+            sessionCookie = sessionCookie,
+            csrfToken = csrfCookie.substringAfter('='),
+        )
+    }
+
+    /**
+     * 认证请求复用 session 和 CSRF cookie，避免测试里重复拼接 header 片段。
+     */
+    private data class LoginCookies(
+        val sessionCookie: String,
+        val csrfToken: String,
+    ) {
+        fun cookieHeader(): String = "$sessionCookie; ${top.bilibili.webui.routes.WebUiCsrfCookieName}=$csrfToken"
     }
 }

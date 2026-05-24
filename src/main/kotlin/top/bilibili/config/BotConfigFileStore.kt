@@ -8,6 +8,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.nio.file.StandardCopyOption
 
 /**
  * 描述一次 bot 配置文件加载的结果及其副作用。
@@ -26,6 +27,7 @@ internal class BotConfigFileStore(
     private val yaml: Yaml = Yaml.default,
 ) {
     private val botConfigFile = File(configDir, "bot.yml")
+    private val maxBackupFiles = 3
 
     /**
      * 统一加载 bot.yml；缺失时生成默认文件，旧结构命中时自动按标准结构写回。
@@ -66,7 +68,75 @@ internal class BotConfigFileStore(
         }
         val canonicalConfig = CanonicalBotConfigDocument.fromRuntimeConfig(config.normalizedBotConfig())
         val content = yaml.encodeToString(canonicalConfig)
-        botConfigFile.writeText(content, StandardCharsets.UTF_8)
+        writeAtomically(content)
+    }
+
+    /**
+     * bot.yml 写入先落临时文件，再轮转备份并原子替换目标，避免中途失败留下半写配置。
+     */
+    private fun writeAtomically(content: String) {
+        val tempFile = File.createTempFile("bot", ".yml.tmp", configDir)
+        try {
+            tempFile.writeText(content, StandardCharsets.UTF_8)
+            rotateBackups()
+            moveReplacing(tempFile, botConfigFile)
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+        }
+    }
+
+    /**
+     * 备份只保留最近几份，防止频繁 WebUI 保存把 config 目录无限撑大。
+     */
+    private fun rotateBackups() {
+        if (!botConfigFile.exists()) {
+            return
+        }
+        for (index in maxBackupFiles downTo 1) {
+            val backup = backupFile(index)
+            if (!backup.exists()) {
+                continue
+            }
+            if (index == maxBackupFiles) {
+                backup.delete()
+            } else {
+                moveReplacing(backup, backupFile(index + 1))
+            }
+        }
+        java.nio.file.Files.copy(
+            botConfigFile.toPath(),
+            backupFile(1).toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    }
+
+    /**
+     * 同卷移动优先使用 ATOMIC_MOVE，不支持时回退到普通替换，保证跨平台测试可运行。
+     */
+    private fun moveReplacing(source: File, target: File) {
+        runCatching {
+            java.nio.file.Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }.getOrElse {
+            java.nio.file.Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
+    }
+
+    /**
+     * 备份命名固定在 bot.yml.bak.N，便于人工回滚且不泄露本机绝对路径。
+     */
+    private fun backupFile(index: Int): File {
+        return File(configDir, "bot.yml.bak.$index")
     }
 }
 

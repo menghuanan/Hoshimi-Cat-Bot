@@ -32,6 +32,67 @@ class WebUiAuditServiceTest {
         assertTrue(records.first().detailSummary.contains("password=<redacted>"))
     }
 
+    /**
+     * 审计 sink 需要覆盖 header、JSON 和大小写变体，避免外围路由把原始凭据带进日志。
+     */
+    @Test
+    fun `audit details should redact sensitive header and json variants`() {
+        val records = mutableListOf<WebUiAuditRecord>()
+        val auditService = WebUiAuditService(
+            sink = { record -> records += record },
+        )
+
+        auditService.recordAuthEvent(
+            target = "login",
+            success = false,
+            outcome = "LOGIN_FAILED",
+            detailSummary = """Authorization: Bearer raw-token Cookie: SID=raw-cookie Set-Cookie: token=raw-set-cookie {"password":"raw-password","app_secret":"raw-secret"}""",
+        )
+
+        val detail = records.first().detailSummary
+        assertFalse(detail.contains("raw-token"))
+        assertFalse(detail.contains("raw-cookie"))
+        assertFalse(detail.contains("raw-set-cookie"))
+        assertFalse(detail.contains("raw-password"))
+        assertFalse(detail.contains("raw-secret"))
+        assertTrue(detail.contains("Authorization=<redacted>"))
+        assertTrue(detail.contains("Cookie=<redacted>"))
+        assertTrue(detail.contains("Set-Cookie=<redacted>"))
+        assertTrue(detail.contains(""""password":"<redacted>""""))
+        assertTrue(detail.contains(""""app_secret":"<redacted>""""))
+    }
+
+    /**
+     * 登录失败审计由服务层集中补足来源、UA 摘要、失败次数和时间，保证路由只传原始请求上下文。
+     */
+    @Test
+    fun `login failures should include source user agent count and timestamp`() {
+        val records = mutableListOf<WebUiAuditRecord>()
+        val auditService = WebUiAuditService(
+            sink = { record -> records += record },
+            clockMillis = { 1779254400000L },
+        )
+
+        auditService.recordLoginFailure(
+            sourceIp = "192.168.1.20",
+            userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            message = "invalid credentials",
+        )
+        auditService.recordLoginFailure(
+            sourceIp = "192.168.1.20",
+            userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            message = "invalid credentials",
+        )
+
+        val second = records.last()
+        assertEquals("auth", second.eventType)
+        assertEquals("login", second.target)
+        assertTrue(second.detailSummary.contains("sourceIp=192.168.1.20"))
+        assertTrue(second.detailSummary.contains("userAgent=Mozilla/5.0"))
+        assertTrue(second.detailSummary.contains("failureCount=2"))
+        assertTrue(second.detailSummary.contains("occurredAtEpochMillis=1779254400000"))
+    }
+
     @Test
     fun `denied access should emit failure audit records`() {
         val records = mutableListOf<WebUiAuditRecord>()

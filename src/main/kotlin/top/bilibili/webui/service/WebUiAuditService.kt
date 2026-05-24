@@ -28,6 +28,8 @@ class WebUiAuditService(
             record.detailSummary,
         )
     },
+    private val clockMillis: () -> Long = { System.currentTimeMillis() },
+    private val loginFailureCountBySource: MutableMap<String, Int> = mutableMapOf(),
 ) {
     /**
      * 登录、改密等认证事件统一记录成功或失败结果，方便排查本地管理面认证链路。
@@ -129,14 +131,62 @@ class WebUiAuditService(
     }
 
     /**
+     * 登录失败审计集中补足来源上下文和失败计数，避免路由层重复拼接审计字段。
+     */
+    fun recordLoginFailure(
+        sourceIp: String?,
+        userAgent: String?,
+        message: String,
+    ) {
+        val sourceKey = sourceIp?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+        val failureCount = (loginFailureCountBySource[sourceKey] ?: 0) + 1
+        loginFailureCountBySource[sourceKey] = failureCount
+        recordAuthEvent(
+            target = "login",
+            success = false,
+            outcome = "LOGIN_FAILED",
+            detailSummary = listOf(
+                "sourceIp=$sourceKey",
+                "userAgent=${summarizeUserAgent(userAgent)}",
+                "failureCount=$failureCount",
+                "occurredAtEpochMillis=${clockMillis()}",
+                "message=$message",
+            ).joinToString(" "),
+        )
+    }
+
+    /**
      * 常见 secret 键统一替换为 `<redacted>`，避免参数串或描述文本被原样写入日志。
      */
     private fun sanitizeDetailSummary(detailSummary: String): String {
-        val sensitivePatterns = listOf("cookie", "token", "password", "secret")
-        return sensitivePatterns.fold(detailSummary) { sanitized, keyword ->
-            Regex("""(?i)\b$keyword=([^\s;]+)""").replace(sanitized) { matchResult ->
-                "${matchResult.groupValues[0].substringBefore('=')}=<redacted>"
-            }
+        val sensitiveKeyPattern = """(?:authorization|cookie|set-cookie|token|password|secret|app[_-]?secret|bot[_-]?token)"""
+        val keyValueRedacted = Regex("""(?i)\b($sensitiveKeyPattern)\s*=\s*([^\s;]+)""").replace(detailSummary) { matchResult ->
+            "${matchResult.groupValues[1]}=<redacted>"
         }
+        val authorizationRedacted = Regex("""(?i)\b(Authorization)\s*:\s*[^\s]+(?:\s+[^\s;{}]+)?""").replace(keyValueRedacted) { matchResult ->
+            "${matchResult.groupValues[1]}=<redacted>"
+        }
+        val setCookieRedacted = Regex("""(?i)\b(Set-Cookie)\s*:\s*[^\s;{}]+""").replace(authorizationRedacted) { matchResult ->
+            "${matchResult.groupValues[1]}=<redacted>"
+        }
+        val headerRedacted = Regex("""(?i)\b(Cookie)\s*:\s*.*?(?=\s+Set-Cookie=|\s+\{|\s*$)""").replace(setCookieRedacted) { matchResult ->
+            "${matchResult.groupValues[1]}=<redacted>"
+        }
+        return Regex("""(?i)("($sensitiveKeyPattern)"\s*:\s*")([^"]*)(")""").replace(headerRedacted) { matchResult ->
+            "${matchResult.groupValues[1]}<redacted>${matchResult.groupValues[4]}"
+        }
+    }
+
+    /**
+     * User-Agent 只保留首个产品摘要，避免审计日志记录过长浏览器指纹。
+     */
+    private fun summarizeUserAgent(userAgent: String?): String {
+        return userAgent
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.split(Regex("""\s+"""))
+            ?.firstOrNull()
+            ?.take(80)
+            ?: "unknown"
     }
 }

@@ -98,13 +98,13 @@ class WebUiRuntimeFacade(
         observability: PlatformObservabilitySnapshot,
     ): WebUiWebSocketStatusDto {
         val activeClients = observability.clients.filter { client -> client.webSocketSessionActive }
-        val transports = observability.clients.map { client -> "${client.adapterName}/${client.transportName}" }
+        val transports = observability.clients.map { client -> sanitizeRuntimeText("${client.adapterName}/${client.transportName}") }
         return WebUiWebSocketStatusDto(
             connected = runtimeStatus.connected || activeClients.isNotEmpty(),
             reconnectAttempts = runtimeStatus.reconnectAttempts,
             activeSessionCount = activeClients.size,
             transports = transports,
-            note = observability.note,
+            note = observability.note?.let(::sanitizeRuntimeText),
         )
     }
 
@@ -155,9 +155,28 @@ private fun PushDeliveryRecordSnapshot.toWebUiDto(): WebUiRecentPushRecordDto {
         },
         success = success,
         statusLabel = if (success) "已发送" else "发送失败",
-        summary = summary,
-        target = target,
+        summary = sanitizeRuntimeText(summary),
+        target = target?.let(::sanitizeRuntimeText),
     )
+}
+
+/**
+ * 运行态文本只保留 Dashboard 可展示摘要，屏蔽本机路径、用户名、内网地址和凭据键值。
+ */
+private fun sanitizeRuntimeText(value: String): String {
+    return value
+        .replace(Regex("""(?i)\bauthorization\s*[:=]\s*bearer\s+[^\s,;]+"""), "authorization: bearer <redacted>")
+        .replace(Regex("""(?i)\bbearer\s+[^\s,;]+"""), "bearer <redacted>")
+        .replace(Regex("""(?i)\b(token|password|secret|cookie|api[_-]?key|access[_-]?token)\s*[:=]\s*[^\s,;]+"""), "$1=<redacted>")
+        .replace(Regex("""\b(?:10|127)\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"""), "<redacted>")
+        .replace(Regex("""\b192\.168\.\d{1,3}\.\d{1,3}\b"""), "<redacted>")
+        .replace(Regex("""\b172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}\b"""), "<redacted>")
+        .replace(Regex("""\b169\.254\.\d{1,3}\.\d{1,3}\b"""), "<redacted>")
+        .replace(Regex("""(?i)(?<![\w:])::1(?![\w:])"""), "<redacted>")
+        .replace(Regex("""(?i)\b(?:fc|fd)[0-9a-f]{2}:[0-9a-f:]+\b"""), "<redacted>")
+        .replace(Regex("""(?i)\bfe80:[0-9a-f:]+\b"""), "<redacted>")
+        .replace(Regex("""\b[A-Za-z]:\\[^\s,;]+"""), "<redacted>")
+        .replace(Regex("""(?<!:)\/(?:home|Users|mnt|var|etc|opt|srv|root|tmp|data)[^\s,;]*"""), "<redacted>")
 }
 
 /**

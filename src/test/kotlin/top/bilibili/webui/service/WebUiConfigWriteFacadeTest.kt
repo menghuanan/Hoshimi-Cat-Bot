@@ -15,6 +15,7 @@ import top.bilibili.TemplateConfig
 import top.bilibili.TimeDisplayMode
 import top.bilibili.TranslateConfig
 import top.bilibili.config.BotConfig
+import top.bilibili.config.BotConfigFileStore
 import top.bilibili.config.GroupAdminConfig
 import top.bilibili.config.NapCatConfig
 import top.bilibili.config.PlatformConfig
@@ -31,6 +32,7 @@ import top.bilibili.webui.model.WebUiGroupAdminConfigWriteDto
 import top.bilibili.webui.model.WebUiRecommendedAction
 import top.bilibili.webui.model.WebUiSaveEffectLevel
 import top.bilibili.webui.model.WebUiTargetConfigWriteDto
+import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -498,6 +500,7 @@ class WebUiConfigWriteFacadeTest {
                 webUiCredentialFile = "custom-webui.json",
                 webUiTokenTtlSeconds = 7200L,
                 webUiStaticDir = "static",
+                confirmationPassword = "Better123!@",
                 targets = listOf(WebUiTargetConfigWriteDto("group", 10086L, "onebot11:group:10086")),
                 admins = listOf(
                     WebUiGroupAdminConfigWriteDto(
@@ -518,6 +521,8 @@ class WebUiConfigWriteFacadeTest {
         assertEquals("raw-bot-token", savedBotConfig?.platform?.qqOfficial?.botToken)
         assertEquals(true, savedBotConfig?.webui?.enabled)
         assertEquals("0.0.0.0", savedBotConfig?.webui?.host)
+        assertTrue(result.message.contains("high-risk", ignoreCase = true))
+        assertTrue(result.message.contains("0.0.0.0"))
         assertEquals(19080, savedBotConfig?.webui?.port)
         assertEquals("webui-credentials.json", savedBotConfig?.webui?.credentialFile)
         assertEquals("", savedBotConfig?.webui?.staticDir)
@@ -527,6 +532,54 @@ class WebUiConfigWriteFacadeTest {
         assertEquals(1, savedBotConfig?.admins?.size)
         assertEquals(10086L, savedBotConfig?.admins?.firstOrNull()?.groupId)
         assertEquals(1, savedBotConfig?.firstRunFlag)
+    }
+
+    /**
+     * WebUI 绑定所有网卡是高风险暴露面；未带确认口令时服务层必须拒绝写盘。
+     */
+    @Test
+    fun `bot config writes should reject wildcard webui host without explicit confirmation`() {
+        var saveCalls = 0
+        val currentBotConfig = BotConfig(
+            webui = WebUiConfig(
+                enabled = true,
+                host = "127.0.0.1",
+                port = 18080,
+            ),
+        )
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { currentBotConfig },
+            ),
+            botConfigProvider = { currentBotConfig },
+            saveBotConfigAction = {
+                saveCalls += 1
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(botConfigProvider = { currentBotConfig }).readBotConfig().snapshotToken
+        val result = facade.saveBotConfig(
+            WebUiBotConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                platformType = "ONEBOT11",
+                adapter = "onebot11",
+                oneBot11Host = "127.0.0.1",
+                oneBot11Port = 3001,
+                oneBot11Token = "",
+                webUiEnabled = true,
+                webUiHost = "0.0.0.0",
+                webUiPort = 18080,
+                confirmationPassword = "",
+            ),
+        )
+
+        assertFalse(result.success)
+        assertEquals(WebUiSaveEffectLevel.REJECTED_VALIDATION, result.effectiveLevel)
+        assertTrue(result.validationErrors.any { it.contains("webUiHost") }, result.validationErrors.toString())
+        assertEquals(0, saveCalls)
     }
 
     /**
@@ -841,6 +894,40 @@ class WebUiConfigWriteFacadeTest {
         assertEquals(WebUiSaveEffectLevel.REJECTED_CONFLICT, result.effectiveLevel)
         assertEquals(WebUiRecommendedAction.REFRESH_AND_RETRY, result.recommendedAction)
         assertEquals(0, savedBiliConfigCalls)
+    }
+
+    /**
+     * bot.yml owner 写入需要 temp-file + rename，并保留有上限的备份轮转，避免半写文件覆盖可恢复状态。
+     */
+    @Test
+    fun `bot config file store should rotate bounded backups around atomic saves`() {
+        val configDir = Files.createTempDirectory("webui-bot-config-store").toFile()
+        try {
+            val store = BotConfigFileStore(configDir)
+
+            repeat(8) { index ->
+                store.save(
+                    BotConfig(
+                        webui = WebUiConfig(
+                            enabled = true,
+                            host = "127.0.0.1",
+                            port = 18080 + index,
+                        ),
+                    ),
+                )
+            }
+
+            val configText = configDir.resolve("bot.yml").readText(Charsets.UTF_8)
+            val backups = configDir
+                .listFiles { file -> file.name.startsWith("bot.yml.bak.") }
+                .orEmpty()
+                .sortedBy { file -> file.name }
+            assertTrue(configText.contains("18087"))
+            assertTrue(backups.isNotEmpty())
+            assertTrue(backups.size <= 3, backups.map { it.name }.toString())
+        } finally {
+            configDir.deleteRecursively()
+        }
     }
 
     private fun configuredBiliData(blacklistContacts: Set<String>) = BiliData.apply {

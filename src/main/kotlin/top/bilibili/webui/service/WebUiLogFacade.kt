@@ -4,7 +4,9 @@ import top.bilibili.webui.model.WebUiLogSourceDto
 import top.bilibili.webui.model.WebUiLogSourceListDto
 import top.bilibili.webui.model.WebUiLogWindowDto
 import top.bilibili.webui.model.WebUiLogClearResultDto
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.RandomAccessFile
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -53,9 +55,9 @@ class WebUiLogFacade(
         }
 
         val boundedTailLines = boundedTailLines(tailLines)
-        val lines = logFile.readLines(StandardCharsets.UTF_8)
+        val tailRead = readBoundedTailLines(logFile, lineBudget = tailReadBudget(boundedTailLines))
         // 启动边界以下的旧日志会在服务端统一裁掉，页面只保留本次运行产生的可见行。
-        val visibleLines = filterLogLines(lines)
+        val visibleLines = filterLogLines(tailRead.lines)
         val windowLines = visibleLines.takeLast(boundedTailLines)
         return WebUiLogWindowDto(
             sourceId = sourceId,
@@ -65,7 +67,7 @@ class WebUiLogFacade(
             lineCount = windowLines.size,
             text = windowLines.joinToString(System.lineSeparator()),
             lastModifiedEpochMillis = logFile.lastModified(),
-            hasMore = visibleLines.size > windowLines.size,
+            hasMore = tailRead.truncatedBeforeWindow || visibleLines.size > windowLines.size,
             sourceMissing = false,
         )
     }
@@ -174,6 +176,59 @@ class WebUiLogFacade(
             .sorted()
     }
 
+    /**
+     * tail reader 会多读少量行供启动时间裁切，但仍保持固定上限，避免大日志整文件入内存。
+     */
+    private fun tailReadBudget(requestedTailLines: Int): Int {
+        return maxOf(requestedTailLines * 4, maxTailLines).coerceIn(1, maxTailLines * 8)
+    }
+
+    /**
+     * 从文件尾部按块读取 UTF-8 文本，最多保留固定数量的行，避免 readLines() 把大文件整体载入。
+     */
+    private fun readBoundedTailLines(logFile: File, lineBudget: Int): BoundedTailRead {
+        if (logFile.length() <= 0L) {
+            return BoundedTailRead(emptyList(), truncatedBeforeWindow = false)
+        }
+        val chunks = mutableListOf<ByteArray>()
+        var position = logFile.length()
+        var newlineCount = 0
+        var remainingBytes = tailReadByteBudget(lineBudget)
+        RandomAccessFile(logFile, "r").use { randomAccessFile ->
+            while (position > 0L && newlineCount <= lineBudget && remainingBytes > 0L) {
+                val readSize = minOf(8192L, position, remainingBytes).toInt()
+                val chunk = ByteArray(readSize)
+                position -= readSize
+                remainingBytes -= readSize
+                randomAccessFile.seek(position)
+                randomAccessFile.readFully(chunk)
+                newlineCount += chunk.count { byte -> byte == '\n'.code.toByte() }
+                chunks += chunk
+            }
+        }
+        val bytes = ByteArrayOutputStream()
+        chunks.asReversed().forEach { chunk -> bytes.write(chunk) }
+        val text = bytes.toString(StandardCharsets.UTF_8.name())
+        val normalizedText = text
+            .replace("\r\n", "\n")
+        val shouldDropPartialFirstLine = position > 0L && normalizedText.contains('\n')
+        val lines = normalizedText
+            .trimEnd('\n')
+            .split('\n')
+            .map { line -> line.trimEnd('\r') }
+            .drop(if (shouldDropPartialFirstLine) 1 else 0)
+            .filterNot { line -> line.isEmpty() && text.isEmpty() }
+            .takeLast(lineBudget)
+        return BoundedTailRead(lines = lines, truncatedBeforeWindow = position > 0L)
+    }
+
+    /**
+     * 超长单行日志没有换行可计数，因此额外设置固定字节窗口，保证 tail 不退化成整文件读取。
+     */
+    private fun tailReadByteBudget(lineBudget: Int): Long {
+        return lineBudget.coerceAtLeast(1).toLong() * 8192L
+    }
+
     companion object {
         private val LOG_TIMESTAMP_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
         private val LOG_TIMESTAMP_PATTERN = Regex("""^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+\[[^\]]+]""")
@@ -195,6 +250,14 @@ class WebUiLogFacade(
         }
     }
 }
+
+/**
+ * bounded tail 结果同时返回截断标记，供 hasMore 在不扫描整文件的情况下保持保守提示。
+ */
+private data class BoundedTailRead(
+    val lines: List<String>,
+    val truncatedBeforeWindow: Boolean,
+)
 
 /**
  * 日志来源标题集中收口，便于前端稳定展示且不依赖本地文件名细节。

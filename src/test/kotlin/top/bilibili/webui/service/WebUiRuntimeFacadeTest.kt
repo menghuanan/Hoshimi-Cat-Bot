@@ -217,6 +217,71 @@ class WebUiRuntimeFacadeTest {
         assertEquals("已发送", snapshot.recentPushRecords.last().statusLabel)
     }
 
+    /**
+     * Dashboard 运行态文本需要清洗本机路径、用户名、内网地址和凭据片段，只保留可运营展示的信息。
+     */
+    @Test
+    fun `runtime summary should sanitize sensitive text fields`() {
+        val facade = WebUiRuntimeFacade(
+            lifecycleStateProvider = { "RUNNING" },
+            uptimeSecondsProvider = { 42L },
+            platformAdapterInitializedProvider = { true },
+            webUiEnabledProvider = { true },
+            platformRuntimeStatusProvider = { PlatformRuntimeStatus(connected = true, reconnectAttempts = 0) },
+            platformObservabilityProvider = {
+                PlatformObservabilitySnapshot(
+                    clients = listOf(
+                        PlatformHttpClientSnapshot(
+                            adapterName = "onebot11",
+                            transportName = "napcat",
+                            webSocketSessionActive = true,
+                        ),
+                    ),
+                    note = """connected from C:\Users\alice\bot token=raw-token Authorization: Bearer raw-bearer 192.168.1.20""",
+                )
+            },
+            pushStatisticsProvider = {
+                DailyPushStatsSnapshot(
+                    date = "2026-05-20",
+                    total = 1,
+                    dynamic = 1,
+                    live = 0,
+                    liveClose = 0,
+                    failed = 0,
+                    lastSuccessAtEpochMillis = null,
+                    recentRecords = listOf(
+                        PushDeliveryRecordSnapshot(
+                            timestampEpochMillis = 1779254700000L,
+                            type = "DYNAMIC",
+                            success = true,
+                            summary = """/home/alice/dynamic /mnt/secret/bot secret=raw-secret api_key=raw-key 10.0.0.8""",
+                            target = """http://172.16.0.4:3001/private D:\services\dynamic-bot\config""",
+                        ),
+                    ),
+                )
+            },
+        )
+
+        val snapshot = facade.readSummary()
+        val combinedText = listOf(
+            snapshot.webSocket.note.orEmpty(),
+            snapshot.recentPushRecords.first().summary,
+            snapshot.recentPushRecords.first().target.orEmpty(),
+        ).joinToString(" ")
+
+        assertFalse(combinedText.contains("alice"))
+        assertFalse(combinedText.contains("raw-token"))
+        assertFalse(combinedText.contains("raw-secret"))
+        assertFalse(combinedText.contains("raw-bearer"))
+        assertFalse(combinedText.contains("raw-key"))
+        assertFalse(combinedText.contains("/mnt/secret"))
+        assertFalse(combinedText.contains("""D:\services"""))
+        assertFalse(combinedText.contains("192.168.1.20"))
+        assertFalse(combinedText.contains("10.0.0.8"))
+        assertFalse(combinedText.contains("172.16.0.4"))
+        assertTrue(combinedText.contains("<redacted>"))
+    }
+
     @Test
     fun `host runtime collector should clamp usage percentages`() {
         val tempRoot = Files.createTempDirectory("webui-host-runtime").toFile()
