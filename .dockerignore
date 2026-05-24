@@ -1,6 +1,9 @@
 # Gradle 构建文件
 .gradle
-build/
+# 只保留 Dockerfile 需要的发行 jar，其余 build 产物继续忽略，避免构建上下文膨胀。
+build/*
+!build/libs/
+build/libs/*
 !build/libs/*.jar
 gradle/
 gradlew
