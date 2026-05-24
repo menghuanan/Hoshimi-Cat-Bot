@@ -182,6 +182,38 @@ class WebUiRouteSmokeTest {
     }
 
     /**
+     * 绑定 0.0.0.0 时，同源静态资源仍要按浏览器实际访问的内网地址放行，否则 WebUI 会在脚本阶段白屏。
+     */
+    @Test
+    fun `webui assets should stay reachable for same origin lan access when host is all interfaces`() = testApplication {
+        val authService = buildAuthService()
+        authService.bootstrapCredentials()
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true, host = "0.0.0.0", port = 18080).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(sink = {}),
+            )
+        }
+
+        val origin = "http://192.168.10.4:18080"
+        val response = createWebUiClient().get("/assets/app.js") {
+            header(HttpHeaders.Origin, origin)
+            header(HttpHeaders.Host, "192.168.10.4:18080")
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(origin, response.headers[HttpHeaders.AccessControlAllowOrigin])
+        assertTrue(response.bodyAsText().contains("createRoot"))
+    }
+
+    /**
      * 未处理异常对浏览器只返回脱敏错误，不能把本机路径、用户名或 token 字样透出。
      */
     @Test

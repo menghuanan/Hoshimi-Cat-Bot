@@ -17,6 +17,7 @@ import io.ktor.server.plugins.PayloadTooLargeException
 import io.ktor.server.plugins.bodylimit.RequestBodyLimit
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
+import io.ktor.server.request.header
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.routing
@@ -243,7 +244,8 @@ private fun ApplicationCall.applyWebUiSecurityHeaders() {
 private fun ApplicationCall.applyWebUiCors(settings: WebUiSettings): Boolean {
     response.headers.appendIfAbsent(HttpHeaders.Vary, HttpHeaders.Origin)
     val origin = request.headers[HttpHeaders.Origin] ?: return true
-    if (origin !in allowedWebUiOrigins(settings)) {
+    // 0.0.0.0 允许浏览器按实际访问地址发起同源请求，避免内网 IP 或主机名被误当成跨域。
+    if (origin !in allowedWebUiOrigins(settings) && origin != currentRequestOrigin()) {
         return false
     }
     response.headers.appendIfAbsent(HttpHeaders.AccessControlAllowOrigin, origin)
@@ -254,7 +256,7 @@ private fun ApplicationCall.applyWebUiCors(settings: WebUiSettings): Boolean {
 }
 
 /**
- * 允许列表从当前监听地址派生；0.0.0.0 只放开本机显式 Origin，不使用通配符。
+ * 允许列表从当前监听地址派生；0.0.0.0 仍不使用通配符，实际访问地址由同源回退单独放行。
  */
 private fun allowedWebUiOrigins(settings: WebUiSettings): Set<String> {
     val hosts = linkedSetOf(settings.host.trim())
@@ -266,6 +268,17 @@ private fun allowedWebUiOrigins(settings: WebUiSettings): Set<String> {
         .filter { it.isNotBlank() && it != "0.0.0.0" }
         .flatMap { host -> listOf("http://$host:${settings.port}", "https://$host:${settings.port}") }
         .toSet()
+}
+
+/**
+ * 同源回退只认当前请求实际使用的 Host，确保用 NAS 内网 IP 或主机名访问时静态资源仍可加载。
+ */
+private fun ApplicationCall.currentRequestOrigin(): String? {
+    val host = request.header(HttpHeaders.Host)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    return "http://$host"
 }
 
 /**
