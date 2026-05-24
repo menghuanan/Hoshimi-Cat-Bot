@@ -84,6 +84,33 @@ describe('webui domain hooks', () => {
     }))
   })
 
+  /**
+   * 首页只渲染清洗后的最近推送记录，不把后端原始 target 字段继续带到 dashboard 视图里。
+   */
+  it('useRuntimeSummary should sanitize recent push records before dashboard rendering', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {
+      recentPushRecords: [{
+        timestampEpochMillis: 1_700_000_000_000,
+        type: 'dynamic',
+        typeLabel: '动态',
+        success: true,
+        statusLabel: '成功',
+        summary: '测试推送',
+        target: 'onebot11:group:10001',
+      }],
+    }))
+
+    const {result} = renderHook(() => useRuntimeSummary({fetchImpl, pollIntervalMs: 100_000}))
+
+    await waitFor(() => expect(result.current.dashboard.recentPushRecords).toEqual([{
+      timestampEpochMillis: 1_700_000_000_000,
+      typeLabel: '动态',
+      statusLabel: '成功',
+      summary: '测试推送',
+    }]))
+    expect(result.current.dashboard.recentPushRecords[0]).not.toHaveProperty('target')
+  })
+
   it('useSettingsFiles should keep snapshot tokens and proxyUpdateMode when saving BiliConfig', async () => {
     const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)

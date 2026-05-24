@@ -108,4 +108,15 @@ export type WebUiDashboardRuntimeFields = {
   webSocketConnected: boolean | null
   todayPushTotal: number | null
   recentPushRecordsCount: number
+  recentPushRecords: WebUiDashboardRecentPushRecord[]
+}
+
+/**
+ * 首页最近推送记录只保留展示所需字段，不继续透出后端原始 target 或内部类型值。
+ */
+export type WebUiDashboardRecentPushRecord = {
+  timestampEpochMillis: number | null
+  typeLabel: string
+  statusLabel: string
+  summary: string
 }

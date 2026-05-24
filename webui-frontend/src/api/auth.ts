@@ -1,4 +1,3 @@
-import { clearWebUiToken, writeWebUiToken } from '../utils/storage'
 import { requestJson, type WebUiJsonRequestOptions } from './http'
 import type { WebUiAuthResponse } from '../types/auth'
 
@@ -12,7 +11,7 @@ export type WebUiAuthNavigationHandlers = {
 }
 
 /**
- * 登录成功后保存 token，再把后续导航判断交给统一的结果处理函数。
+ * 登录只负责提交密码并返回会话状态，不再把 token 写进前端存储。
  */
 export async function loginWithPassword(
   password: string,
@@ -25,14 +24,11 @@ export async function loginWithPassword(
     body: {password},
     includeJson: true,
   })
-  if (response.token) {
-    writeWebUiToken(response.token, options.storage)
-  }
   return response
 }
 
 /**
- * 会话探测走同一套鉴权头和 JSON 解析逻辑，保证登录页与主壳共享认证结果。
+ * 会话探测走同一套 cookie 会话和 JSON 解析逻辑，保证登录页与主壳共享认证结果。
  */
 export async function restoreSession(
   options: WebUiJsonRequestOptions = {},
@@ -46,7 +42,7 @@ export async function restoreSession(
 }
 
 /**
- * 改密请求只提交当前密码和新密码，其他登录态由 token 头维护。
+ * 改密请求只提交当前密码和新密码，其他登录态由同源 cookie 维持。
  */
 export async function changePassword(
   currentPassword: string,
@@ -63,7 +59,7 @@ export async function changePassword(
 }
 
 /**
- * 登出同时通知后端撤销 token，调用方再清理本地 token 并跳回登录页。
+ * 登出依赖同源 cookie 会话，调用方直接回到登录页即可。
  */
 export async function logout(options: WebUiJsonRequestOptions = {}): Promise<WebUiAuthResponse> {
   return requestJson<WebUiAuthResponse>('/api/auth/logout', {
@@ -81,9 +77,6 @@ export function applyLoginResult(
   response: WebUiAuthResponse,
   handlers: WebUiAuthNavigationHandlers = {},
 ): 'shell' | 'change-password' {
-  if (response.token) {
-    writeWebUiToken(response.token)
-  }
   if (response.mustChangePassword) {
     handlers.onChangePassword?.(response)
     return 'change-password'
@@ -100,7 +93,6 @@ export function applyAuthSession(
   handlers: WebUiAuthNavigationHandlers = {},
 ): 'shell' | 'change-password' | 'login' {
   if (!response.authenticated) {
-    clearWebUiToken()
     handlers.onLogin?.()
     return 'login'
   }

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { changePassword, logout } from '../api/auth'
 import { useThemePreference } from '../hooks/useThemePreference'
 import type { WebUiPageName } from '../router/webuiRouter'
-import { clearWebUiToken } from '../utils/storage'
 import { formatPasswordErrorMessage } from '../utils/errorMessages'
 
 type ShellProps = {
@@ -67,7 +66,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
   }, [adminMenuOpen])
 
   /**
-   * 改密弹窗复用认证 API，成功后清理 token 并回到登录页重新认证。
+   * 改密弹窗复用认证 API，成功后直接回到登录页重新认证。
    */
   const submitPasswordChange = async () => {
     if (newPassword !== confirmPassword) {
@@ -78,7 +77,6 @@ export function Shell({page, onNavigate, children}: ShellProps) {
     setAccountMessage('')
     try {
       await changePassword(currentPassword, newPassword)
-      clearWebUiToken()
       window.location.assign('/login')
     } catch (error) {
       setAccountMessage(formatPasswordErrorMessage(error, '修改密码失败'))
@@ -88,7 +86,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
   }
 
   /**
-   * 登出先调用后端撤销会话，再清理本地 Bearer token。
+   * 登出先调用后端撤销会话，再直接回到登录页。
    */
   const submitLogout = async () => {
     setAccountPending(true)
@@ -96,7 +94,6 @@ export function Shell({page, onNavigate, children}: ShellProps) {
     try {
       await logout()
     } finally {
-      clearWebUiToken()
       window.location.assign('/login')
     }
   }

@@ -32,6 +32,14 @@ describe('settings payload helpers', () => {
   })
 
   /**
+   * WebUI 主机描述必须明确提醒 0.0.0.0 会把管理界面对外暴露。
+   */
+  it('warns that webui.host = 0.0.0.0 exposes the WebUI externally', () => {
+    expect(settingsFieldDescriptions['webui.host']).toContain('0.0.0.0')
+    expect(settingsFieldDescriptions['webui.host']).toContain('对外')
+  })
+
+  /**
    * 八个设置分区必须覆盖旧 WebUI 已暴露的可编辑项，避免 React schema 漏字段。
    */
   it('covers the editable field keys required by the old WebUI settings panels', () => {

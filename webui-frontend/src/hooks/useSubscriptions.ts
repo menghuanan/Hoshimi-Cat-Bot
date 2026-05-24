@@ -54,12 +54,11 @@ function ensureSubscriptionWriteSucceeded(result: unknown, fallbackMessage: stri
  * 订阅页把加载和高风险写操作封成一个 hook，页面只拿结果和命令。
  */
 export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
-  const {fetchImpl, storage, redirectToLogin} = options
+  const {fetchImpl, redirectToLogin} = options
   const requestOptions = useMemo<WebUiJsonRequestOptions>(() => ({
     fetchImpl,
-    storage,
     redirectToLogin,
-  }), [fetchImpl, redirectToLogin, storage])
+  }), [fetchImpl, redirectToLogin])
   const {requestHighRiskConfirmation} = useHighRiskConfirmation()
   const [items, setItems] = useState<unknown[]>([])
   const [loading, setLoading] = useState(true)

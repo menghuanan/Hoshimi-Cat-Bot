@@ -14,12 +14,11 @@ type ConfigSnapshotField = {
  * 系统配置页把读取、保存和确认逻辑收敛到一个 hook，避免页面再散落 fetch。
  */
 export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
-  const {fetchImpl, storage, redirectToLogin} = options
+  const {fetchImpl, redirectToLogin} = options
   const requestOptions = useMemo<WebUiJsonRequestOptions>(() => ({
     fetchImpl,
-    storage,
     redirectToLogin,
-  }), [fetchImpl, redirectToLogin, storage])
+  }), [fetchImpl, redirectToLogin])
   const {requestHighRiskConfirmation} = useHighRiskConfirmation()
   const [biliConfig, setBiliConfig] = useState<Record<string, unknown> | null>(null)
   const [botConfig, setBotConfig] = useState<Record<string, unknown> | null>(null)
@@ -44,16 +43,22 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
     return () => window.clearTimeout(timer)
   }, [reload])
 
-  const saveBili = useCallback(async (input: Omit<WebUiBiliConfigSaveInput, 'confirmationPassword'>) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存')
+  /**
+   * 保存前的高风险确认文案由调用方传入，默认仍然保持简短密码确认。
+   */
+  const saveBili = useCallback(async (input: Omit<WebUiBiliConfigSaveInput, 'confirmationPassword'>, confirmationMessage = '请输入 WebUI 密码确认保存') => {
+    const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
     if (!confirmationPassword) {
       return null
     }
     return saveBiliConfig({...input, confirmationPassword}, requestOptions)
   }, [requestHighRiskConfirmation, requestOptions])
 
-  const saveBot = useCallback(async (input: Omit<WebUiBotConfigSaveInput, 'confirmationPassword'>) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存')
+  /**
+   * bot.yml 保存也复用同一套确认入口，必要时由页面层替换成更具体的风险文案。
+   */
+  const saveBot = useCallback(async (input: Omit<WebUiBotConfigSaveInput, 'confirmationPassword'>, confirmationMessage = '请输入 WebUI 密码确认保存') => {
+    const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
     if (!confirmationPassword) {
       return null
     }

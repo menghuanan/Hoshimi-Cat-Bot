@@ -169,7 +169,7 @@ export async function deleteSubscriptionTemplate(
     method: 'DELETE',
     body: buildSubscriptionConfigDeletePayload(confirmationPassword),
     includeJson: true,
-    authenticated: true,
+    authenticated: false,
   })
 }
 

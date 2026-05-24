@@ -331,6 +331,7 @@ describe('webui shell routing', () => {
     expect(screen.getByText(/2023/)).toBeInTheDocument()
     expect(screen.getByText('120G/256G')).toBeInTheDocument()
     expect(screen.queryByText('50%')).not.toBeInTheDocument()
+    expect(document.querySelector('progress.resource-meter')?.getAttribute('style')).toBeNull()
   })
 
   /**
@@ -393,6 +394,45 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('WebUI 端口')).toBeInTheDocument()
     expect(screen.getByLabelText('会话有效秒数')).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('max-w-7xl')
+  })
+
+  /**
+   * WebUI 主机设为 0.0.0.0 时，页面必须明确显示对外暴露警告，并在保存前再次确认风险。
+   */
+  it('warns when webui.host is set to 0.0.0.0 and mirrors the risk in the confirmation dialog', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-config')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: 'bili-token', fields: []})}
+      }
+      if (url.includes('/api/config/bot')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token',
+            fields: [
+              {key: 'platform.type', label: '平台类型', value: 'onebot11', capability: 'EDITABLE', editable: true},
+              {key: 'webui.enabled', label: '启用 WebUI', value: 'true', capability: 'EDITABLE', editable: true},
+              {key: 'webui.host', label: 'WebUI 主机', value: '0.0.0.0', capability: 'EDITABLE', editable: true},
+              {key: 'webui.port', label: 'WebUI 端口', value: '18080', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+
+    renderAtPath('/#settings')
+
+    expect(await screen.findByLabelText('WebUI 主机')).toHaveValue('0.0.0.0')
+    expect(screen.getByText(/0\.0\.0\.0/)).toBeInTheDocument()
+    expect(screen.getByText(/对外暴露/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    expect(await screen.findByRole('dialog', {name: '密码确认'})).toHaveTextContent(/0\.0\.0\.0/)
   })
 
   /**

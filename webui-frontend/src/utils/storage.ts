@@ -1,29 +1,21 @@
 /**
- * WebUI token 只通过这一层读写，避免页面代码直接散落 sessionStorage 访问。
+ * Cookie 读取只保留前端安全相关的值，避免把认证 token 继续放进 sessionStorage。
  */
-export type TokenStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
-
-const webUiTokenKey = 'webuiToken'
-
-/**
- * 读取当前 WebUI token；没有 token 时返回空串，调用方再决定是否发起匿名请求。
- */
-export function readWebUiToken(storage: TokenStorage = window.sessionStorage): string {
-  return storage.getItem(webUiTokenKey) || ''
-}
-
-/**
- * 保存 token 的写入口只接受非空值，空值由显式清理函数处理。
- */
-export function writeWebUiToken(token: string, storage: TokenStorage = window.sessionStorage): void {
-  if (token) {
-    storage.setItem(webUiTokenKey, token)
+export function readCookieValue(name: string, cookieSource = document.cookie): string {
+  const prefix = `${name}=`
+  const entry = cookieSource.split(';').map((value) => value.trim()).find((value) => value.startsWith(prefix))
+  if (!entry) {
+    return ''
   }
+  const rawValue = entry.slice(prefix.length)
+  return rawValue ? decodeURIComponent(rawValue) : ''
 }
 
+const webUiCsrfCookieName = 'dynamic_bot_webui_csrf'
+
 /**
- * 清理 token 的读写状态，供登出和认证失效场景复用。
+ * WebUI unsafe 请求从同源 CSRF cookie 读取令牌，再统一写到 X-CSRF-Token 头里。
  */
-export function clearWebUiToken(storage: TokenStorage = window.sessionStorage): void {
-  storage.removeItem(webUiTokenKey)
+export function readWebUiCsrfToken(cookieSource = document.cookie): string {
+  return readCookieValue(webUiCsrfCookieName, cookieSource)
 }

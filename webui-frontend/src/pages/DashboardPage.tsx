@@ -80,9 +80,7 @@ function ResourceMeter({label, value, detail}: {label: string, value: number | n
         <span className="font-medium text-slate-700">{label}</span>
         <strong className="text-slate-950">{display}</strong>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-        <span className="block h-full rounded-full bg-emerald-500" style={{width: `${width}%`}} />
-      </div>
+      <progress className="resource-meter" max={100} value={width} aria-label={label} />
     </div>
   )
 }
@@ -92,7 +90,7 @@ function ResourceMeter({label, value, detail}: {label: string, value: number | n
  */
 export function DashboardPage() {
   const {summary, dashboard, loading} = useRuntimeSummary({pollIntervalMs: 60_000})
-  const recentPushRecords = summary?.recentPushRecords || []
+  const recentPushRecords = dashboard.recentPushRecords
 
   return (
     <div data-page="home" className="space-y-6">
@@ -133,9 +131,9 @@ export function DashboardPage() {
               <div className="max-h-[22rem] divide-y divide-slate-100 overflow-y-auto">
                 {recentPushRecords.map((record, index) => (
                   <div key={`${record.timestampEpochMillis || index}-${record.summary || index}`} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[4rem_6rem_minmax(0,1fr)_10rem] md:items-center">
-                    <span className="font-medium text-slate-700">{record.typeLabel || record.type || '--'}</span>
-                    <span className={record.success ? 'text-emerald-600' : 'text-rose-700'}>{record.statusLabel || '--'}</span>
-                    <span className="min-w-0 break-words text-slate-950">{record.summary || '--'}</span>
+                    <span className="font-medium text-slate-700">{record.typeLabel}</span>
+                    <span className={record.statusLabel === '成功' || record.statusLabel === '已发送' ? 'text-emerald-600' : 'text-rose-700'}>{record.statusLabel}</span>
+                    <span className="min-w-0 break-words text-slate-950">{record.summary}</span>
                     <span className="text-right text-slate-500">{formatEpochMillis(record.timestampEpochMillis ?? null)}</span>
                   </div>
                 ))}

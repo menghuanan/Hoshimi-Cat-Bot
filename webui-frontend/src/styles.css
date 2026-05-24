@@ -5,6 +5,31 @@ body {
   min-width: 320px;
 }
 
+/* 运行态进度条改用原生 progress 控件，避免 inline style 破坏严格 CSP。 */
+.resource-meter {
+  width: 100%;
+  height: 0.5rem;
+  overflow: hidden;
+  appearance: none;
+  border: 0;
+  border-radius: 9999px;
+  background: #e2e8f0;
+}
+
+.resource-meter::-webkit-progress-bar {
+  background: #e2e8f0;
+}
+
+.resource-meter::-webkit-progress-value {
+  border-radius: 9999px;
+  background: #10b981;
+}
+
+.resource-meter::-moz-progress-bar {
+  border-radius: 9999px;
+  background: #10b981;
+}
+
 /* 暗色主题覆盖现有 Tailwind 实用类，保证主题模式选择立即改变整个 WebUI 外观。 */
 .theme-dark body,
 .theme-dark .bg-slate-100 {
@@ -66,6 +91,22 @@ body {
 .theme-dark .subscription-info-block {
   background: #1f2937;
   border-color: #334155;
+}
+
+.theme-dark .resource-meter {
+  background: #334155;
+}
+
+.theme-dark .resource-meter::-webkit-progress-bar {
+  background: #334155;
+}
+
+.theme-dark .resource-meter::-webkit-progress-value {
+  background: #34d399;
+}
+
+.theme-dark .resource-meter::-moz-progress-bar {
+  background: #34d399;
 }
 
 /* 跟随系统时只在系统暗色偏好下应用同一组覆盖，保持选项语义清晰。 */
@@ -130,5 +171,21 @@ body {
   .theme-system .subscription-info-block {
     background: #1f2937;
     border-color: #334155;
+  }
+
+  .theme-system .resource-meter {
+    background: #334155;
+  }
+
+  .theme-system .resource-meter::-webkit-progress-bar {
+    background: #334155;
+  }
+
+  .theme-system .resource-meter::-webkit-progress-value {
+    background: #34d399;
+  }
+
+  .theme-system .resource-meter::-moz-progress-bar {
+    background: #34d399;
   }
 }

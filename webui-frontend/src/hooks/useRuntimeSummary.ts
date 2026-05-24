@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchRuntimeSummary } from '../api/runtime'
 import type { WebUiJsonRequestOptions } from '../api/http'
-import type { WebUiDashboardRuntimeFields, WebUiRuntimeSummary } from '../types/runtime'
+import type { WebUiDashboardRecentPushRecord, WebUiDashboardRuntimeFields, WebUiRuntimeSummary, WebUiRecentPushRecord } from '../types/runtime'
 
 type UseRuntimeSummaryOptions = WebUiJsonRequestOptions & {
   pollIntervalMs?: number
@@ -11,6 +11,7 @@ type UseRuntimeSummaryOptions = WebUiJsonRequestOptions & {
  * 将后端运行态 DTO 收敛为首页稳定读取的字段，缺失值统一降级为空状态。
  */
 function toDashboardRuntimeFields(summary: WebUiRuntimeSummary | null): WebUiDashboardRuntimeFields {
+  const recentPushRecords = summarizeRecentPushRecords(summary?.recentPushRecords ?? [])
   return {
     appVersion: summary?.appVersion || '--',
     lifecycleState: displayLifecycleState(summary?.lifecycleState),
@@ -28,8 +29,28 @@ function toDashboardRuntimeFields(summary: WebUiRuntimeSummary | null): WebUiDas
     platformReady: summary?.platformReady ?? null,
     webSocketConnected: summary?.webSocket?.connected ?? null,
     todayPushTotal: summary?.todayPushStats?.total ?? null,
-    recentPushRecordsCount: summary?.recentPushRecords?.length ?? 0,
+    recentPushRecordsCount: recentPushRecords.length,
+    recentPushRecords,
   }
+}
+
+/**
+ * 最近推送记录只保留首页展示需要的摘要字段，避免把原始 target 和内部类型继续往下传。
+ */
+function summarizeRecentPushRecords(records: WebUiRecentPushRecord[]): WebUiDashboardRecentPushRecord[] {
+  return records.map((record) => ({
+    timestampEpochMillis: record.timestampEpochMillis ?? null,
+    typeLabel: sanitizeDashboardText(record.typeLabel || record.type || '--'),
+    statusLabel: sanitizeDashboardText(record.statusLabel || '--'),
+    summary: sanitizeDashboardText(record.summary || '--'),
+  }))
+}
+
+/**
+ * 首页展示文本只需要稳定可读的内容，前后空白统一折叠掉即可。
+ */
+function sanitizeDashboardText(value: string): string {
+  return value.trim() || '--'
 }
 
 /**
@@ -51,12 +72,11 @@ function displayLifecycleState(value: string | undefined): string {
  * 运行态摘要以轮询方式刷新，默认间隔和旧脚本保持一致。
  */
 export function useRuntimeSummary(options: UseRuntimeSummaryOptions = {}) {
-  const {pollIntervalMs = 30_000, fetchImpl, storage, redirectToLogin} = options
+  const {pollIntervalMs = 30_000, fetchImpl, redirectToLogin} = options
   const requestOptions = useMemo<WebUiJsonRequestOptions>(() => ({
     fetchImpl,
-    storage,
     redirectToLogin,
-  }), [fetchImpl, redirectToLogin, storage])
+  }), [fetchImpl, redirectToLogin])
   const [summary, setSummary] = useState<WebUiRuntimeSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

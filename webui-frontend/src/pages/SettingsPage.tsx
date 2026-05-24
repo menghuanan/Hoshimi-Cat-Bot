@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
+import { useHighRiskConfirmation } from '../hooks/useHighRiskConfirmation'
 import { useSettingsFiles } from '../hooks/useSettingsFiles'
 import { formatSaveResultMessage } from '../settings/settingsSaveResult'
 import { settingsCategories, validateSettingsValues, type SettingsCategoryDefinition, type SettingsCategoryId, type SettingsFieldDefinition } from '../settings/settingsSchema'
@@ -30,6 +31,7 @@ type AdminDraftPair = {
  */
 export function SettingsPage() {
   const {loading, biliConfig, botConfig, saveBili, saveBot, patchBiliConfig, patchBotConfig} = useSettingsFiles()
+  const {requestHighRiskConfirmation} = useHighRiskConfirmation()
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
   const [editedValues, setEditedValues] = useState<SettingsFormValues>({})
   const [saving, setSaving] = useState(false)
@@ -85,7 +87,7 @@ export function SettingsPage() {
   }
 
   /**
-   * 保存当前分区时分别写入 BiliConfig 和 bot.yml，并保持快照令牌边界。
+   * 保存当前分区时分别写入 BiliConfig 和 bot.yml，并在 WebUI 对外绑定时额外强调暴露风险。
    */
   const saveActiveCategory = async () => {
     setSaving(true)
@@ -103,8 +105,17 @@ export function SettingsPage() {
       const completeBotValues = pickValuesForFile(allSettingsFields, completeValues, 'botConfig')
       const biliToken = String(biliConfig?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
+      const confirmationMessage = buildSettingsConfirmationMessage(completeValues)
       const shouldSaveBili = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'biliConfig')
       const shouldSaveBot = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'botConfig')
+      // 没有任何待写文件时仍然走统一密码确认，避免保存入口在空状态下直接静默返回。
+      if (!shouldSaveBili && !shouldSaveBot) {
+        const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
+        if (!confirmationPassword) {
+          return
+        }
+        return
+      }
       const saveResults: Array<WebUiSettingsSaveResult | null> = []
       let biliSaveResult: WebUiSettingsSaveResult | null = null
       let botSaveResult: WebUiSettingsSaveResult | null = null
@@ -114,7 +125,7 @@ export function SettingsPage() {
           snapshotToken: biliToken,
           proxyText: String(completeBiliValues['proxyConfig.proxy'] || ''),
           fields: omitKey(completeBiliValues, 'proxyConfig.proxy'),
-        })
+        }, confirmationMessage)
         saveResults.push(biliSaveResult)
       }
       if (botToken && shouldSaveBot) {
@@ -122,7 +133,7 @@ export function SettingsPage() {
           snapshotToken: botToken,
           token: String(completeBotValues['platform.onebot11.token'] || ''),
           fields: omitKey(completeBotValues, 'platform.onebot11.token'),
-        })
+        }, confirmationMessage)
         saveResults.push(botSaveResult)
       }
 
@@ -346,6 +357,17 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
       </div>
     </div>
   )
+}
+
+/**
+ * WebUI 主机绑定到 0.0.0.0 时，确认文案必须明确提醒它会对外暴露管理界面。
+ */
+function buildSettingsConfirmationMessage(values: SettingsFormValues): string {
+  const publicHost = String(values['webui.host'] || '').trim()
+  if (publicHost === '0.0.0.0') {
+    return 'WebUI 主机设置为 0.0.0.0，会把管理界面对外暴露，请确认继续保存'
+  }
+  return '请输入 WebUI 密码确认保存'
 }
 
 /**

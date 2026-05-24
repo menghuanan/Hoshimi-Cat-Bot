@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildAuthHeaders, requestJson } from './http'
+import { requestJson } from './http'
 import { applyAuthSession, applyLoginResult, loginWithPassword, restoreSession } from './auth'
 import { buildBiliConfigSavePayload, buildBotConfigSavePayload } from './settings'
 import {
   buildSubscriptionCreatePayload,
   buildSubscriptionDeletePayload,
+  deleteSubscriptionTemplate,
   listSubscriptionFilters,
   saveSubscriptionFilter,
   setSubscriptionTemplateRandom,
@@ -18,50 +19,50 @@ const createJsonResponse = (status: number, payload: unknown) => ({
   json: async () => payload,
 })
 
-const createStorage = (token = '') => {
-  const values = new Map<string, string>()
-  if (token) {
-    values.set('webuiToken', token)
-  }
-  return {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      values.set(key, value)
-    },
-    removeItem: (key: string) => {
-      values.delete(key)
-    },
-  }
-}
-
 describe('webui api contracts', () => {
-  it('buildAuthHeaders should keep bearer and JSON negotiation headers', () => {
-    const storage = createStorage('token-123')
+  it('requestJson should attach CSRF headers for unsafe requests without bearer auth', async () => {
+    document.cookie = 'dynamic_bot_webui_csrf=csrf-123; path=/'
+    const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem')
+    const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem')
+    const removeItemSpy = vi.spyOn(window.sessionStorage, 'removeItem')
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {ok: true}))
 
-    expect(buildAuthHeaders(false, storage)).toEqual({
-      Accept: 'application/json',
-      Authorization: 'Bearer token-123',
+    await requestJson('/api/runtime/summary', {
+      method: 'POST',
+      body: {value: 'next'},
+      fetchImpl,
     })
-    expect(buildAuthHeaders(true, storage)).toEqual({
-      Accept: 'application/json',
-      Authorization: 'Bearer token-123',
-      'Content-Type': 'application/json',
-    })
+
+    expect(fetchImpl).toHaveBeenCalledWith('/api/runtime/summary', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf-123',
+      }),
+      body: JSON.stringify({value: 'next'}),
+    }))
+    expect(getItemSpy).not.toHaveBeenCalled()
+    expect(setItemSpy).not.toHaveBeenCalled()
+    expect(removeItemSpy).not.toHaveBeenCalled()
+    getItemSpy.mockRestore()
+    setItemSpy.mockRestore()
+    removeItemSpy.mockRestore()
   })
 
   it('requestJson should redirect unauthorized requests through the shared handler', async () => {
-    const storage = createStorage('token-123')
     const redirectToLogin = vi.fn()
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(401, {message: 'nope'}))
+    const removeItemSpy = vi.spyOn(window.sessionStorage, 'removeItem')
 
     await expect(requestJson('/api/runtime/summary', {
-      storage,
       fetchImpl,
       redirectToLogin,
     })).rejects.toThrow('请重新登录')
 
-    expect(storage.getItem('webuiToken')).toBeNull()
+    expect(removeItemSpy).not.toHaveBeenCalled()
     expect(redirectToLogin).toHaveBeenCalledTimes(1)
+    removeItemSpy.mockRestore()
   })
 
   it('requestJson should hide status codes from generic request failures', async () => {
@@ -69,41 +70,47 @@ describe('webui api contracts', () => {
 
     await expect(requestJson('/api/runtime/summary', {
       fetchImpl,
-      storage: createStorage('runtime-token'),
     })).rejects.toThrow('请求失败，请稍后重试')
   })
 
-  it('loginWithPassword should post the password without auth headers', async () => {
-    const storage = createStorage()
-    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {token: 'abc', mustChangePassword: false}))
+  it('loginWithPassword should post the password without writing a token', async () => {
+    document.cookie = 'dynamic_bot_webui_csrf=csrf-login; path=/'
+    const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem')
+    const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem')
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {mustChangePassword: false}))
 
-    const result = await loginWithPassword('secret', {storage, fetchImpl})
+    const result = await loginWithPassword('secret', {fetchImpl})
 
     expect(fetchImpl).toHaveBeenCalledWith('/api/auth/login', expect.objectContaining({
       method: 'POST',
       headers: expect.objectContaining({
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf-login',
       }),
       body: JSON.stringify({password: 'secret'}),
     }))
-    expect(result.token).toBe('abc')
-    expect(storage.getItem('webuiToken')).toBe('abc')
+    expect(result.mustChangePassword).toBe(false)
+    expect(getItemSpy).not.toHaveBeenCalled()
+    expect(setItemSpy).not.toHaveBeenCalled()
+    getItemSpy.mockRestore()
+    setItemSpy.mockRestore()
   })
 
-  it('restoreSession should send the bearer token and preserve authenticated state', async () => {
-    const storage = createStorage('stored-token')
+  it('restoreSession should use the cookie-backed session probe without bearer headers', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {authenticated: true, mustChangePassword: false}))
+    const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem')
 
-    const result = await restoreSession({storage, fetchImpl})
+    const result = await restoreSession({fetchImpl})
 
     expect(fetchImpl).toHaveBeenCalledWith('/api/auth/session', expect.objectContaining({
       headers: expect.objectContaining({
         Accept: 'application/json',
-        Authorization: 'Bearer stored-token',
       }),
     }))
     expect(result.authenticated).toBe(true)
+    expect(getItemSpy).not.toHaveBeenCalled()
+    getItemSpy.mockRestore()
   })
 
   it('applyAuthSession should route authenticated users to the shell', () => {
@@ -120,11 +127,12 @@ describe('webui api contracts', () => {
     expect(goLogin).not.toHaveBeenCalled()
   })
 
-  it('applyLoginResult should route must-change-password users to the change-password screen', () => {
+  it('applyLoginResult should route must-change-password users to the change-password screen without storing tokens', () => {
+    const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem')
     const goShell = vi.fn()
     const goChangePassword = vi.fn()
 
-    const outcome = applyLoginResult({token: 'abc', mustChangePassword: true}, {
+    const outcome = applyLoginResult({mustChangePassword: true}, {
       onShell: goShell,
       onChangePassword: goChangePassword,
     })
@@ -132,6 +140,25 @@ describe('webui api contracts', () => {
     expect(outcome).toBe('change-password')
     expect(goChangePassword).toHaveBeenCalledTimes(1)
     expect(goShell).not.toHaveBeenCalled()
+    expect(setItemSpy).not.toHaveBeenCalled()
+    setItemSpy.mockRestore()
+  })
+
+  it('applyAuthSession should keep expired sessions on the login page without clearing stored tokens', () => {
+    const removeItemSpy = vi.spyOn(window.sessionStorage, 'removeItem')
+    const goShell = vi.fn()
+    const goLogin = vi.fn()
+
+    const outcome = applyAuthSession({authenticated: false, mustChangePassword: false}, {
+      onShell: goShell,
+      onLogin: goLogin,
+    })
+
+    expect(outcome).toBe('login')
+    expect(goLogin).toHaveBeenCalledTimes(1)
+    expect(goShell).not.toHaveBeenCalled()
+    expect(removeItemSpy).not.toHaveBeenCalled()
+    removeItemSpy.mockRestore()
   })
 
   it('buildBiliConfigSavePayload should preserve proxy update mode and confirmation password', () => {
@@ -200,28 +227,31 @@ describe('webui api contracts', () => {
   })
 
   it('subscription nested config requests should target existing backend routes', async () => {
-    const storage = createStorage('subscription-token')
+    document.cookie = 'dynamic_bot_webui_csrf=csrf-subscription; path=/'
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {success: true}))
 
-    await listSubscriptionFilters('item/1', {storage, fetchImpl})
+    await listSubscriptionFilters('item/1', {fetchImpl})
     await saveSubscriptionFilter('item/1', {
       key: 'filter-1',
       kind: 'regex',
       mode: 'black',
       content: '广告',
       confirmationPassword: 'pw-filter',
-    }, {storage, fetchImpl})
-    await setSubscriptionTemplateRandom('item/1', true, 'pw-random', {storage, fetchImpl})
+    }, {fetchImpl})
+    await setSubscriptionTemplateRandom('item/1', true, 'pw-random', {fetchImpl})
 
     expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/subscriptions/item%2F1/filters', expect.objectContaining({
       method: 'GET',
       body: undefined,
+      headers: expect.objectContaining({
+        Accept: 'application/json',
+      }),
     }))
     expect(fetchImpl).toHaveBeenNthCalledWith(2, '/api/subscriptions/item%2F1/filters', expect.objectContaining({
       method: 'POST',
       headers: expect.objectContaining({
-        Authorization: 'Bearer subscription-token',
         'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf-subscription',
       }),
       body: JSON.stringify({
         key: 'filter-1',
@@ -233,9 +263,39 @@ describe('webui api contracts', () => {
     }))
     expect(fetchImpl).toHaveBeenNthCalledWith(3, '/api/subscriptions/item%2F1/templates/random', expect.objectContaining({
       method: 'POST',
+      headers: expect.objectContaining({
+        'X-CSRF-Token': 'csrf-subscription',
+      }),
       body: JSON.stringify({
         enabled: true,
         confirmationPassword: 'pw-random',
+      }),
+    }))
+  })
+
+  /**
+   * 模板删除是高风险确认写接口，403 必须保留为密码错误而不是触发登录重定向。
+   */
+  it('deleteSubscriptionTemplate should surface 403 as a password error without redirecting', async () => {
+    document.cookie = 'dynamic_bot_webui_csrf=csrf-template-delete; path=/'
+    const redirectToLogin = vi.fn()
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(403, {message: 'bad password'}))
+
+    await expect(deleteSubscriptionTemplate('item/1', 'template-1', 'pw-delete', {
+      fetchImpl,
+      redirectToLogin,
+    })).rejects.toThrow('密码错误，请重试')
+
+    expect(redirectToLogin).not.toHaveBeenCalled()
+    expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions/item%2F1/templates/template-1', expect.objectContaining({
+      method: 'DELETE',
+      headers: expect.objectContaining({
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf-template-delete',
+      }),
+      body: JSON.stringify({
+        confirmationPassword: 'pw-delete',
       }),
     }))
   })
@@ -250,11 +310,11 @@ describe('webui api contracts', () => {
   it('runtime summary helper should call the runtime summary endpoint', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {appVersion: '1.0.0'}))
 
-    await fetchRuntimeSummary({fetchImpl, storage: createStorage('runtime-token')})
+    await fetchRuntimeSummary({fetchImpl})
 
     expect(fetchImpl).toHaveBeenCalledWith('/api/runtime/summary', expect.objectContaining({
       headers: expect.objectContaining({
-        Authorization: 'Bearer runtime-token',
+        Accept: 'application/json',
       }),
     }))
   })

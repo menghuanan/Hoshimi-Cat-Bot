@@ -73,12 +73,11 @@ function writeLogsAutoRefreshCookie(value: boolean) {
  * 日志页把来源、窗口、本地清屏和自动刷新偏好封成一个 hook。
  */
 export function useLogs(options: UseLogsOptions = {}) {
-  const {tailLines = 500, autoRefreshMs = 30_000, fetchImpl, storage, redirectToLogin} = options
+  const {tailLines = 500, autoRefreshMs = 30_000, fetchImpl, redirectToLogin} = options
   const requestOptions = useMemo<WebUiJsonRequestOptions>(() => ({
     fetchImpl,
-    storage,
     redirectToLogin,
-  }), [fetchImpl, redirectToLogin, storage])
+  }), [fetchImpl, redirectToLogin])
   const [sources, setSources] = useState<unknown[]>([])
   const [sourceId, setSourceId] = useState('')
   const [rows, setRows] = useState<string[]>([])

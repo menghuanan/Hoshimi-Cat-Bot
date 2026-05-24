@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { changePassword, loginWithPassword } from '../api/auth'
+import { useEffect, useState, type FormEvent } from 'react'
+import { changePassword, loginWithPassword, restoreSession } from '../api/auth'
 import { useThemePreference } from '../hooks/useThemePreference'
 import { formatLoginErrorMessage } from '../utils/errorMessages'
 
@@ -17,7 +17,30 @@ export function LoginPage() {
   const [pending, setPending] = useState(false)
 
   /**
-   * 登录成功后由后端 cookie 和 sessionStorage token 共同维持会话，再跳回根页面。
+   * 登录页先探测同源 cookie 会话，已经登录的用户不需要再手动输入密码。
+   */
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      try {
+        const session = await restoreSession()
+        if (!active) {
+          return
+        }
+        if (session.authenticated && !session.mustChangePassword) {
+          window.location.assign('/')
+        }
+      } catch {
+        // 会话不存在时保持登录表单可用，不打断正常输入流程。
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  /**
+   * 登录成功后由后端同源 cookie 维持会话，再跳回根页面。
    */
   const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

@@ -269,7 +269,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const atAllFormOpen = formMode === 'atall'
 
   return (
-    <div data-subscription-editor-overlay className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6" role="presentation">
+    <div data-subscription-editor-overlay className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6 lg:left-[18rem]" role="presentation">
       <section
         role="dialog"
         aria-modal="true"

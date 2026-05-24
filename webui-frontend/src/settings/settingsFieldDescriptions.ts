@@ -18,7 +18,7 @@ export const settingsFieldDescriptions: Record<string, string> = {
   'platform.qqOfficial.appSecret': '填写 QQ 官方机器人应用密钥。',
   'platform.qqOfficial.botToken': '填写 QQ 官方机器人 Bot Token。',
   'webui.enabled': '默认关闭，按需开启独立 WebUI。',
-  'webui.host': '保持默认即可，只有需要对外绑定时才调整。',
+  'webui.host': '保持默认即可；如果改成 0.0.0.0，就会把 WebUI 对外暴露到所有网卡并需要额外确认。',
   'webui.port': '建议使用非常用端口，避免与本机其他服务冲突。',
   'webui.tokenTtlSeconds': '控制登录会话有效时长，保持默认通常最稳妥。',
 
