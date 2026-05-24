@@ -303,12 +303,16 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         }
         // 输出 Metaspace / CodeCache 的分区细分，用于定位是单一 code heap 还是总量抬升。
         report.nonHeapBreakdown = nonHeapBreakdown.sortedByDescending { it.usedMB }
-        // 非堆增长默认按“趋势信号”记录；仅突发增长才升级为异常，避免守护采样形成自激闭环。
+        // 非堆增长默认按“趋势信号”记录；预热未完成时只更新采样基线，避免启动期抬升被误判为突发告警。
+        val burstGrowthDetectionEnabled = nonHeapWarmupCompleted
         val nonHeapGrowthEntries = detectNonHeapGrowth(
             previousUsageByPoolNameBytes = lastNonHeapUsedByPoolNameBytes,
             currentUsageByPoolNameBytes = currentNonHeapUsedByPoolNameBytes,
         )
-        if (nonHeapGrowthEntries.isNotEmpty()) {
+        if (!burstGrowthDetectionEnabled) {
+            // 预热窗口内只更新采样历史，不启用突发增长判定，避免启动期自然抬升持续刷告警。
+            logger.debug("非堆预热未完成，本轮仅更新采样基线，暂不启用突发增长判定")
+        } else if (nonHeapGrowthEntries.isNotEmpty()) {
             // 将突发增长详情统一为“基线/当前/峰值”字段风格，便于和回落日志直接对读。
             val nonHeapGrowthDetails = nonHeapGrowthEntries.map { growth ->
                 val baselineBytes = growth.previousBytes

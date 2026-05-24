@@ -242,6 +242,21 @@ class ProcessGuardianResourceObservabilityTest {
         )
     }
 
+    // 非堆突发增长必须等到预热完成后再接管，否则启动期的正常上涨会被当成持续告警源。
+    @Test
+    fun `process guardian should delay burst non heap detection until warmup completes`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("burstGrowthDetectionEnabled = nonHeapWarmupCompleted"),
+            "ProcessGuardian should gate burst non-heap detection on completed warmup state",
+        )
+        assertTrue(
+            source.contains("非堆预热未完成，本轮仅更新采样基线，暂不启用突发增长判定"),
+            "ProcessGuardian should skip burst-growth alerts during non-heap warmup",
+        )
+    }
+
     // 7x24 运行要求在预热完成后识别“长期增长且不回落”并告警，避免只靠瞬时增长事件判断。
     @Test
     fun `process guardian should detect sustained non heap growth after warmup`() {
