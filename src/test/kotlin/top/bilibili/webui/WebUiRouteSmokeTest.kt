@@ -214,6 +214,61 @@ class WebUiRouteSmokeTest {
     }
 
     /**
+     * 常见公网入口会通过反代或隧道传递外部协议和主机名，WebUI 只应放行这些入口自身的同源 Origin。
+     */
+    @Test
+    fun `webui assets should stay reachable through common proxy and tunnel origins`() = testApplication {
+        val authService = buildAuthService()
+        authService.bootstrapCredentials()
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true, host = "0.0.0.0", port = 18080).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = buildConfigFacade(),
+                configWriteFacade = buildConfigWriteFacade(),
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(sink = {}),
+            )
+        }
+
+        val client = createWebUiClient()
+        val httpsReverseProxy = client.get("/assets/app.js") {
+            header(HttpHeaders.Origin, "https://bot.example.com")
+            header(HttpHeaders.Host, "127.0.0.1:18080")
+            header("X-Forwarded-Proto", "https")
+            header("X-Forwarded-Host", "bot.example.com")
+        }
+        val standardForwardedProxy = client.get("/assets/app.js") {
+            header(HttpHeaders.Origin, "https://cf.example.com")
+            header(HttpHeaders.Host, "127.0.0.1:18080")
+            header(HttpHeaders.Forwarded, """for=203.0.113.10;proto=https;host="cf.example.com"""")
+        }
+        val tailnetDirectHost = client.get("/assets/app.css") {
+            header(HttpHeaders.Origin, "http://nas.tailnet.ts.net:18080")
+            header(HttpHeaders.Host, "nas.tailnet.ts.net:18080")
+        }
+        val rejectedCrossSite = client.get("/assets/app.js") {
+            header(HttpHeaders.Origin, "https://evil.example")
+            header(HttpHeaders.Host, "127.0.0.1:18080")
+            header("X-Forwarded-Proto", "https")
+            header("X-Forwarded-Host", "bot.example.com")
+        }
+
+        assertEquals(HttpStatusCode.OK, httpsReverseProxy.status)
+        assertEquals("https://bot.example.com", httpsReverseProxy.headers[HttpHeaders.AccessControlAllowOrigin])
+        assertTrue(httpsReverseProxy.bodyAsText().contains("createRoot"))
+        assertEquals(HttpStatusCode.OK, standardForwardedProxy.status)
+        assertEquals("https://cf.example.com", standardForwardedProxy.headers[HttpHeaders.AccessControlAllowOrigin])
+        assertEquals(HttpStatusCode.OK, tailnetDirectHost.status)
+        assertEquals("http://nas.tailnet.ts.net:18080", tailnetDirectHost.headers[HttpHeaders.AccessControlAllowOrigin])
+        assertEquals(HttpStatusCode.Forbidden, rejectedCrossSite.status)
+        assertEquals(null, rejectedCrossSite.headers[HttpHeaders.AccessControlAllowOrigin])
+    }
+
+    /**
      * 未处理异常对浏览器只返回脱敏错误，不能把本机路径、用户名或 token 字样透出。
      */
     @Test

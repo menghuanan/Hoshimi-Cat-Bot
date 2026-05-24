@@ -245,7 +245,7 @@ private fun ApplicationCall.applyWebUiCors(settings: WebUiSettings): Boolean {
     response.headers.appendIfAbsent(HttpHeaders.Vary, HttpHeaders.Origin)
     val origin = request.headers[HttpHeaders.Origin] ?: return true
     // 0.0.0.0 允许浏览器按实际访问地址发起同源请求，避免内网 IP 或主机名被误当成跨域。
-    if (origin !in allowedWebUiOrigins(settings) && origin != currentRequestOrigin()) {
+    if (origin !in allowedWebUiOrigins(settings) && origin !in currentRequestOrigins()) {
         return false
     }
     response.headers.appendIfAbsent(HttpHeaders.AccessControlAllowOrigin, origin)
@@ -271,14 +271,59 @@ private fun allowedWebUiOrigins(settings: WebUiSettings): Set<String> {
 }
 
 /**
- * 同源回退只认当前请求实际使用的 Host，确保用 NAS 内网 IP 或主机名访问时静态资源仍可加载。
+ * 同源回退从当前请求和可信代理常用转发头推导入口地址，覆盖端口映射、FRP、Cloudflare Tunnel 和内网组网域名。
  */
-private fun ApplicationCall.currentRequestOrigin(): String? {
-    val host = request.header(HttpHeaders.Host)
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-        ?: return null
-    return "http://$host"
+private fun ApplicationCall.currentRequestOrigins(): Set<String> {
+    val hosts = linkedSetOf<String>()
+    val schemes = linkedSetOf<String>()
+    forwardedHeaderParts().let { parts ->
+        parts["host"]?.toOriginHost()?.let(hosts::add)
+        parts["proto"]?.toOriginScheme()?.let(schemes::add)
+    }
+    // 反向代理通常使用 X-Forwarded-* 表达公网入口，Host 则覆盖端口映射和 Tailscale/Zerotier 直连。
+    request.header("X-Forwarded-Host")?.firstForwardedValue()?.toOriginHost()?.let(hosts::add)
+    request.header("X-Forwarded-Proto")?.firstForwardedValue()?.toOriginScheme()?.let(schemes::add)
+    request.header(HttpHeaders.Host)?.toOriginHost()?.let(hosts::add)
+    if (schemes.isEmpty()) {
+        schemes += "http"
+    }
+    return hosts.flatMap { host -> schemes.map { scheme -> "$scheme://$host" } }.toSet()
+}
+
+/**
+ * RFC Forwarded 只取最靠近客户端的第一段，避免多级代理链里的内部 hop 覆盖公网入口。
+ */
+private fun ApplicationCall.forwardedHeaderParts(): Map<String, String> {
+    val firstForwarded = request.header(HttpHeaders.Forwarded)?.firstForwardedValue() ?: return emptyMap()
+    return firstForwarded
+        .split(';')
+        .mapNotNull { part ->
+            val key = part.substringBefore('=', missingDelimiterValue = "").trim().lowercase()
+            val value = part.substringAfter('=', missingDelimiterValue = "").trim().trim('"')
+            if (key.isBlank() || value.isBlank()) null else key to value
+        }
+        .toMap()
+}
+
+/**
+ * 多级代理头按惯例以逗号分隔，WebUI 只使用第一个外部入口值。
+ */
+private fun String.firstForwardedValue(): String {
+    return substringBefore(',').trim()
+}
+
+/**
+ * Origin 主机只接受非空值并剥离代理可能保留的引号，端口保留给同源判断。
+ */
+private fun String.toOriginHost(): String? {
+    return trim().trim('"').takeIf { it.isNotBlank() }
+}
+
+/**
+ * Origin scheme 只允许浏览器 WebUI 会用到的 http/https，其他值不参与 CORS 放行。
+ */
+private fun String.toOriginScheme(): String? {
+    return trim().trim('"').lowercase().takeIf { it == "http" || it == "https" }
 }
 
 /**
