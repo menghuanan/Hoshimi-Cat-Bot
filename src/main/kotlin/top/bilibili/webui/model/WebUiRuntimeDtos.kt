@@ -62,7 +62,7 @@ data class WebUiTodayPushStatsDto(
 )
 
 /**
- * 最近推送记录直接面向首页展示，保留类型、状态和摘要即可，不把任务内部对象带到前端。
+ * 最近推送记录直接面向首页展示，保留类型、状态和订阅信息即可，不把任务内部对象带到前端。
  */
 @Serializable
 data class WebUiRecentPushRecordDto(

@@ -37,29 +37,41 @@ class PushStatisticsTest {
 
     @Test
     fun `recent push deliveries should keep newest records and trim history to five entries`() {
+        var currentDate = LocalDate.of(2026, 5, 20)
         var timestamp = 1_000L
         val counter = DailyPushStatsCounter(
-            todayProvider = { LocalDate.of(2026, 5, 20) },
+            todayProvider = { currentDate },
             currentTimeMillisProvider = { timestamp },
         )
 
-        repeat(6) { index ->
+        repeat(4) { index ->
             timestamp = 1_000L + index
             counter.recordDelivery(
                 type = PushStatisticType.DYNAMIC,
-                success = index % 2 == 0,
+                success = true,
                 summary = "record-$index",
                 target = "onebot11:group:${index + 1}",
+            )
+        }
+
+        currentDate = LocalDate.of(2026, 5, 21)
+        repeat(3) { index ->
+            val actualIndex = index + 4
+            timestamp = 1_000L + actualIndex
+            counter.recordDelivery(
+                type = PushStatisticType.DYNAMIC,
+                success = true,
+                summary = "record-$actualIndex",
+                target = "onebot11:group:${actualIndex + 1}",
             )
         }
 
         val snapshot = counter.snapshot()
 
         assertEquals(5, snapshot.recentRecords.size)
-        assertEquals("record-5", snapshot.recentRecords.first().summary)
-        assertEquals(false, snapshot.recentRecords.first().success)
-        assertEquals("onebot11:group:6", snapshot.recentRecords.first().target)
-        assertEquals("record-1", snapshot.recentRecords.last().summary)
-        assertEquals("onebot11:group:2", snapshot.recentRecords.last().target)
+        assertEquals("record-6", snapshot.recentRecords.first().summary)
+        assertEquals("onebot11:group:7", snapshot.recentRecords.first().target)
+        assertEquals("record-2", snapshot.recentRecords.last().summary)
+        assertEquals("onebot11:group:3", snapshot.recentRecords.last().target)
     }
 }

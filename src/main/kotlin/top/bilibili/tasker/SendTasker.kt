@@ -100,7 +100,7 @@ object SendTasker : BiliTasker("SendTasker") {
                     PushStatistics.recordDelivery(
                         type = queuedMessage.pushStatisticType,
                         success = true,
-                        summary = buildPushRecordSummary(queuedMessage.sourceMessage),
+                        summary = buildPushRecordSubscriptionInfo(queuedMessage.sourceMessage),
                         target = queuedMessage.contact.toSubject(),
                     )
                     BiliBiliBot.logger.info("消息已发送到 {}", queuedMessage.contact.toSubject())
@@ -108,7 +108,7 @@ object SendTasker : BiliTasker("SendTasker") {
                     PushStatistics.recordDelivery(
                         type = queuedMessage.pushStatisticType,
                         success = false,
-                        summary = buildPushRecordSummary(queuedMessage.sourceMessage),
+                        summary = buildPushRecordSubscriptionInfo(queuedMessage.sourceMessage),
                         target = queuedMessage.contact.toSubject(),
                     )
                     BiliBiliBot.logger.warn("消息发送失败: {}", queuedMessage.contact.toSubject())
@@ -131,7 +131,7 @@ object SendTasker : BiliTasker("SendTasker") {
                 PushStatistics.recordDelivery(
                     type = queuedMessage.pushStatisticType,
                     success = false,
-                    summary = buildPushRecordSummary(queuedMessage.sourceMessage),
+                    summary = buildPushRecordSubscriptionInfo(queuedMessage.sourceMessage),
                     target = queuedMessage.contact.toSubject(),
                 )
                 BiliBiliBot.logger.error("发送消息时出错: ${e.message}", e)
@@ -630,14 +630,10 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 最近推送记录只保留 operator 扫一眼就能读懂的摘要，不把完整消息内容塞进首页卡片。
+     * 最近推送记录只保留订阅名称，不把完整消息内容塞进首页卡片。
      */
-    private fun buildPushRecordSummary(message: BiliMessage): String {
-        return when (message) {
-            is DynamicMessage -> "${message.name} 发布了新动态"
-            is LiveMessage -> "${message.name} 正在直播：${message.title}"
-            is LiveCloseMessage -> "${message.name} 已下播：${message.title}"
-        }
+    private fun buildPushRecordSubscriptionInfo(message: BiliMessage): String {
+        return message.name.trim()
     }
 
     /**

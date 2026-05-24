@@ -446,7 +446,7 @@ class WebUiRouteSmokeTest {
         assertEquals(2, runtimeBody.recentPushRecords.size)
         assertEquals("直播", runtimeBody.recentPushRecords.first().typeLabel)
         assertEquals("已发送", runtimeBody.recentPushRecords.first().statusLabel)
-        assertEquals("米哈游Official 正在直播：4.7版本前瞻特别节目", runtimeBody.recentPushRecords.first().summary)
+        assertEquals("米哈游Official", runtimeBody.recentPushRecords.first().summary)
         assertEquals("bot.yml", configResponse.body<WebUiConfigFileDto>().sourceFile)
     }
 
@@ -1101,14 +1101,14 @@ class WebUiRouteSmokeTest {
                             timestampEpochMillis = 1779254700000L,
                             type = "LIVE",
                             success = true,
-                            summary = "米哈游Official 正在直播：4.7版本前瞻特别节目",
+                            summary = "米哈游Official",
                             target = "onebot11:group:10001",
                         ),
                         PushDeliveryRecordSnapshot(
                             timestampEpochMillis = 1779254600000L,
                             type = "DYNAMIC",
                             success = true,
-                            summary = "LexBurner 发布了新动态",
+                            summary = "LexBurner",
                             target = "onebot11:group:10002",
                         ),
                     ),

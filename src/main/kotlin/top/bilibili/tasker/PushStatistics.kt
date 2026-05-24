@@ -29,7 +29,7 @@ enum class PushStatisticType {
 }
 
 /**
- * 单日推送统计快照，供 WebUI facade 转换成序列化 DTO。
+ * 单日推送统计快照保留今日计数，recentRecords 额外附带进程内最新 5 条推送历史。
  */
 data class DailyPushStatsSnapshot(
     val date: String,
@@ -43,7 +43,7 @@ data class DailyPushStatsSnapshot(
 )
 
 /**
- * 最近推送记录快照只保留首页需要的时间、类型、状态和摘要，避免把任务内部对象直接暴露出去。
+ * 最近推送记录快照只保留首页需要的时间、类型、状态和订阅信息，避免把任务内部对象直接暴露出去。
  */
 data class PushDeliveryRecordSnapshot(
     val timestampEpochMillis: Long,
@@ -135,7 +135,7 @@ internal class DailyPushStatsCounter(
     }
 
     /**
-     * 自然日变化时清空上一天的内存计数，保证首页始终展示“今日”统计。
+     * 自然日变化时只清空上一天的内存计数，最近推送记录保持进程内最新 5 条不回滚。
      */
     private fun ensureCurrentDate() {
         val today = todayProvider()
@@ -148,7 +148,6 @@ internal class DailyPushStatsCounter(
         liveCloseSuccessCount = 0
         failureCount = 0
         lastSuccessAtEpochMillis = null
-        recentRecords.clear()
     }
 
     /**
@@ -183,7 +182,7 @@ object PushStatistics {
     }
 
     /**
-     * 记录带摘要的完整推送结果，供首页最近推送记录直接展示。
+     * 记录带订阅信息的完整推送结果，供首页最近推送记录直接展示。
      */
     fun recordDelivery(
         type: PushStatisticType,

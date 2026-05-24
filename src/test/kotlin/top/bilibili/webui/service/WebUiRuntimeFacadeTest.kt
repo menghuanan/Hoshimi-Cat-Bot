@@ -169,14 +169,14 @@ class WebUiRuntimeFacadeTest {
                             timestampEpochMillis = 1779254700000L,
                             type = "LIVE",
                             success = false,
-                            summary = "米哈游Official 正在直播：4.7版本前瞻特别节目",
+                            summary = "米哈游Official",
                             target = "onebot11:group:10001",
                         ),
                         PushDeliveryRecordSnapshot(
                             timestampEpochMillis = 1779254600000L,
                             type = "DYNAMIC",
                             success = true,
-                            summary = "LexBurner 发布了新动态",
+                            summary = "LexBurner",
                             target = "onebot11:group:10002",
                         ),
                     ),
@@ -210,11 +210,12 @@ class WebUiRuntimeFacadeTest {
         assertEquals("直播", snapshot.recentPushRecords.first().typeLabel)
         assertEquals(false, snapshot.recentPushRecords.first().success)
         assertEquals("发送失败", snapshot.recentPushRecords.first().statusLabel)
-        assertEquals("米哈游Official 正在直播：4.7版本前瞻特别节目", snapshot.recentPushRecords.first().summary)
+        assertEquals("米哈游Official", snapshot.recentPushRecords.first().summary)
         assertEquals("DYNAMIC", snapshot.recentPushRecords.last().type)
         assertEquals("动态", snapshot.recentPushRecords.last().typeLabel)
         assertEquals(true, snapshot.recentPushRecords.last().success)
         assertEquals("已发送", snapshot.recentPushRecords.last().statusLabel)
+        assertEquals("LexBurner", snapshot.recentPushRecords.last().summary)
     }
 
     /**

@@ -118,5 +118,5 @@ export type WebUiDashboardRecentPushRecord = {
   timestampEpochMillis: number | null
   typeLabel: string
   statusLabel: string
-  summary: string
+  subscriptionInfo: string
 }

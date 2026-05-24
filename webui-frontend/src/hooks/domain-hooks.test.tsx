@@ -106,7 +106,7 @@ describe('webui domain hooks', () => {
       timestampEpochMillis: 1_700_000_000_000,
       typeLabel: '动态',
       statusLabel: '成功',
-      summary: '测试推送',
+      subscriptionInfo: '测试推送',
     }]))
     expect(result.current.dashboard.recentPushRecords[0]).not.toHaveProperty('target')
   })

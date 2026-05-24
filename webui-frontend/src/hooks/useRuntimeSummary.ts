@@ -35,14 +35,14 @@ function toDashboardRuntimeFields(summary: WebUiRuntimeSummary | null): WebUiDas
 }
 
 /**
- * 最近推送记录只保留首页展示需要的摘要字段，避免把原始 target 和内部类型继续往下传。
+ * 最近推送记录只保留首页展示需要的订阅信息，避免把原始 target 和内部类型继续往下传。
  */
 function summarizeRecentPushRecords(records: WebUiRecentPushRecord[]): WebUiDashboardRecentPushRecord[] {
   return records.map((record) => ({
     timestampEpochMillis: record.timestampEpochMillis ?? null,
     typeLabel: sanitizeDashboardText(record.typeLabel || record.type || '--'),
     statusLabel: sanitizeDashboardText(record.statusLabel || '--'),
-    summary: sanitizeDashboardText(record.summary || '--'),
+    subscriptionInfo: sanitizeDashboardText(record.summary || '--'),
   }))
 }
 

@@ -86,6 +86,26 @@ function ResourceMeter({label, value, detail}: {label: string, value: number | n
 }
 
 /**
+ * 最近推送记录采用“标题在上、内容在下”的两层布局，避免窄屏下把语义压成一行。
+ */
+function PushRecordField({
+  label,
+  value,
+  valueClassName = '',
+}: {
+  label: string
+  value: string
+  valueClassName?: string
+}) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <strong className={`block min-w-0 break-words text-sm font-semibold ${valueClassName || 'text-slate-950'}`.trim()}>{value}</strong>
+    </div>
+  )
+}
+
+/**
  * 首页展示运行态摘要和常用入口，数据缺失时保持稳定占位。
  */
 export function DashboardPage() {
@@ -130,11 +150,21 @@ export function DashboardPage() {
             ) : (
               <div className="max-h-[22rem] divide-y divide-slate-100 overflow-y-auto">
                 {recentPushRecords.map((record, index) => (
-                  <div key={`${record.timestampEpochMillis || index}-${record.summary || index}`} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[4rem_6rem_minmax(0,1fr)_10rem] md:items-center">
-                    <span className="font-medium text-slate-700">{record.typeLabel}</span>
-                    <span className={record.statusLabel === '成功' || record.statusLabel === '已发送' ? 'text-emerald-600' : 'text-rose-700'}>{record.statusLabel}</span>
-                    <span className="min-w-0 break-words text-slate-950">{record.summary}</span>
-                    <span className="text-right text-slate-500">{formatEpochMillis(record.timestampEpochMillis ?? null)}</span>
+                  <div key={`${record.timestampEpochMillis || index}-${record.subscriptionInfo || index}`} className="space-y-3 px-4 py-3 text-sm">
+                    <div className="grid gap-3 md:grid-cols-[4rem_6rem_minmax(0,1fr)_10rem]">
+                      <PushRecordField label="类型" value={record.typeLabel} />
+                      <PushRecordField
+                        label="状态"
+                        value={record.statusLabel}
+                        valueClassName={record.statusLabel === '成功' || record.statusLabel === '已发送' ? 'text-emerald-600' : 'text-rose-700'}
+                      />
+                      <PushRecordField label="订阅信息" value={record.subscriptionInfo} />
+                      <PushRecordField
+                        label="时间"
+                        value={formatEpochMillis(record.timestampEpochMillis ?? null)}
+                        valueClassName="text-slate-500 text-right"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
