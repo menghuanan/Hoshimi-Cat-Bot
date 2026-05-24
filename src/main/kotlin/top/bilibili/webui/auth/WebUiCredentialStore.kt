@@ -7,6 +7,8 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 /**
  * WebUI 凭据存储只管理独立认证状态文件，避免把密码材料混入受 ConfigManager 管理的 YAML 配置。
@@ -16,6 +18,8 @@ class WebUiCredentialStore(
     private val random: SecureRandom = SecureRandom(),
     private val clock: () -> Long = { System.currentTimeMillis() / 1000L },
 ) {
+    private val pbkdf2Iterations = 120_000
+    private val pbkdf2KeyLengthBits = 256
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
@@ -39,6 +43,8 @@ class WebUiCredentialStore(
         val state = WebUiCredentialState(
             passwordHash = hashPassword(initialPassword, salt),
             passwordSalt = salt,
+            hashAlgorithm = "PBKDF2WithHmacSHA256",
+            hashIterations = pbkdf2Iterations,
             mustChangePassword = true,
             tokenVersion = 1L,
             createdAtEpochSecond = now,
@@ -79,6 +85,9 @@ class WebUiCredentialStore(
         val nextState = currentState.copy(
             passwordHash = hashPassword(newPassword, salt),
             passwordSalt = salt,
+            hashAlgorithm = "PBKDF2WithHmacSHA256",
+            hashIterations = pbkdf2Iterations,
+            version = 2,
             mustChangePassword = mustChangePassword,
             tokenVersion = currentState.tokenVersion + 1L,
             updatedAtEpochSecond = now,
@@ -91,16 +100,25 @@ class WebUiCredentialStore(
      * 为后续密码校验提供统一散列入口，避免路由层自行处理密码材料。
      */
     fun hashPassword(password: String, salt: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val bytes = digest.digest("$salt:$password".toByteArray(StandardCharsets.UTF_8))
-        return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
+        val keySpec = PBEKeySpec(password.toCharArray(), salt.toByteArray(StandardCharsets.UTF_8), pbkdf2Iterations, pbkdf2KeyLengthBits)
+        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val encoded = factory.generateSecret(keySpec).encoded
+        keySpec.clearPassword()
+        return Base64.getEncoder().encodeToString(encoded)
     }
 
     /**
-     * 允许后续认证服务按同一套规则校验明文密码是否匹配当前状态。
+     * 允许后续认证服务按同一套规则校验明文密码是否匹配当前状态；旧版本成功后会自动升级到 PBKDF2。
      */
     fun matchesPassword(state: WebUiCredentialState, password: String): Boolean {
-        return hashPassword(password, state.passwordSalt) == state.passwordHash
+        val matches = when {
+            state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256" -> legacyMatchesPassword(state, password)
+            else -> hashPassword(password, state.passwordSalt) == state.passwordHash
+        }
+        if (matches && (state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256")) {
+            migrateLegacyState(state, password)
+        }
+        return matches
     }
 
     /**
@@ -115,6 +133,40 @@ class WebUiCredentialStore(
             return null
         }
         return json.decodeFromString(WebUiCredentialState.serializer(), content)
+    }
+
+    /**
+     * 旧状态使用 SHA-256 派生字符串；仅在兼容旧文件和自动迁移时保留。
+     */
+    private fun legacyMatchesPassword(state: WebUiCredentialState, password: String): Boolean {
+        return legacyHashPassword(password, state.passwordSalt) == state.passwordHash
+    }
+
+    /**
+     * 成功匹配旧格式时立即写回 PBKDF2 版本并生成新 salt，避免下一次登录继续走旧散列路径。
+     */
+    private fun migrateLegacyState(state: WebUiCredentialState, password: String) {
+        val salt = generateSalt()
+        val now = clock()
+        val migratedState = state.copy(
+            version = 2,
+            hashAlgorithm = "PBKDF2WithHmacSHA256",
+            hashIterations = pbkdf2Iterations,
+            passwordHash = hashPassword(password, salt),
+            passwordSalt = salt,
+            tokenVersion = state.tokenVersion + 1L,
+            updatedAtEpochSecond = now,
+        )
+        saveState(migratedState)
+    }
+
+    /**
+     * 兼容旧状态的 SHA-256 计算只用于迁移，不再作为新密码的持久化格式。
+     */
+    private fun legacyHashPassword(password: String, salt: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val bytes = digest.digest("$salt:$password".toByteArray(StandardCharsets.UTF_8))
+        return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
     /**

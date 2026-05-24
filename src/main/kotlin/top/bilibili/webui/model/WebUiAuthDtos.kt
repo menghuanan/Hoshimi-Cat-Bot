@@ -29,7 +29,7 @@ data class WebUiSessionDto(
 )
 
 /**
- * 认证路由统一返回认证状态、token 和提示消息，避免前端依赖内部服务对象。
+ * 认证路由统一返回认证状态和提示消息，避免前端依赖内部服务对象或 bearer token。
  */
 @Serializable
 data class WebUiAuthResponseDto(

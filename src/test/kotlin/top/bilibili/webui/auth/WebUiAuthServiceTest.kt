@@ -3,6 +3,7 @@ package top.bilibili.webui.auth
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -33,6 +34,45 @@ class WebUiAuthServiceTest {
         assertTrue(success.success)
         assertNotNull(success.token)
         assertTrue(success.mustChangePassword)
+    }
+
+    /**
+     * 失败节流对外仍返回通用认证失败消息，但应携带内部计数和等待时间供路由审计使用。
+     */
+    @Test
+    fun `repeated login failures should trigger per ip lockout with generic visible message`() {
+        var now = 1_000L
+        val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
+        val bootstrap = store.loadOrCreate()
+        val service = WebUiAuthService(
+            credentialStore = store,
+            tokenService = WebUiTokenService(tokenTtlSeconds = 300L, clock = { now / 1000L }),
+            timeProvider = { now },
+        )
+        val context = WebUiLoginContext(
+            sourceIp = "192.0.2.10",
+            userAgent = "Mozilla/5.0 Test Browser",
+        )
+
+        repeat(5) {
+            val failed = service.login("wrong-password", context)
+            assertFalse(failed.success)
+            assertEquals("invalid credentials", failed.message)
+        }
+        val locked = service.login(bootstrap.initialPassword!!, context)
+        val otherIp = service.login(
+            bootstrap.initialPassword!!,
+            context.copy(sourceIp = "192.0.2.11"),
+        )
+        now += locked.retryAfterMillis
+        val afterDelay = service.login(bootstrap.initialPassword!!, context)
+
+        assertFalse(locked.success)
+        assertEquals("invalid credentials", locked.message)
+        assertTrue(locked.retryAfterMillis > 0L)
+        assertTrue(locked.failureCount >= 5)
+        assertTrue(otherIp.success)
+        assertTrue(afterDelay.success)
     }
 
     @Test

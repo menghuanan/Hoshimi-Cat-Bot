@@ -38,4 +38,29 @@ class WebUiTokenServiceTest {
 
         assertEquals(3L, session.tokenVersion)
     }
+
+    /**
+     * 会话仓库达到容量上限时应淘汰最旧会话，并在签发新会话前先清理过期项。
+     */
+    @Test
+    fun `session store should prune expired sessions and evict oldest session at capacity`() {
+        var now = 1_000L
+        val service = WebUiTokenService(
+            tokenTtlSeconds = 10L,
+            maxSessions = 2,
+            clock = { now },
+        )
+
+        val first = service.issueToken(tokenVersion = 1L)
+        val second = service.issueToken(tokenVersion = 1L)
+        val third = service.issueToken(tokenVersion = 1L)
+        now += 11L
+        val fourth = service.issueToken(tokenVersion = 1L)
+
+        assertNull(service.verifyToken(first.token, 1L))
+        assertNull(service.verifyToken(second.token, 1L))
+        assertNull(service.verifyToken(third.token, 1L))
+        assertNotNull(service.verifyToken(fourth.token, 1L))
+        assertEquals(1, service.activeSessionCount())
+    }
 }
