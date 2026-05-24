@@ -34,11 +34,19 @@ jobs:
         distribution: 'temurin'
         cache: 'gradle'
 
-    # 步骤 3：初始化 Gradle 环境。
+    # 步骤 3.1：显式固定 Node 22，并缓存 WebUI 依赖，避免前端构建依赖 runner 预装版本。
+    - name: Set up Node.js 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: webui-frontend/package-lock.json
+
+    # 步骤 4：初始化 Gradle 环境。
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
-    # 步骤 4：先采集环境信息。
+    # 步骤 5：先采集环境信息。
     - name: Environment Diagnostics
       run: |
         chmod +x gradlew
@@ -56,6 +64,12 @@ jobs:
           echo "## gradle --version"
           ./gradlew --version
           echo ""
+          echo "## node -v"
+          node -v
+          echo ""
+          echo "## npm -v"
+          npm -v
+          echo ""
           echo "## uname -a"
           uname -a
           echo ""
@@ -65,28 +79,36 @@ jobs:
           echo "## free -h"
           free -h || true
         } 2>&1 | tee diagnostics/ci/environment.log
-    # 步骤 5：执行编译。
+    # 步骤 6：先把 WebUI 前端的 lint 和单测跑完，确保新的独立模块在 CI 里被直接验证。
+    - name: Check WebUI Frontend
+      working-directory: webui-frontend
+      run: |
+        npm ci
+        npm run lint
+        npm test
+
+    # 步骤 7：执行编译。
     - name: Compile with Gradle
       id: gradle_compile
       run: |
         set -o pipefail
         ./gradlew compileKotlin compileTestKotlin --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/compile.log
 
-    # 步骤 6：执行测试。
+    # 步骤 8：执行测试。
     - name: Test with Gradle
       id: gradle_test
       run: |
         set -o pipefail
         ./gradlew test --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/test.log
 
-    # 步骤 7：执行打包。
+    # 步骤 9：执行 shadowJar，确保 CI 产物就是 Docker 和裸机发行链路实际消费的 fat jar。
     - name: Package with Gradle
       id: gradle_package
       run: |
         set -o pipefail
-        ./gradlew assemble --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/package.log
+        ./gradlew shadowJar --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/package.log
 
-    # 步骤 8：发布构建摘要。
+    # 步骤 10：发布构建摘要。
     - name: Publish CI Summary
       if: always()
       run: |
@@ -103,7 +125,7 @@ jobs:
           echo "### Diagnostic files"
           find diagnostics/ci build/reports build/test-results -type f 2>/dev/null | sed 's#^#- #'
         } >> "$GITHUB_STEP_SUMMARY"
-    # 步骤 9：上传诊断文件。
+    # 步骤 11：上传诊断文件。
     - name: Upload CI Diagnostics
       if: always()
       uses: actions/upload-artifact@v4
@@ -116,7 +138,7 @@ jobs:
           build/tmp/**
         retention-days: 7
         if-no-files-found: warn
-    # 步骤 10：仅在成功时上传构建产物。
+    # 步骤 12：仅在成功时上传构建产物。
     - name: Upload Build Artifact
       if: success()
       uses: actions/upload-artifact@v4
