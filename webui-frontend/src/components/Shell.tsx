@@ -128,8 +128,8 @@ export function Shell({page, onNavigate, children}: ShellProps) {
               </button>
             ))}
           </nav>
-          {/* 底部控制区改成完整卡片，主题和管理员入口都贴左对齐，视觉上更像一个独立用户块。 */}
-          <div className="mt-auto border-t border-r border-slate-200 bg-white/95 px-4 pb-4 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur max-lg:mt-6 max-lg:w-full max-lg:border-t-0 max-lg:border-r-0 max-lg:bg-transparent max-lg:px-0 max-lg:pb-0 max-lg:pt-4 max-lg:shadow-none">
+          {/* 底部控制区保留完整卡片感，但通过左侧负外边距和右侧额外 1px 贴齐侧栏外沿，抵消侧栏自身边框宽度。 */}
+          <div className="mt-auto border-t border-r border-slate-200 bg-white/95 px-4 pb-4 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur lg:-ml-5 lg:mr-[-21px] max-lg:mt-6 max-lg:mx-0 max-lg:w-full max-lg:border-t-0 max-lg:border-r-0 max-lg:bg-transparent max-lg:px-0 max-lg:pb-0 max-lg:pt-4 max-lg:shadow-none">
             <div className="space-y-3">
               <label className="block space-y-1 text-sm font-medium text-slate-700">
                 <span className="block pl-1 text-xs font-semibold uppercase tracking-wide text-slate-500">主题模式</span>

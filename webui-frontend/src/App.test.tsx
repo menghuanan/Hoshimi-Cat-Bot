@@ -980,6 +980,8 @@ describe('webui shell routing', () => {
     expect(within(aside as HTMLElement).getByLabelText('主题模式')).toBeInTheDocument()
     expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toBeInTheDocument()
     expect(within(aside as HTMLElement).getByLabelText('主题模式').parentElement).toHaveClass('space-y-1')
+    expect(within(aside as HTMLElement).getByLabelText('主题模式').parentElement?.parentElement?.parentElement).toHaveClass('lg:-ml-5')
+    expect(within(aside as HTMLElement).getByLabelText('主题模式').parentElement?.parentElement?.parentElement).toHaveClass('lg:mr-[-21px]')
     expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toHaveClass('w-full')
     expect(within(aside as HTMLElement).getByRole('button', {name: '管理员', expanded: false})).toHaveClass('justify-start')
     expect(document.querySelector('header')).toBeNull()
