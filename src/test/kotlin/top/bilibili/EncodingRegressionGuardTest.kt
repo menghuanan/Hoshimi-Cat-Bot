@@ -107,16 +107,18 @@ class EncodingRegressionGuardTest {
     private fun hasLfOnly(bytes: ByteArray): Boolean = bytes.none { it == '\r'.code.toByte() }
 
     private fun trackedTextFiles(root: Path): List<Path> {
-        val process = ProcessBuilder("git", "ls-files")
+        // 通过 NUL 分隔和关闭路径转义，避免 Windows 下中文路径被 git 以 quoted escape 形式输出。
+        val process = ProcessBuilder("git", "-c", "core.quotepath=false", "ls-files", "-z")
             .directory(root.toFile())
             .redirectErrorStream(true)
             .start()
 
-        val output = process.inputStream.bufferedReader().use { it.readLines() }
+        val output = String(process.inputStream.readBytes(), StandardCharsets.UTF_8)
         val exitCode = process.waitFor()
-        check(exitCode == 0) { "git ls-files failed: ${output.joinToString("\\n")}" }
+        check(exitCode == 0) { "git ls-files failed: $output" }
 
         return output
+            .split('\u0000')
             .asSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
