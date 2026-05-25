@@ -519,7 +519,7 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * 群普通管理员使用群聊和个人 QQ 双栏输入，并在下方展示已有映射。
+   * 群普通管理员使用群聊和个人 QQ 双栏卡片直接展示已有映射。
    */
   it('renders group admin settings as paired group and user inputs', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -548,7 +548,71 @@ describe('webui shell routing', () => {
 
     expect(await screen.findByLabelText('群聊')).toHaveValue('124515')
     expect(screen.getByLabelText('个人QQ号')).toHaveValue('1245512')
-    expect(screen.getByText('群聊：124515 管理员：1245512')).toBeInTheDocument()
+    expect(screen.queryByText('群聊：124515 管理员：1245512')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '删除'})).toBeInTheDocument()
+  })
+
+  /**
+   * 已有群普通管理员直接以可编辑卡片呈现，删除卡片后保存应提交删除后的管理员列表。
+   */
+  it('saves deleted existing group admin cards without requiring the stage button', async () => {
+    const botPostBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-config')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: '', fields: []})}
+      }
+      if (url.includes('/api/config/bot') && init?.method === 'POST') {
+        botPostBodies.push(JSON.parse(String(init.body || '{}')))
+        return {ok: true, status: 200, json: async () => ({success: true, message: 'bot saved', snapshotToken: 'bot-token-2'})}
+      }
+      if (url.includes('/api/config/bot')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token-1',
+            fields: [
+              {
+                key: 'admins',
+                label: 'admins',
+                value: JSON.stringify([
+                  {groupId: 124515, userIds: [1245512]},
+                  {groupId: 998877, userIds: [665544]},
+                ]),
+                capability: 'EDITABLE',
+                editable: true,
+              },
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+    await user.click(await screen.findByRole('button', {name: '管理员', pressed: false}))
+
+    expect(screen.queryByText('群聊：124515 管理员：1245512')).not.toBeInTheDocument()
+    expect(screen.getAllByLabelText('群聊')).toHaveLength(2)
+    expect(screen.getAllByLabelText('个人QQ号')).toHaveLength(2)
+
+    await user.click(screen.getAllByRole('button', {name: '删除'})[0])
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    await waitFor(() => expect(botPostBodies).toHaveLength(1))
+    expect(botPostBodies[0].admins).toEqual([
+      {
+        groupId: 998877,
+        userIds: [665544],
+        groupContact: 'onebot11:group:998877',
+        userContacts: ['onebot11:private:665544'],
+      },
+    ])
   })
 
   /**
@@ -592,13 +656,15 @@ describe('webui shell routing', () => {
     const userInputs = screen.getAllByLabelText('个人QQ号')
     await user.type(groupInputs[1], '111111')
     await user.type(userInputs[1], '222222')
-    const emptyState = screen.getByText('暂无群普通管理员')
     const stageButton = screen.getByRole('button', {name: '暂存'})
-    expect(emptyState.compareDocumentPosition(stageButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText('暂无群普通管理员')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', {name: '删除'})).toHaveLength(2)
 
     await user.click(stageButton)
-    expect(screen.getByText('群聊：123456 管理员：654321')).toBeInTheDocument()
-    expect(screen.getByText('群聊：111111 管理员：222222')).toBeInTheDocument()
+    expect(screen.getAllByLabelText('群聊')[0]).toHaveValue('123456')
+    expect(screen.getAllByLabelText('个人QQ号')[0]).toHaveValue('654321')
+    expect(screen.getAllByLabelText('群聊')[1]).toHaveValue('111111')
+    expect(screen.getAllByLabelText('个人QQ号')[1]).toHaveValue('222222')
     expect(postRequests).toHaveLength(0)
 
     await user.click(screen.getByRole('button', {name: '保存'}))

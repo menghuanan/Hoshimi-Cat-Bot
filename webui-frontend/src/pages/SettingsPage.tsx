@@ -262,7 +262,7 @@ function SettingsGroup({title, fields, values, onChange}: {
         <div className="grid gap-4">
           {fields.map((field) => (
             field.key === 'adminsText'
-              ? <GroupAdminField key={`${field.key}:${String(values[field.key] || '')}`} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
+              ? <GroupAdminField key={field.key} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
               : <SettingsField key={field.key} field={field} value={values[field.key] ?? ''} onChange={onChange} />
           ))}
         </div>
@@ -272,17 +272,29 @@ function SettingsGroup({title, fields, values, onChange}: {
 }
 
 /**
- * 群普通管理员支持多行暂存，暂存时一次性写回页面态并在下方保留已保存映射。
+ * 群普通管理员以卡片作为唯一编辑面，卡片变更立即进入页面待保存态。
  */
 function GroupAdminField({value, onChange}: {value: string, onChange: (value: string) => void}) {
-  const pairs = adminPairsFromText(value)
-  const [draftPairs, setDraftPairs] = useState<AdminDraftPair[]>(() => initialAdminDraftPairs(value))
+  const [draftState, setDraftState] = useState(() => ({
+    sourceValue: value,
+    pairs: initialAdminDraftPairs(value),
+  }))
+  const draftPairs = draftState.sourceValue === value ? draftState.pairs : initialAdminDraftPairs(value)
 
   /**
-   * 输入区直接编辑草稿数组，新增和删除行都只影响页面态。
+   * 卡片增删改同步更新草稿和待保存字段，用户直接点顶部保存也能提交当前卡片状态。
+   */
+  const applyDraftPairs = (nextPairs: AdminDraftPair[]) => {
+    const nextValue = serializeAdminDraftPairs(nextPairs)
+    setDraftState({sourceValue: nextValue, pairs: nextPairs})
+    onChange(nextValue)
+  }
+
+  /**
+   * 输入区直接编辑卡片数组，半填行保留到保存校验中提示用户补全。
    */
   const updatePair = (index: number, part: keyof AdminDraftPair, nextValue: string) => {
-    setDraftPairs((current) => current.map((pair, pairIndex) => (
+    applyDraftPairs(draftPairs.map((pair, pairIndex) => (
       pairIndex === index ? {...pair, [part]: nextValue} : pair
     )))
   }
@@ -291,21 +303,22 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
    * 添加空白行后继续编辑，避免群普通管理员只能暂存一组映射。
    */
   const addPair = () => {
-    setDraftPairs((current) => [...current, createEmptyAdminPair()])
+    setDraftState({sourceValue: value, pairs: [...draftPairs, createEmptyAdminPair()]})
   }
 
   /**
-   * 删除草稿行后保留至少一行空白输入，避免删空后失去新增入口。
+   * 删除卡片立即反映到待保存字段，删空后保留一张空卡作为后续新增入口。
    */
   const removePair = (index: number) => {
-    setDraftPairs((current) => ensureAdminDraftPairs(current.filter((_, pairIndex) => pairIndex !== index)))
+    applyDraftPairs(ensureAdminDraftPairs(draftPairs.filter((_, pairIndex) => pairIndex !== index)))
   }
 
   /**
-   * 暂存前先压缩空白行，避免页面态出现无效的空映射。
+   * 暂存按钮保留显式确认入口，同时压缩空白卡片避免页面继续展示无效行。
    */
   const stageDraft = () => {
-    onChange(serializeAdminDraftPairs(draftPairs))
+    const compactedPairs = ensureAdminDraftPairs(draftPairs.filter((pair) => pair.groupId.trim() || pair.userId.trim()))
+    applyDraftPairs(compactedPairs)
   }
 
   return (
@@ -314,7 +327,7 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
         <p className="text-sm font-medium text-slate-800">群普通管理员</p>
         <button type="button" onClick={addPair} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">添加一行</button>
       </div>
-      {/* 已暂存的群普通管理员先展示在上方，底部再放置暂存按钮，避免空状态贴着按钮。 */}
+      {/* 管理员卡片即当前待保存列表，不再额外渲染右下角的只读信息块。 */}
       <div className="mt-3 space-y-3">
         {draftPairs.map((pair, index) => (
           <div key={`admin-draft-${index}`} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -341,19 +354,12 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
               </label>
             </div>
             <div className="flex justify-end">
-              {draftPairs.length > 1 ? (
+              {draftPairs.length > 1 || pair.groupId.trim() || pair.userId.trim() ? (
                 <button type="button" onClick={() => removePair(index)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">删除</button>
               ) : null}
             </div>
           </div>
         ))}
-      </div>
-      <div className="mt-3 space-y-1">
-        {pairs.length > 0 ? pairs.map((pair, index) => (
-          <p key={`${pair.groupId}-${pair.userId}-${index}`} className="text-sm text-slate-700">
-            群聊：{pair.groupId || '--'} 管理员：{pair.userId || '--'}
-          </p>
-        )) : <p className="text-sm text-slate-500">暂无群普通管理员</p>}
       </div>
       <div className="mt-4 flex justify-end">
         <button type="button" onClick={stageDraft} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">暂存</button>
