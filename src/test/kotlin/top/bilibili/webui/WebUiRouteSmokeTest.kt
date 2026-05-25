@@ -491,7 +491,7 @@ class WebUiRouteSmokeTest {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"type":"bangumi","bangumiId":"md12345","targetGroup":"10001","confirmationPassword":"Better123!@"}""")
+            setBody("""{"type":"bangumi","bangumiId":"av12345","targetGroup":"10001","confirmationPassword":"Better123!@"}""")
         }
         val invalidDelete = client.delete("/api/subscriptions/missing") {
             contentType(ContentType.Application.Json)
@@ -503,7 +503,7 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.Unauthorized, unauthenticated.status)
         assertEquals(HttpStatusCode.Forbidden, invalidCreateMissingConfirmation.status)
         assertEquals(HttpStatusCode.BadRequest, invalidCreate.status)
-        assertTrue(invalidCreate.body<WebUiSubscriptionMutationResultDto>().message.contains("ep 或 ss"))
+        assertTrue(invalidCreate.body<WebUiSubscriptionMutationResultDto>().message.contains("ss、md 或 ep"))
         assertEquals(HttpStatusCode.Forbidden, invalidDeleteMissingConfirmation.status)
         assertEquals(HttpStatusCode.BadRequest, invalidDelete.status)
     }

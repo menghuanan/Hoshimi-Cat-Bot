@@ -1075,7 +1075,7 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * 分组卡片额外展示订阅 UID 编辑器，新增 UID 同样必须是正整数。
+   * 分组卡片额外展示订阅 ID 编辑器，新增项支持 UID 正整数和 ss/md/ep 番剧标识。
    */
   it('shows the group uid editor only for group subscriptions', async () => {
     const uidPostBodies: string[] = []
@@ -1104,7 +1104,7 @@ describe('webui shell routing', () => {
         return {ok: true, status: 200, json: async () => ({success: true})}
       }
       if (url.endsWith('/api/subscriptions/group%3Ateam-a/uids')) {
-        return {ok: true, status: 200, json: async () => ({items: [{key: '12345', uid: 12345, summary: 'UID：12345'}]})}
+        return {ok: true, status: 200, json: async () => ({items: [{key: '12345', uid: 12345, summary: 'UID：12345'}, {key: 'md12345', identifier: 'md12345', summary: '番剧：测试番剧（md12345）'}]})}
       }
       return {ok: true, status: 200, json: async () => ({success: true})}
     }))
@@ -1115,23 +1115,24 @@ describe('webui shell routing', () => {
     expect(await screen.findByText('team-a')).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '编辑'}))
     const editorDialog = screen.getByRole('dialog', {name: '编辑订阅配置'})
-    expect(screen.getByRole('button', {name: '编辑订阅UID'})).toBeInTheDocument()
-    await user.click(screen.getByRole('button', {name: '编辑订阅UID'}))
+    expect(screen.getByRole('button', {name: '编辑订阅ID'})).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '编辑订阅ID'}))
     expect(await within(editorDialog).findByText('UID：12345')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', {name: '新增订阅UID'}))
-    await user.type(screen.getByLabelText('订阅UID'), 'bad')
-    await user.click(screen.getByRole('button', {name: '保存订阅UID'}))
-    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('订阅UID必须是正整数')
+    expect(await within(editorDialog).findByText('番剧：测试番剧（md12345）')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '新增订阅ID'}))
+    await user.type(screen.getByLabelText('订阅ID'), 'bad')
+    await user.click(screen.getByRole('button', {name: '保存订阅ID'}))
+    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('订阅ID必须是 UID 正整数，或 ss/md/ep 前缀番剧ID')
 
-    await user.clear(screen.getByLabelText('订阅UID'))
-    await user.type(screen.getByLabelText('订阅UID'), '67890')
-    await user.click(screen.getByRole('button', {name: '保存订阅UID'}))
+    await user.clear(screen.getByLabelText('订阅ID'))
+    await user.type(screen.getByLabelText('订阅ID'), 'MD12345')
+    await user.click(screen.getByRole('button', {name: '保存订阅ID'}))
     await user.type(await screen.findByLabelText('确认密码'), 'uid-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
 
-    expect(await screen.findByText('订阅UID已保存')).toBeInTheDocument()
+    expect(await screen.findByText('订阅ID已保存')).toBeInTheDocument()
     expect(JSON.parse(uidPostBodies.at(-1) || '{}')).toMatchObject({
-      uid: '67890',
+      uid: 'md12345',
       confirmationPassword: 'uid-password',
     })
   })

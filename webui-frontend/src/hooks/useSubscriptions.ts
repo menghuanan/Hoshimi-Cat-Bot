@@ -160,7 +160,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [requestOptions])
 
   /**
-   * 分组 UID 列表只在分组卡片展示，hook 保持薄封装。
+   * 分组订阅 ID 列表只在分组卡片展示，hook 保持薄封装。
    */
   const loadUids = useCallback((itemId: string) => {
     return listSubscriptionUids(itemId, requestOptions)
@@ -222,14 +222,14 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
-   * 保存分组 UID 前统一获取确认密码，新增 UID 后由后端默认绑定全部推送群聊。
+   * 保存分组订阅 ID 前统一获取确认密码，新增后由后端默认绑定全部推送群聊。
    */
   const saveUid = useCallback(async (itemId: string, draft: SubscriptionUidDraft) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存订阅UID')
+    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存订阅ID')
     if (!confirmationPassword) {
       return null
     }
-    return ensureSubscriptionWriteSucceeded(await saveSubscriptionUid(itemId, {...draft, confirmationPassword}, requestOptions), '保存订阅UID失败')
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionUid(itemId, {...draft, confirmationPassword}, requestOptions), '保存订阅ID失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
@@ -261,14 +261,14 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
-   * 删除分组 UID 必须经过确认，后端会走取消关注链路。
+   * 删除分组订阅 ID 必须经过确认，后端会走对应取消订阅链路。
    */
   const removeUid = useCallback(async (itemId: string, key: string) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认删除订阅UID')
+    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认删除订阅ID')
     if (!confirmationPassword) {
       return null
     }
-    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionUid(itemId, key, confirmationPassword, requestOptions), '删除订阅UID失败')
+    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionUid(itemId, key, confirmationPassword, requestOptions), '删除订阅ID失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**

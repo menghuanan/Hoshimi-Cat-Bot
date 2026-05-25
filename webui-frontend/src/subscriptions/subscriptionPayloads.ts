@@ -154,7 +154,7 @@ export function buildSubscriptionTargetPayload(input: SubscriptionTargetPayload)
 }
 
 /**
- * 分组 UID 保存 payload 保留字符串形式，避免前端大整数转换产生精度风险。
+ * 分组订阅 ID 保存 payload 保留字符串形式，避免 UID 大整数转换或番剧前缀被破坏。
  */
 export function buildSubscriptionUidPayload(input: SubscriptionUidPayload): SubscriptionUidPayload {
   return {

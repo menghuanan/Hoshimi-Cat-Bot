@@ -89,7 +89,7 @@ data class WebUiSubscriptionTargetSaveRequestDto(
 )
 
 /**
- * 分组订阅 UID 编辑页响应按单 UID 拆分，key 直接使用 UID 字符串。
+ * 分组订阅 ID 编辑页响应按 UID 或番剧标识拆分，key 直接使用可回传的订阅标识字符串。
  */
 @Serializable
 data class WebUiSubscriptionUidListDto(
@@ -97,17 +97,18 @@ data class WebUiSubscriptionUidListDto(
 )
 
 /**
- * 单条分组 UID 记录保留数值 UID 和展示摘要，避免前端解析分组 identifierLabel。
+ * 单条分组订阅记录保留可回传标识；uid 仅用于兼容纯 UID 记录，避免前端解析分组 identifierLabel。
  */
 @Serializable
 data class WebUiSubscriptionUidItemDto(
     val key: String,
-    val uid: Long,
+    val uid: Long? = null,
+    val identifier: String = key,
     val summary: String,
 )
 
 /**
- * 分组 UID 保存请求只接受正整数 UID，新增后默认绑定分组的全部推送群聊。
+ * 分组订阅 ID 保存请求接受正整数 UID 或 ss/md/ep 番剧标识，新增后默认绑定分组的全部推送群聊。
  */
 @Serializable
 data class WebUiSubscriptionUidSaveRequestDto(

@@ -130,7 +130,7 @@ export async function deleteSubscriptionTarget(
 }
 
 /**
- * 分组订阅 UID 列表只对分组卡片有内容，其他卡片由后端返回空列表。
+ * 分组订阅 ID 列表只对分组卡片有内容，其他卡片由后端返回空列表。
  */
 export async function listSubscriptionUids(
   itemId: string,
@@ -145,7 +145,7 @@ export async function listSubscriptionUids(
 }
 
 /**
- * 分组订阅 UID 新增由后端默认绑定到当前分组全部推送群聊。
+ * 分组订阅 ID 新增由后端默认绑定到当前分组全部推送群聊。
  */
 export async function saveSubscriptionUid(
   itemId: string,
@@ -162,7 +162,7 @@ export async function saveSubscriptionUid(
 }
 
 /**
- * 分组订阅 UID 删除走后端取消关注链路，前端只传 UID key 和确认密码。
+ * 分组订阅 ID 删除走后端取消订阅链路，前端只传 key 和确认密码。
  */
 export async function deleteSubscriptionUid(
   itemId: string,

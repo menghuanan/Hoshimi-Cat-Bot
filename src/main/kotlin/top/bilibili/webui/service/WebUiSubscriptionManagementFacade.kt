@@ -16,6 +16,7 @@ import top.bilibili.service.DynamicService
 import top.bilibili.service.PgcService
 import top.bilibili.service.RemoveTemplateResult
 import top.bilibili.service.TemplateRuntimeCoordinator
+import top.bilibili.service.pgcRegex
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.toSubject
 import top.bilibili.webui.model.WebUiSubscriptionAtAllItemDto
@@ -179,54 +180,90 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
-     * 分组 UID 列表从 groupRef 反查动态订阅，避免前端从卡片摘要中解析 UID。
+     * 分组订阅 ID 列表从 groupRef 反查动态订阅，并按分组联系人反查番剧订阅。
      */
     fun listSubscriptionUids(itemId: String): WebUiSubscriptionUidListDto {
         val context = resolveEditContext(itemId) ?: return WebUiSubscriptionUidListDto(emptyList())
         if (context.kind != "group") {
             return WebUiSubscriptionUidListDto(emptyList())
         }
+        val groupContacts = context.contactScopes.toSet()
+        val bangumiItems = BiliData.bangumi.values
+            .filter { bangumi -> groupContacts.isNotEmpty() && bangumi.contacts.any { it in groupContacts } }
+            .sortedBy { it.seasonId }
+            .map { bangumi ->
+                val identifier = "md${bangumi.mediaId}"
+                WebUiSubscriptionUidItemDto(
+                    key = identifier,
+                    identifier = identifier,
+                    summary = "番剧：${bangumi.title}（$identifier）",
+                )
+            }
         return WebUiSubscriptionUidListDto(
             context.uids.map { uid ->
                 WebUiSubscriptionUidItemDto(
                     key = uid.toString(),
                     uid = uid,
+                    identifier = uid.toString(),
                     summary = "UID：$uid",
                 )
-            },
+            } + bangumiItems,
         )
     }
 
     /**
-     * 分组新增 UID 复用后端分组订阅逻辑，新增后默认推送到该分组全部推送群聊。
+     * 分组新增订阅 ID 复用后端分组订阅逻辑，新增后默认推送到该分组全部推送群聊。
      */
     suspend fun saveSubscriptionUid(
         itemId: String,
         request: WebUiSubscriptionUidSaveRequestDto,
     ): WebUiSubscriptionMutationResultDto {
-        val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持订阅UID")
-        if (context.kind != "group") return validationFailure("仅分组支持编辑订阅UID")
-        val uid = parsePositiveLong(request.uid) ?: return validationFailure("订阅UID必须是正整数")
+        val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持订阅ID")
+        if (context.kind != "group") return validationFailure("仅分组支持编辑订阅ID")
+        val identifier = parseGroupSubscriptionIdentifier(request.uid)
+            ?: return validationFailure("订阅ID必须是 UID 正整数，或 ss/md/ep 前缀番剧ID")
         if (context.contactScopes.isEmpty()) return validationFailure("当前分组没有可推送群聊")
         val groupName = context.groupName()
-        val message = addGroupDynamicAction(uid, groupName)
+        val message = when (identifier) {
+            is GroupSubscriptionIdentifier.Uid -> addGroupDynamicAction(identifier.uid, groupName)
+            is GroupSubscriptionIdentifier.Pgc -> applyPgcToGroupContacts(identifier.id, context.contactScopes, followPgcAction)
+        }
         if (!isSuccessMessage(message)) return validationFailure(message)
         markSubscriptionCardUpdated(itemId)
+        if (identifier is GroupSubscriptionIdentifier.Pgc) {
+            markPgcGroupCardUpdates(identifier.id)
+        }
         return persistMutation(success(itemId, message))
     }
 
     /**
-     * 分组删除 UID 必须走取消关注链路，确保账号侧和本地 UID 级附属数据一起回收。
+     * 分组删除订阅 ID 必须走对应取消订阅链路，确保账号侧和本地附属数据一起回收。
      */
     suspend fun deleteSubscriptionUid(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
-        val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持订阅UID")
-        if (context.kind != "group") return validationFailure("仅分组支持编辑订阅UID")
-        val uid = parsePositiveLong(key) ?: return validationFailure("订阅UID标识无效")
-        if (uid !in context.uids) return validationFailure("订阅UID不存在")
-        val message = removeDynamicAction(uid)
+        val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持订阅ID")
+        if (context.kind != "group") return validationFailure("仅分组支持编辑订阅ID")
+        if (context.contactScopes.isEmpty()) return validationFailure("当前分组没有可推送群聊")
+        val identifier = parseGroupSubscriptionIdentifier(key) ?: return validationFailure("订阅ID标识无效")
+        val message = when (identifier) {
+            is GroupSubscriptionIdentifier.Uid -> {
+                if (identifier.uid !in context.uids) return validationFailure("订阅ID不存在")
+                removeDynamicAction(identifier.uid)
+            }
+            is GroupSubscriptionIdentifier.Pgc -> {
+                if (!groupHasPgcSubscription(context.contactScopes, identifier.id)) {
+                    return validationFailure("番剧订阅不存在")
+                }
+                applyPgcToGroupContacts(identifier.id, context.contactScopes, deletePgcAction)
+            }
+        }
         if (!isSuccessMessage(message)) return validationFailure(message)
-        removeUidPayload(uid)
+        if (identifier is GroupSubscriptionIdentifier.Uid) {
+            removeUidPayload(identifier.uid)
+        }
         markSubscriptionCardUpdated(itemId)
+        if (identifier is GroupSubscriptionIdentifier.Pgc) {
+            markPgcGroupCardUpdates(identifier.id)
+        }
         return persistMutation(success(itemId, message))
     }
 
@@ -657,7 +694,7 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
-     * 番剧订阅只允许 ep 或 ss 前缀，避免 WebUI 写入命令层尚未要求支持的 md 入口。
+     * 番剧订阅允许 ss、md、ep 三类命令层标识，保持 WebUI 与聊天命令入口一致。
      */
     private suspend fun createBangumiSubscription(
         request: WebUiSubscriptionCreateRequestDto,
@@ -665,7 +702,7 @@ class WebUiSubscriptionManagementFacade(
         val bangumiId = request.bangumiId.trim().lowercase()
         val subject = normalizeGroupTarget(request.targetGroup)
         val errors = mutableListOf<String>()
-        if (!Regex("^(ep|ss)\\d{4,10}$").matches(bangumiId)) errors += "番剧号必须以 ep 或 ss 开头"
+        if (!pgcRegex.matches(bangumiId)) errors += "番剧号必须以 ss、md 或 ep 开头"
         if (subject == null) errors += "推送群组必须填写"
         if (errors.isNotEmpty()) return validationFailure(errors)
 
@@ -917,7 +954,7 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
-     * 番剧新增入口保留原始 ep/ss 标识，同时为 ss 前缀写入概览卡片使用的季 ID。
+     * 番剧新增入口保留原始 ss/md/ep 标识，同时为 ss 前缀写入概览卡片使用的季 ID。
      */
     private fun markBangumiCardUpdated(bangumiId: String, previousContactsBySeason: Map<Long, Set<String>>) {
         markSubscriptionCardUpdated("bangumi:$bangumiId")
@@ -926,10 +963,82 @@ class WebUiSubscriptionManagementFacade(
                 markSubscriptionCardUpdated("bangumi:$seasonId")
             }
         }
-        // ep 入口只在业务服务返回后才能知道最终 season id，因此用联系人集合变化反查实际卡片。
+        // md/ep 入口只在业务服务返回后才能知道最终 season id，因此用联系人集合变化反查实际卡片。
         BiliData.bangumi.forEach { (seasonId, bangumi) ->
             if (previousContactsBySeason[seasonId] != bangumi.contacts.toSet()) {
                 markSubscriptionCardUpdated("bangumi:$seasonId")
+            }
+        }
+    }
+
+    /**
+     * 分组订阅输入兼容命令层基线：纯数字按 UID，ss/md/ep 前缀按番剧标识。
+     */
+    private fun parseGroupSubscriptionIdentifier(raw: String): GroupSubscriptionIdentifier? {
+        val normalized = raw.trim().lowercase()
+        parsePositiveLong(normalized)?.let { uid -> return GroupSubscriptionIdentifier.Uid(uid) }
+        if (pgcRegex.matches(normalized)) return GroupSubscriptionIdentifier.Pgc(normalized)
+        return null
+    }
+
+    /**
+     * 番剧分组订阅按当前分组联系人逐个执行，保持 WebUI 与 group subscribe 命令语义一致。
+     */
+    private suspend fun applyPgcToGroupContacts(
+        id: String,
+        contacts: List<String>,
+        action: suspend (String, String) -> String,
+    ): String {
+        var successCount = 0
+        var firstError: String? = null
+        contacts.forEach { contact ->
+            val message = action(id, contact)
+            if (isSuccessMessage(message)) {
+                successCount++
+            } else if (firstError == null) {
+                firstError = message
+            }
+        }
+        return if (firstError != null && successCount == 0) {
+            firstError ?: "操作失败"
+        } else {
+            "操作成功，成功处理 $successCount 个联系人${firstError?.let { "，部分失败：$it" }.orEmpty()}"
+        }
+    }
+
+    /**
+     * 删除番剧标识前先确认该番剧确实命中当前分组联系人，避免误报不存在订阅。
+     */
+    private fun groupHasPgcSubscription(contacts: List<String>, id: String): Boolean {
+        val normalizedId = id.trim().lowercase()
+        val pgc = when {
+            normalizedId.startsWith("ss") -> {
+                val seasonId = normalizedId.removePrefix("ss").toLongOrNull()
+                BiliData.bangumi[seasonId]
+            }
+            normalizedId.startsWith("md") -> {
+                val mediaId = normalizedId.removePrefix("md").toLongOrNull()
+                BiliData.bangumi.values.firstOrNull { it.mediaId == mediaId }
+            }
+            else -> null
+        }
+        return pgc?.contacts?.any { it in contacts } == true || normalizedId.startsWith("ep")
+    }
+
+    /**
+     * 分组番剧写入后按输入标识能解析出的本地番剧记录刷新实际卡片时间。
+     */
+    private fun markPgcGroupCardUpdates(id: String) {
+        val normalizedId = id.trim().lowercase()
+        when {
+            normalizedId.startsWith("ss") -> normalizedId.removePrefix("ss").toLongOrNull()?.let { seasonId ->
+                if (BiliData.bangumi.containsKey(seasonId)) markSubscriptionCardUpdated("bangumi:$seasonId")
+            }
+            normalizedId.startsWith("md") -> {
+                val mediaId = normalizedId.removePrefix("md").toLongOrNull()
+                BiliData.bangumi.values.firstOrNull { it.mediaId == mediaId }?.let { bangumi ->
+                    markSubscriptionCardUpdated("bangumi:${bangumi.seasonId}")
+                }
             }
         }
     }
@@ -1315,6 +1424,14 @@ class WebUiSubscriptionManagementFacade(
         val configMap: (BiliConfig) -> MutableMap<String, String>,
         val policyMap: () -> MutableMap<String, MutableMap<Long, TemplatePolicy>>,
     )
+
+    /**
+     * 分组订阅编辑器的统一输入模型，避免 UI 字段名 uid 限死为动态 UID。
+     */
+    private sealed class GroupSubscriptionIdentifier {
+        data class Uid(val uid: Long) : GroupSubscriptionIdentifier()
+        data class Pgc(val id: String) : GroupSubscriptionIdentifier()
+    }
 
     /**
      * 订阅配置编辑上下文统一描述当前卡片能展开到哪些底层写入作用域。

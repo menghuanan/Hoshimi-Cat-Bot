@@ -175,7 +175,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
         await actions.removeUid(itemId, key)
         await openAction('uids')
         await onReload()
-        setStatus('订阅UID已删除')
+        setStatus('订阅ID已删除')
         setStatusTone('success')
         return
       }
@@ -337,7 +337,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   }
 
   /**
-   * 分组订阅 UID 新增只接受正整数，新增后由后端绑定分组全部推送群聊。
+   * 分组订阅 ID 新增接受 UID 正整数或 ss/md/ep 番剧标识，新增后由后端绑定分组全部推送群聊。
    */
   const submitUid = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -347,9 +347,9 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
       return
     }
     const form = new FormData(event.currentTarget)
-    const uid = String(form.get('uid') || '').trim()
-    if (!isPositiveIntegerText(uid)) {
-      setStatus('订阅UID必须是正整数')
+    const uid = String(form.get('uid') || '').trim().toLowerCase()
+    if (!isSubscriptionIdentifierText(uid)) {
+      setStatus('订阅ID必须是 UID 正整数，或 ss/md/ep 前缀番剧ID')
       setStatusTone('error')
       return
     }
@@ -358,10 +358,10 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
       setFormMode('none')
       await openAction('uids')
       await onReload()
-      setStatus('订阅UID已保存')
+      setStatus('订阅ID已保存')
       setStatusTone('success')
     } catch (error) {
-      setStatus(formatPasswordErrorMessage(error, '保存订阅UID失败'))
+      setStatus(formatPasswordErrorMessage(error, '保存订阅ID失败'))
       setStatusTone('error')
     }
   }
@@ -441,7 +441,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
           </div>
           <div className="grid gap-2">
             <button type="button" onClick={() => void openAction('targets')} className={actionButtonClass(activeAction === 'targets')}>编辑推送群聊</button>
-            {showUidEditor ? <button type="button" onClick={() => void openAction('uids')} className={actionButtonClass(activeAction === 'uids')}>编辑订阅UID</button> : null}
+            {showUidEditor ? <button type="button" onClick={() => void openAction('uids')} className={actionButtonClass(activeAction === 'uids')}>编辑订阅ID</button> : null}
             {supportsNestedConfig ? <button type="button" onClick={() => void openAction('filters')} className={actionButtonClass(activeAction === 'filters')}>编辑过滤器</button> : null}
             {supportsNestedConfig ? <button type="button" onClick={() => void openAction('templates')} className={actionButtonClass(activeAction === 'templates')}>编辑模板</button> : null}
             {supportsNestedConfig ? <button type="button" onClick={() => void openAction('atall')} className={actionButtonClass(activeAction === 'atall')}>编辑at全体</button> : null}
@@ -470,8 +470,8 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
                 <UidForm onSubmit={submitUid} onCancel={cancelForm} />
               ) : (
                 <>
-                  <EditorList items={uidItems} kind="uid" emptyText="暂无订阅UID" onDelete={(draft) => void deleteConfigItem('uid', draft)} />
-                  <button type="button" onClick={() => startForm('uid')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增订阅UID</button>
+                  <EditorList items={uidItems} kind="uid" emptyText="暂无订阅ID" onDelete={(draft) => void deleteConfigItem('uid', draft)} />
+                  <button type="button" onClick={() => startForm('uid')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增订阅ID</button>
                 </>
               )}
             </div>
@@ -690,16 +690,16 @@ function TargetForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormE
 }
 
 /**
- * 分组 UID 表单只收 UID，保存后后端会默认推送到该分组全部群聊。
+ * 分组订阅 ID 表单同时支持 UID 和番剧标识，保存后后端会默认推送到该分组全部群聊。
  */
 function UidForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
-        <span>订阅UID</span>
-        <input name="uid" inputMode="numeric" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <span>订阅ID</span>
+        <input name="uid" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </label>
-      <FormButtons submitText="保存订阅UID" onCancel={onCancel} />
+      <FormButtons submitText="保存订阅ID" onCancel={onCancel} />
     </form>
   )
 }
@@ -811,7 +811,7 @@ function filterKindTitle(value: string): string {
  */
 function configKindLabel(kind: EditorConfigKind): string {
   if (kind === 'target') return '推送群聊'
-  if (kind === 'uid') return '订阅UID'
+  if (kind === 'uid') return '订阅ID'
   if (kind === 'filter') return '过滤器'
   if (kind === 'template') return '模板'
   return 'at全体'
@@ -857,7 +857,7 @@ function readDisplayLabel(item: Record<string, unknown>): string {
  * 删除接口必须拿到稳定 key，缺失 key 时回退到后端聚合字段。
  */
 function readConfigKey(item: Record<string, unknown>): string {
-  return readItemField(item, 'key') || readItemField(item, 'uid') || readItemField(item, 'targetGroup') || readItemField(item, 'type') || readItemField(item, 'name') || readItemField(item, 'summary')
+  return readItemField(item, 'key') || readItemField(item, 'identifier') || readItemField(item, 'uid') || readItemField(item, 'targetGroup') || readItemField(item, 'type') || readItemField(item, 'name') || readItemField(item, 'summary')
 }
 
 /**
@@ -883,7 +883,7 @@ function shouldSelectNestedTargets(item: SubscriptionItem, itemId: string): bool
 }
 
 /**
- * 只有分组卡片展示订阅 UID 编辑器，单 UP 和番剧没有分组 UID 语义。
+ * 只有分组卡片展示订阅 ID 编辑器，单 UP 和番剧没有分组订阅语义。
  */
 function isGroupItem(item: SubscriptionItem, itemId: string): boolean {
   return readItemField(item, 'kind') === 'group' || itemId.startsWith('group:')
@@ -894,6 +894,14 @@ function isGroupItem(item: SubscriptionItem, itemId: string): boolean {
  */
 function isPositiveIntegerText(value: string): boolean {
   return /^[1-9]\d*$/.test(value.trim())
+}
+
+/**
+ * 分组订阅 ID 前置校验对齐命令层基线，支持 UID 与 ss/md/ep 番剧标识。
+ */
+function isSubscriptionIdentifierText(value: string): boolean {
+  const text = value.trim().toLowerCase()
+  return isPositiveIntegerText(text) || /^(ss|md|ep)\d{4,10}$/.test(text)
 }
 
 /**

@@ -80,7 +80,7 @@ class WebUiSubscriptionManagementFacadeTest {
     }
 
     /**
-     * 番剧订阅只接受 ep 或 ss 前缀，并要求番剧号和群组号同时填写后才调用追番链路。
+     * 番剧订阅接受 ss、md、ep 三类命令层标识，并要求番剧号和群组号同时填写后才调用追番链路。
      */
     @Test
     fun `create bangumi subscription should validate id prefix and target group`() = runBlocking {
@@ -95,16 +95,16 @@ class WebUiSubscriptionManagementFacadeTest {
         )
 
         val invalid = facade.createSubscription(
-            WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "md12345", targetGroup = "10001"),
+            WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "av12345", targetGroup = "10001"),
         )
         val created = facade.createSubscription(
-            WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "ss12345", targetGroup = "10001"),
+            WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "md12345", targetGroup = "10001"),
         )
 
         assertFalse(invalid.success)
-        assertEquals(listOf("ss12345" to "onebot11:group:10001"), calls)
+        assertEquals(listOf("md12345" to "onebot11:group:10001"), calls)
         assertTrue(created.success)
-        assertEquals(1779360001000L, BiliData.subscriptionCardUpdatedAt["bangumi:ss12345"])
+        assertEquals(1779360001000L, BiliData.subscriptionCardUpdatedAt["bangumi:md12345"])
     }
 
     /**
@@ -891,5 +891,68 @@ class WebUiSubscriptionManagementFacadeTest {
         assertTrue(deleted.success)
         assertEquals(listOf(123L), removedUids)
         assertFalse(BiliData.dynamic.containsKey(123L))
+    }
+
+    /**
+     * 分组订阅编辑器支持 ss、md、ep 番剧标识，保存和删除都按分组联系人逐个复用番剧订阅链路。
+     */
+    @Test
+    fun `group subscription editor should save and delete pgc identifiers for every group contact`() = runBlocking {
+        BiliData.apply {
+            group = mutableMapOf(
+                "team-a" to Group(
+                    name = "team-a",
+                    creator = 1L,
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                ),
+            )
+            bangumi = mutableMapOf(
+                456L to Bangumi(
+                    title = "Bangumi A",
+                    seasonId = 456L,
+                    mediaId = 12345L,
+                    type = "番剧",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                ),
+            )
+        }
+        val followed = mutableListOf<Pair<String, String>>()
+        val deleted = mutableListOf<Pair<String, String>>()
+        val facade = WebUiSubscriptionManagementFacade(
+            followPgcAction = { id, subject ->
+                followed += id to subject
+                "追番成功 [Bangumi A]"
+            },
+            deletePgcAction = { id, subject ->
+                deleted += id to subject
+                "删除成功"
+            },
+            saveDataAction = { true },
+            currentTimeMillisProvider = { 1779360004000L },
+        )
+
+        val listed = facade.listSubscriptionUids("group:team-a")
+        val saved = facade.saveSubscriptionUid("group:team-a", WebUiSubscriptionUidSaveRequestDto(uid = "MD12345"))
+        val removed = facade.deleteSubscriptionUid("group:team-a", "md12345")
+
+        assertEquals(listOf("md12345"), listed.items.map { it.key })
+        assertTrue(saved.success)
+        assertEquals(
+            listOf(
+                "md12345" to "onebot11:group:10001",
+                "md12345" to "onebot11:group:10002",
+            ),
+            followed,
+        )
+        assertTrue(removed.success)
+        assertEquals(
+            listOf(
+                "md12345" to "onebot11:group:10001",
+                "md12345" to "onebot11:group:10002",
+            ),
+            deleted,
+        )
+        assertEquals(1779360004000L, BiliData.subscriptionCardUpdatedAt["group:team-a"])
+        assertEquals(1779360004000L, BiliData.subscriptionCardUpdatedAt["bangumi:456"])
     }
 }
