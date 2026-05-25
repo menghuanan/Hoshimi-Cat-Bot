@@ -21,14 +21,14 @@ class WebUiAuthService(
     /**
      * 校验密码并在成功时签发 session/csrf 材料；首次密码仍有效时保留 mustChangePassword 标记。
      */
-    fun login(password: String): WebUiLoginResult {
+    suspend fun login(password: String): WebUiLoginResult {
         return login(password, WebUiLoginContext())
     }
 
     /**
      * 校验密码并在成功时签发 session/csrf 材料；失败时保留通用错误并记录节流信息。
      */
-    fun login(password: String, context: WebUiLoginContext): WebUiLoginResult {
+    suspend fun login(password: String, context: WebUiLoginContext): WebUiLoginResult {
         val state = credentialStore.loadState()
         val now = timeProvider()
         val throttled = resolveThrottleState(context.sourceIp, now)
@@ -93,7 +93,7 @@ class WebUiAuthService(
     /**
      * 强制改密和常规改密共用同一入口；成功后统一清空旧 token 并要求重新认证。
      */
-    fun changePassword(
+    suspend fun changePassword(
         currentPassword: String,
         newPassword: String,
     ): WebUiPasswordChangeResult {
@@ -128,7 +128,7 @@ class WebUiAuthService(
     /**
      * 高风险操作统一要求显式确认；当前密码校验成功后会在当前会话内缓存一个短时确认窗口。
      */
-    fun confirmHighRiskOperation(
+    suspend fun confirmHighRiskOperation(
         session: WebUiAuthenticatedSession,
         currentPassword: String,
     ): WebUiHighRiskConfirmationResult {
@@ -162,7 +162,7 @@ class WebUiAuthService(
     /**
      * 不带会话上下文的确认入口只用于本地服务测试；它不会缓存确认窗口。
      */
-    fun confirmHighRiskOperation(currentPassword: String): WebUiHighRiskConfirmationResult {
+    suspend fun confirmHighRiskOperation(currentPassword: String): WebUiHighRiskConfirmationResult {
         val state = credentialStore.loadState()
         val confirmed = credentialStore.matchesPassword(state, currentPassword)
         return WebUiHighRiskConfirmationResult(
@@ -174,7 +174,7 @@ class WebUiAuthService(
     /**
      * 确认成功后把 TTL 绑定到当前 session token，避免不同浏览器标签或旧 token 互相复用高风险授权。
      */
-    private fun confirmWithPassword(
+    private suspend fun confirmWithPassword(
         session: WebUiAuthenticatedSession,
         currentPassword: String,
         now: Long,

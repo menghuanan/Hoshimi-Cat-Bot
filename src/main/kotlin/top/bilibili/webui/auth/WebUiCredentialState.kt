@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
 data class WebUiCredentialState(
     val version: Int = 2,
     val hashAlgorithm: String = "PBKDF2WithHmacSHA256",
-    val hashIterations: Int = 120_000,
+    val hashIterations: Int = 60_000,
     val passwordHash: String,
     val passwordSalt: String,
     val mustChangePassword: Boolean = true,

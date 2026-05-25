@@ -2,6 +2,8 @@ package top.bilibili.webui.auth
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -18,7 +20,10 @@ class WebUiCredentialStore(
     private val random: SecureRandom = SecureRandom(),
     private val clock: () -> Long = { System.currentTimeMillis() / 1000L },
 ) {
-    private val pbkdf2Iterations = 120_000
+    /**
+     * 登录和改密仍使用 PBKDF2，但把迭代数收回到更轻的窗口，减少每次校验的等待时间。
+     */
+    private val pbkdf2Iterations = 60_000
     private val pbkdf2KeyLengthBits = 256
     private val json = Json {
         prettyPrint = true
@@ -75,32 +80,35 @@ class WebUiCredentialStore(
     /**
      * 用新密码替换现有凭据，并同步推进 tokenVersion 以便会话层完成失效控制。
      */
-    fun replacePassword(
+    suspend fun replacePassword(
         currentState: WebUiCredentialState,
         newPassword: String,
         mustChangePassword: Boolean = false,
     ): WebUiCredentialState {
-        val salt = generateSalt()
-        val now = clock()
-        val nextState = currentState.copy(
-            passwordHash = hashPassword(newPassword, salt),
-            passwordSalt = salt,
-            hashAlgorithm = "PBKDF2WithHmacSHA256",
-            hashIterations = pbkdf2Iterations,
-            version = 2,
-            mustChangePassword = mustChangePassword,
-            tokenVersion = currentState.tokenVersion + 1L,
-            updatedAtEpochSecond = now,
-        )
-        saveState(nextState)
-        return nextState
+        // 改密时把 PBKDF2 计算和状态落盘一起放到 IO 调度器，避免请求线程同时背负散列和文件写入。
+        return withContext(Dispatchers.IO) {
+            val salt = generateSalt()
+            val now = clock()
+            val nextState = currentState.copy(
+                passwordHash = hashPassword(newPassword, salt),
+                passwordSalt = salt,
+                hashAlgorithm = "PBKDF2WithHmacSHA256",
+                hashIterations = pbkdf2Iterations,
+                version = 2,
+                mustChangePassword = mustChangePassword,
+                tokenVersion = currentState.tokenVersion + 1L,
+                updatedAtEpochSecond = now,
+            )
+            saveState(nextState)
+            nextState
+        }
     }
 
     /**
      * 为后续密码校验提供统一散列入口，避免路由层自行处理密码材料。
      */
-    fun hashPassword(password: String, salt: String): String {
-        val keySpec = PBEKeySpec(password.toCharArray(), salt.toByteArray(StandardCharsets.UTF_8), pbkdf2Iterations, pbkdf2KeyLengthBits)
+    fun hashPassword(password: String, salt: String, iterations: Int = pbkdf2Iterations): String {
+        val keySpec = PBEKeySpec(password.toCharArray(), salt.toByteArray(StandardCharsets.UTF_8), iterations, pbkdf2KeyLengthBits)
         val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
         val encoded = factory.generateSecret(keySpec).encoded
         keySpec.clearPassword()
@@ -110,15 +118,18 @@ class WebUiCredentialStore(
     /**
      * 允许后续认证服务按同一套规则校验明文密码是否匹配当前状态；旧版本成功后会自动升级到 PBKDF2。
      */
-    fun matchesPassword(state: WebUiCredentialState, password: String): Boolean {
-        val matches = when {
-            state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256" -> legacyMatchesPassword(state, password)
-            else -> hashPassword(password, state.passwordSalt) == state.passwordHash
+    suspend fun matchesPassword(state: WebUiCredentialState, password: String): Boolean {
+        // 登录校验同样切到 IO 调度器，避免 PBKDF2 占住默认计算线程池导致请求排队。
+        return withContext(Dispatchers.IO) {
+            val matches = when {
+                state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256" -> legacyMatchesPassword(state, password)
+                else -> hashPassword(password, state.passwordSalt, state.hashIterations) == state.passwordHash
+            }
+            if (matches && (state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256")) {
+                migrateLegacyState(state, password)
+            }
+            matches
         }
-        if (matches && (state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256")) {
-            migrateLegacyState(state, password)
-        }
-        return matches
     }
 
     /**

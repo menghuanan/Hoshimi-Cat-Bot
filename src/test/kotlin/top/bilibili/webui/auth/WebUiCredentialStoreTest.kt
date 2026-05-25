@@ -3,6 +3,8 @@ package top.bilibili.webui.auth
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.nio.file.Files
+import java.util.Base64
+import kotlinx.coroutines.runBlocking
 import java.nio.file.Path
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -52,6 +54,52 @@ class WebUiCredentialStoreTest {
     }
 
     /**
+     * 新生成和改密后的凭据都应使用统一的较低 PBKDF2 迭代数，避免登录校验继续放大等待时间。
+     */
+    @Test
+    fun `new credential states should use the reduced pbkdf2 iteration count`() {
+        val credentialFile = tempRoot.resolve("webui-credentials.json")
+        val store = WebUiCredentialStore(credentialFile.toFile())
+
+        val bootstrap = store.loadOrCreate()
+        val replaced = runBlocking { store.replacePassword(bootstrap.state, "Better123!@") }
+
+        assertEquals(60_000, bootstrap.state.hashIterations)
+        assertEquals(60_000, replaced.hashIterations)
+        assertEquals(60_000, store.loadState().hashIterations)
+    }
+
+    /**
+     * 升级前已经落盘的 120k 凭据仍应可用，避免只改默认迭代数就把历史状态锁死在门外。
+     */
+    @Test
+    fun `existing pbkdf2 credential states should honor the stored iteration count`() = runBlocking {
+        val credentialFile = tempRoot.resolve("webui-credentials.json")
+        val store = WebUiCredentialStore(credentialFile.toFile())
+        val password = "LegacyStillValid123!@"
+        val salt = "legacy-pbkdf2-salt"
+        val persistedHash = pbkdf2Hash(password, salt, 120_000)
+
+        store.saveState(
+            WebUiCredentialState(
+                version = 2,
+                hashAlgorithm = "PBKDF2WithHmacSHA256",
+                hashIterations = 120_000,
+                passwordHash = persistedHash,
+                passwordSalt = salt,
+                mustChangePassword = false,
+                tokenVersion = 5L,
+                createdAtEpochSecond = 100L,
+                updatedAtEpochSecond = 100L,
+            ),
+        )
+
+        val matched = store.matchesPassword(store.loadState(), password)
+
+        assertTrue(matched)
+    }
+
+    /**
      * 成功登录旧版 SHA-256 凭据时应自动迁移到版本化 PBKDF2，避免继续保存弱散列格式。
      */
     @Test
@@ -72,7 +120,7 @@ class WebUiCredentialStoreTest {
             ),
         )
 
-        val matched = store.matchesPassword(store.loadState(), legacyPassword)
+        val matched = runBlocking { store.matchesPassword(store.loadState(), legacyPassword) }
         val migrated = store.loadState()
         val persisted = Files.readString(credentialFile, StandardCharsets.UTF_8)
 
@@ -98,5 +146,21 @@ class WebUiCredentialStoreTest {
         val digest = MessageDigest.getInstance("SHA-256")
         val bytes = digest.digest("$salt:$password".toByteArray(StandardCharsets.UTF_8))
         return bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    /**
+     * 测试内显式指定 PBKDF2 迭代数，避免把迁移回归绑定到生产实现的默认常量。
+     */
+    private fun pbkdf2Hash(password: String, salt: String, iterations: Int): String {
+        val keySpec = javax.crypto.spec.PBEKeySpec(
+            password.toCharArray(),
+            salt.toByteArray(StandardCharsets.UTF_8),
+            iterations,
+            256,
+        )
+        val factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val encoded = factory.generateSecret(keySpec).encoded
+        keySpec.clearPassword()
+        return Base64.getEncoder().encodeToString(encoded)
     }
 }

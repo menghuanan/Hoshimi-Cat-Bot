@@ -1,6 +1,7 @@
 package top.bilibili.webui.auth
 
 import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,7 +19,7 @@ class WebUiAuthServiceTest {
     }
 
     @Test
-    fun `login should issue token only on successful credential match`() {
+    fun `login should issue token only on successful credential match`() = runBlocking {
         val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
         val bootstrap = store.loadOrCreate()
         val service = WebUiAuthService(
@@ -40,7 +41,7 @@ class WebUiAuthServiceTest {
      * 失败节流对外仍返回通用认证失败消息，但应携带内部计数和等待时间供路由审计使用。
      */
     @Test
-    fun `repeated login failures should trigger per ip lockout with generic visible message`() {
+    fun `repeated login failures should trigger per ip lockout with generic visible message`() = runBlocking {
         var now = 1_000L
         val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
         val bootstrap = store.loadOrCreate()
@@ -76,7 +77,7 @@ class WebUiAuthServiceTest {
     }
 
     @Test
-    fun `password change should invalidate prior tokens and clear forced change flag`() {
+    fun `password change should invalidate prior tokens and clear forced change flag`() = runBlocking {
         val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
         val bootstrap = store.loadOrCreate()
         val tokenService = WebUiTokenService(tokenTtlSeconds = 300L)
@@ -106,7 +107,7 @@ class WebUiAuthServiceTest {
      * 登出只应撤销当前会话 token，避免同一管理员在其他浏览器中的有效会话被意外踢下线。
      */
     @Test
-    fun `logout should revoke only the current token`() {
+    fun `logout should revoke only the current token`() = runBlocking {
         val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
         val bootstrap = store.loadOrCreate()
         val tokenService = WebUiTokenService(tokenTtlSeconds = 300L)
@@ -125,7 +126,7 @@ class WebUiAuthServiceTest {
     }
 
     @Test
-    fun `high risk confirmation should require the current password`() {
+    fun `high risk confirmation should require the current password`() = runBlocking {
         val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
         val bootstrap = store.loadOrCreate()
         val service = WebUiAuthService(
@@ -155,7 +156,7 @@ class WebUiAuthServiceTest {
      * 确认窗口应当受 TTL 约束，过期后必须重新输入当前密码。
      */
     @Test
-    fun `high risk confirmation should expire after the configured ttl`() {
+    fun `high risk confirmation should expire after the configured ttl`() = runBlocking {
         var now = 1_000L
         val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
         val bootstrap = store.loadOrCreate()
