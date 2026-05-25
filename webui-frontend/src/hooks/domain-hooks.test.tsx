@@ -143,7 +143,7 @@ describe('webui domain hooks', () => {
         typeLabel: '动态',
         success: true,
         statusLabel: '成功',
-        summary: '测试推送',
+        summary: '傲慢的小肉包 | 群 100 | 直播间 123',
         target: 'onebot11:group:10001',
       }],
     }))
@@ -154,7 +154,7 @@ describe('webui domain hooks', () => {
       timestampEpochMillis: 1_700_000_000_000,
       typeLabel: '动态',
       statusLabel: '成功',
-      subscriptionInfo: '测试推送',
+      subscriptionInfo: '傲慢的小肉包',
     }]))
     expect(result.current.dashboard.recentPushRecords[0]).not.toHaveProperty('target')
   })

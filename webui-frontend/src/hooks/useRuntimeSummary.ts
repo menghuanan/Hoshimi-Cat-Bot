@@ -62,8 +62,17 @@ function summarizeRecentPushRecords(records: WebUiRecentPushRecord[]): WebUiDash
     timestampEpochMillis: record.timestampEpochMillis ?? null,
     typeLabel: sanitizeDashboardText(record.typeLabel || record.type || '--'),
     statusLabel: sanitizeDashboardText(record.statusLabel || '--'),
-    subscriptionInfo: sanitizeDashboardText(record.summary || '--'),
+    subscriptionInfo: extractSubscriptionName(record.summary || '--'),
   }))
+}
+
+/**
+ * 旧响应可能把群、房间等信息拼进 summary；首页名称列只保留第一个订阅名片段。
+ */
+function extractSubscriptionName(value: string): string {
+  const normalized = sanitizeDashboardText(value)
+  if (normalized === '--') return normalized
+  return sanitizeDashboardText(normalized.split(/\s*[|｜]\s*/)[0] || normalized)
 }
 
 /**

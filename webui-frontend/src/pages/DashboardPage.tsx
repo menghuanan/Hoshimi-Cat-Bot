@@ -2,6 +2,9 @@ import { PageSection } from '../components/PageSection'
 import { StatusCard } from '../components/StatusCard'
 import { useRuntimeSummary } from '../hooks/useRuntimeSummary'
 
+// 最近推送记录使用同一列宽，保证表头和每条记录在视觉上严格对齐。
+const RECENT_PUSH_GRID_CLASS = 'grid-cols-[minmax(7rem,1fr)_3.5rem_2.5rem_10.5rem]'
+
 /**
  * 二态运行值缺失时展示稳定占位，避免首页在旧响应上抛错。
  */
@@ -23,7 +26,12 @@ function formatCount(value: number | null, unit = '') {
  */
 function formatEpochMillis(value: number | null) {
   if (value === null) return '--'
-  return new Date(value).toLocaleString('zh-CN', {hour12: false})
+  const date = new Date(value)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${date.getFullYear()}年${month}月${day}日 ${hour}：${minute}`
 }
 
 /**
@@ -86,22 +94,12 @@ function ResourceMeter({label, value, detail}: {label: string, value: number | n
 }
 
 /**
- * 最近推送记录采用“标题在上、内容在下”的两层布局，避免窄屏下把语义压成一行。
+ * 最近推送记录单元格只展示值本身，时间列可独立靠右以贴近卡片边缘。
  */
-function PushRecordField({
-  label,
-  value,
-  valueClassName = '',
-}: {
-  label: string
-  value: string
-  valueClassName?: string
-}) {
+function PushRecordCell({value, align = 'left', valueClassName = ''}: {value: string, align?: 'left' | 'right', valueClassName?: string}) {
+  const alignmentClass = align === 'right' ? 'text-right' : 'text-left'
   return (
-    <div className="min-w-0 space-y-1">
-      <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-      <strong className={`block min-w-0 break-words text-sm font-semibold ${valueClassName || 'text-slate-950'}`.trim()}>{value}</strong>
-    </div>
+    <strong data-testid="recent-push-cell" className={`block min-w-0 truncate whitespace-nowrap ${alignmentClass} text-sm font-semibold ${valueClassName || 'text-slate-950'}`.trim()} title={value}>{value}</strong>
   )
 }
 
@@ -111,6 +109,8 @@ function PushRecordField({
 export function DashboardPage() {
   const {summary, dashboard, loading} = useRuntimeSummary({pollIntervalMs: 60_000})
   const recentPushRecords = dashboard.recentPushRecords
+  // 首页卡片只保留最近 7 条，避免列表过长时压缩卡片内的列宽和运行信息。
+  const visibleRecentPushRecords = recentPushRecords.slice(0, 7)
 
   return (
     <div data-page="home" className="space-y-6">
@@ -144,25 +144,31 @@ export function DashboardPage() {
         </PageSection>
 
         <PageSection title="最近推送记录">
-          <div className="h-full max-h-[22rem] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-            {recentPushRecords.length === 0 ? (
-              <div className="px-4 py-5 text-sm text-slate-500">暂无最近推送记录</div>
+          <div className="flex h-full min-h-[16rem] max-h-[22rem] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            {/* 固定表头独立于记录滚动区，确保空记录和有记录时列语义一致。 */}
+            <div data-testid="recent-push-header" className={`grid ${RECENT_PUSH_GRID_CLASS} gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600`}>
+              <span className="min-w-0 truncate whitespace-nowrap">订阅名称</span>
+              <span className="min-w-0 truncate whitespace-nowrap">推送类型</span>
+              <span className="min-w-0 truncate whitespace-nowrap">状态</span>
+              <span className="min-w-0 truncate whitespace-nowrap text-left">时间</span>
+            </div>
+            {visibleRecentPushRecords.length === 0 ? (
+              <div className="grid flex-1 place-items-center px-4 py-5 text-sm text-slate-500">暂无最近推送记录</div>
             ) : (
-              <div className="max-h-[22rem] divide-y divide-slate-100 overflow-y-auto">
-                {recentPushRecords.map((record, index) => (
-                  <div key={`${record.timestampEpochMillis || index}-${record.subscriptionInfo || index}`} className="space-y-3 px-4 py-3 text-sm">
-                    <div className="grid gap-3 md:grid-cols-[4rem_6rem_minmax(0,1fr)_10rem]">
-                      <PushRecordField label="类型" value={record.typeLabel} />
-                      <PushRecordField
-                        label="状态"
+              <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
+                {visibleRecentPushRecords.map((record, index) => (
+                  <div data-testid={`recent-push-row-${index}`} key={`${record.timestampEpochMillis || index}-${record.subscriptionInfo || index}`} className="px-4 py-2 text-sm">
+                    <div className={`grid ${RECENT_PUSH_GRID_CLASS} gap-3`}>
+                      <PushRecordCell value={record.subscriptionInfo} />
+                      <PushRecordCell value={record.typeLabel} />
+                      <PushRecordCell
                         value={record.statusLabel}
                         valueClassName={record.statusLabel === '成功' || record.statusLabel === '已发送' ? 'text-emerald-600' : 'text-rose-700'}
                       />
-                      <PushRecordField label="订阅信息" value={record.subscriptionInfo} />
-                      <PushRecordField
-                        label="时间"
+                      <PushRecordCell
                         value={formatEpochMillis(record.timestampEpochMillis ?? null)}
-                        valueClassName="text-slate-500 text-right"
+                        align="right"
+                        valueClassName="text-slate-500"
                       />
                     </div>
                   </div>

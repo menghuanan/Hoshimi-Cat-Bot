@@ -306,7 +306,7 @@ describe('webui shell routing', () => {
       account: {loggedIn: true, uid: 12345, cookieConfigured: true},
       webSocket: {connected: true, reconnectAttempts: 3, activeSessionCount: 2, transports: ['onebot11'], note: 'ready'},
       todayPushStats: {date: '2026-05-23', total: 7, dynamic: 5, live: 1, liveClose: 1, failed: 0, lastSuccessAtEpochMillis: 1_700_000_000_000},
-      recentPushRecords: [{timestampEpochMillis: 1_700_000_000_000, type: 'LIVE', typeLabel: '直播', success: true, statusLabel: '推送成功', summary: '测试UP主', target: '群 100'}],
+      recentPushRecords: [{timestampEpochMillis: new Date(2026, 11, 12, 12, 31).getTime(), type: 'LIVE', typeLabel: '直播', success: true, statusLabel: '成功', summary: '傲慢的小肉包 | 群 100 | 直播间 123', target: '群 100'}],
       host: {
         startedAtEpochMillis: 1_700_000_000_000,
         systemTimeEpochMillis: 1_700_007_200_000,
@@ -325,17 +325,94 @@ describe('webui shell routing', () => {
     expect(screen.getByText('已连接')).toBeInTheDocument()
     expect(screen.getByText('会话：2 / 重连：3')).toBeInTheDocument()
     expect(screen.getByText('7 条')).toBeInTheDocument()
-    expect(screen.getByText('类型')).toBeInTheDocument()
-    expect(screen.getByText('状态')).toBeInTheDocument()
-    expect(screen.getByText('订阅信息')).toBeInTheDocument()
-    expect(screen.getByText('时间')).toBeInTheDocument()
+    const header = screen.getByTestId('recent-push-header')
+    expect(within(header).getByText('订阅名称')).toBeInTheDocument()
+    expect(within(header).getByText('推送类型')).toBeInTheDocument()
+    expect(within(header).getByText('状态')).toBeInTheDocument()
+    expect(within(header).getByText('时间')).toBeInTheDocument()
     expect(screen.getByText('直播')).toBeInTheDocument()
-    expect(screen.getByText('推送成功')).toBeInTheDocument()
-    expect(screen.getByText('测试UP主')).toBeInTheDocument()
-    expect(screen.getByText(/2023/)).toBeInTheDocument()
+    expect(screen.getByText('成功')).toBeInTheDocument()
+    expect(screen.getByText('傲慢的小肉包')).toBeInTheDocument()
+    expect(screen.queryByText(/群 100/)).not.toBeInTheDocument()
+    expect(screen.getByText('2026年12月12日 12：31')).toBeInTheDocument()
     expect(screen.getByText('120G/256G')).toBeInTheDocument()
     expect(screen.queryByText('50%')).not.toBeInTheDocument()
     expect(document.querySelector('progress.resource-meter')?.getAttribute('style')).toBeNull()
+  })
+
+  /**
+   * 最近推送记录行只显示值本身，时间值靠右贴近卡片边缘，其余列保留纵向左对齐。
+   */
+  it('renders recent push rows without repeated field labels', async () => {
+    stubRuntimeSummary({
+      recentPushRecords: [{timestampEpochMillis: new Date(2026, 11, 12, 12, 31).getTime(), type: 'LIVE', typeLabel: '直播', success: true, statusLabel: '成功', summary: '傲慢的小肉包 | 群 100'}],
+    })
+
+    renderAtPath('/')
+
+    const row = await screen.findByTestId('recent-push-row-0')
+    const cells = within(row).getAllByTestId('recent-push-cell')
+
+    expect(cells).toHaveLength(4)
+    expect(within(row).queryByText('订阅信息')).not.toBeInTheDocument()
+    expect(within(row).queryByText('类型')).not.toBeInTheDocument()
+    expect(within(row).queryByText('状态')).not.toBeInTheDocument()
+    expect(within(row).queryByText('时间')).not.toBeInTheDocument()
+    expect(row).toHaveClass('py-2')
+    expect(cells[0]).toHaveClass('text-left')
+    expect(cells[1]).toHaveClass('text-left')
+    expect(cells[2]).toHaveClass('text-left')
+    expect(cells[3]).toHaveClass('text-right')
+    expect(screen.getByTestId('recent-push-header')).toHaveClass('grid-cols-[minmax(7rem,1fr)_3.5rem_2.5rem_10.5rem]')
+    expect(within(screen.getByTestId('recent-push-header')).getByText('时间')).toHaveClass('text-left')
+  })
+
+  /**
+   * 首页最近推送记录只保留前 7 条，避免列表撑满卡片后影响运行信息区的扫描密度。
+   */
+  it('limits recent push records to seven rows', async () => {
+    stubRuntimeSummary({
+      recentPushRecords: Array.from({length: 8}, (_, index) => ({
+        timestampEpochMillis: new Date(2026, 11, 12, 12, 31 + index).getTime(),
+        type: 'LIVE',
+        typeLabel: index % 2 === 0 ? '直播' : '动态',
+        success: true,
+        statusLabel: '成功',
+        summary: `订阅${index + 1} | 群 100`,
+      })),
+    })
+
+    renderAtPath('/')
+
+    expect(await screen.findByTestId('recent-push-row-0')).toBeInTheDocument()
+    expect(screen.getByTestId('recent-push-row-6')).toBeInTheDocument()
+    expect(screen.queryByTestId('recent-push-row-7')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 最近推送记录卡片必须始终保留固定表头，空记录时把占位文案放在内容区正中央。
+   */
+  it('keeps the recent push card header visible and centers the empty state', async () => {
+    stubRuntimeSummary({
+      recentPushRecords: [],
+    })
+
+    renderAtPath('/')
+
+    const emptyState = await screen.findByText('暂无最近推送记录')
+    const header = screen.getByTestId('recent-push-header')
+
+    expect(within(header).getByText('订阅名称')).toBeInTheDocument()
+    expect(within(header).getByText('推送类型')).toBeInTheDocument()
+    expect(within(header).getByText('状态')).toBeInTheDocument()
+    expect(within(header).getByText('时间')).toBeInTheDocument()
+    expect(within(header).getByText('订阅名称')).toHaveClass('whitespace-nowrap')
+    expect(within(header).getByText('推送类型')).toHaveClass('whitespace-nowrap')
+    expect(within(header).getByText('状态')).toHaveClass('whitespace-nowrap')
+    expect(within(header).getByText('时间')).toHaveClass('whitespace-nowrap')
+    expect(emptyState).toHaveClass('grid')
+    expect(emptyState).toHaveClass('place-items-center')
+    expect(emptyState).toHaveClass('flex-1')
   })
 
   /**
