@@ -74,7 +74,7 @@ class WebUiSubscriptionManagementFacade(
         ),
     )
 
-    // 主题色编辑框只接受单个 HEX 颜色，避免 WebUI 写入渐变串后和输入提示不一致。
+    // 主题色编辑框接受空值恢复默认；非空时只接受单个 HEX 颜色，避免写入渐变串。
     private val hexColorRegex = Regex("^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})$")
 
     /**
@@ -408,11 +408,31 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
-     * 主题色保存只接受单个 HEX 颜色，并展开写入当前订阅的全部推送群。
+     * 主题色保存接受空值恢复默认色；非空值只接受单个 HEX 颜色，并展开写入当前订阅的全部推送群。
      */
     fun saveSubscriptionTheme(itemId: String, color: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持主题色")
         val normalizedColor = color.trim()
+        // 空主题色沿用前端“恢复默认”语义，只清除当前订阅范围内的颜色覆盖。
+        if (normalizedColor.isBlank()) {
+            if (context.kind == "bangumi") {
+                val bangumi = BiliData.bangumi[context.primaryBangumiId] ?: return validationFailure("番剧订阅不存在")
+                bangumi.color = null
+            } else {
+                if (context.contactScopes.isEmpty() || context.uids.isEmpty()) {
+                    return validationFailure("当前订阅没有可写入主题色的推送群")
+                }
+                context.contactScopes.forEach { scope ->
+                    val colorsByUid = BiliData.dynamicColorByUid[scope] ?: return@forEach
+                    context.uids.forEach { uid -> colorsByUid.remove(uid) }
+                    if (colorsByUid.isEmpty()) {
+                        BiliData.dynamicColorByUid.remove(scope)
+                    }
+                }
+            }
+            markSubscriptionCardUpdated(itemId)
+            return persistMutation(success(itemId, "主题色已恢复默认"))
+        }
         if (!hexColorRegex.matches(normalizedColor)) {
             return validationFailure("HEX颜色格式错误")
         }

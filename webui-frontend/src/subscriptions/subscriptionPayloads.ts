@@ -116,7 +116,7 @@ export function buildSubscriptionAtAllPayload(input: SubscriptionAtAllPayload): 
 }
 
 /**
- * 主题色写入只允许单个颜色值和确认密码，格式校验由表单和后端共同兜底。
+ * 主题色写入允许空值恢复默认，非空颜色格式由表单和后端共同兜底。
  */
 export function buildSubscriptionThemePayload(color: string, confirmationPassword: string): SubscriptionThemePayload {
   return {

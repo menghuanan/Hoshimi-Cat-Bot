@@ -177,7 +177,7 @@ data class WebUiSubscriptionThemeDto(
 )
 
 /**
- * 主题色保存请求要求单个 HEX 颜色和确认密码，后端负责格式校验和作用域展开。
+ * 主题色保存请求允许空值恢复默认；非空颜色由后端负责格式校验和作用域展开。
  */
 @Serializable
 data class WebUiSubscriptionThemeSaveRequestDto(

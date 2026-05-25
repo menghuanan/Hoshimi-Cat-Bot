@@ -20,6 +20,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class WebUiSubscriptionManagementFacadeTest {
@@ -403,6 +404,50 @@ class WebUiSubscriptionManagementFacadeTest {
         assertTrue(BiliData.atAll.getValue("onebot11:group:10001").getValue(456L).contains(AtAllType.DYNAMIC))
         assertEquals("#ABCDEF", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(123L))
         assertEquals("#445566", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(456L))
+    }
+
+    /**
+     * 空主题色表示恢复默认色：动态清除当前 UID 覆盖，番剧清空自身颜色字段。
+     */
+    @Test
+    fun `theme editor should clear saved color overrides when blank color is submitted`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+                456L to SubData(
+                    name = "Bob",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            bangumi = mutableMapOf(
+                789L to Bangumi(
+                    title = "Bangumi A",
+                    seasonId = 789L,
+                    mediaId = 1000L,
+                    type = "bangumi",
+                    color = "#334455",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                ),
+            )
+            dynamicColorByUid = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(123L to "#112233", 456L to "#445566"),
+            )
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+
+        val clearedDynamic = facade.saveSubscriptionTheme("dynamic:123", " ")
+        val clearedBangumi = facade.saveSubscriptionTheme("bangumi:789", "")
+
+        assertTrue(clearedDynamic.success)
+        assertTrue(clearedBangumi.success)
+        assertFalse(BiliData.dynamicColorByUid.getValue("onebot11:group:10001").containsKey(123L))
+        assertEquals("#445566", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(456L))
+        assertNull(BiliData.bangumi.getValue(789L).color)
     }
 
     /**
