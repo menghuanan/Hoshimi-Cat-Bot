@@ -1,9 +1,11 @@
-export type SubscriptionEditorKind = 'filters' | 'templates' | 'atall' | 'theme'
+export type SubscriptionEditorKind = 'targets' | 'uids' | 'filters' | 'templates' | 'atall' | 'theme'
 
 /**
  * 订阅配置编辑器的路由片段集中管理，避免页面和 API helper 拼出不一致的路径。
  */
 export const subscriptionEditorRoutes: Record<SubscriptionEditorKind, string> = {
+  targets: 'targets',
+  uids: 'uids',
   filters: 'filters',
   templates: 'templates',
   atall: 'atall',

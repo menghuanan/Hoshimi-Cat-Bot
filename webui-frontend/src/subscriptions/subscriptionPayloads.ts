@@ -38,6 +38,14 @@ export type SubscriptionThemePayload = WebUiSubscriptionWritePayload & {
   targetGroups: string[]
 }
 
+export type SubscriptionTargetPayload = WebUiSubscriptionWritePayload & {
+  targetGroup: string
+}
+
+export type SubscriptionUidPayload = WebUiSubscriptionWritePayload & {
+  uid: string
+}
+
 export type SubscriptionRandomTemplatePayload = WebUiSubscriptionWritePayload & {
   enabled: boolean
 }
@@ -132,6 +140,26 @@ export function buildSubscriptionThemePayload(
     color,
     targetGroups,
     confirmationPassword,
+  }
+}
+
+/**
+ * 推送群聊保存 payload 保留原始输入，正整数和 subject 归一化由后端兜底校验。
+ */
+export function buildSubscriptionTargetPayload(input: SubscriptionTargetPayload): SubscriptionTargetPayload {
+  return {
+    targetGroup: input.targetGroup,
+    confirmationPassword: input.confirmationPassword,
+  }
+}
+
+/**
+ * 分组 UID 保存 payload 保留字符串形式，避免前端大整数转换产生精度风险。
+ */
+export function buildSubscriptionUidPayload(input: SubscriptionUidPayload): SubscriptionUidPayload {
+  return {
+    uid: input.uid,
+    confirmationPassword: input.confirmationPassword,
   }
 }
 

@@ -5,8 +5,11 @@ import { buildBiliConfigSavePayload, buildBotConfigSavePayload } from './setting
 import {
   buildSubscriptionCreatePayload,
   buildSubscriptionDeletePayload,
+  deleteSubscriptionTarget,
   deleteSubscriptionTemplate,
   listSubscriptionFilters,
+  listSubscriptionTargets,
+  saveSubscriptionTarget,
   saveSubscriptionFilter,
   setSubscriptionTemplateRandom,
 } from './subscriptions'
@@ -298,6 +301,36 @@ describe('webui api contracts', () => {
       }),
       body: JSON.stringify({
         confirmationPassword: 'pw-delete',
+      }),
+    }))
+  })
+
+  /**
+   * 推送群聊编辑器复用订阅嵌套路由，新增和删除都必须携带高风险确认密码。
+   */
+  it('subscription target helpers should use nested target routes with confirmation payloads', async () => {
+    document.cookie = 'dynamic_bot_webui_csrf=csrf-target; path=/'
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {success: true}))
+
+    await listSubscriptionTargets('item/1', {fetchImpl})
+    await saveSubscriptionTarget('item/1', {targetGroup: '10001', confirmationPassword: 'pw-target'}, {fetchImpl})
+    await deleteSubscriptionTarget('item/1', 'onebot11:group:10001', 'pw-delete-target', {fetchImpl})
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/subscriptions/item%2F1/targets', expect.objectContaining({
+      method: 'GET',
+      body: undefined,
+    }))
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, '/api/subscriptions/item%2F1/targets', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        targetGroup: '10001',
+        confirmationPassword: 'pw-target',
+      }),
+    }))
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, '/api/subscriptions/item%2F1/targets/onebot11%3Agroup%3A10001', expect.objectContaining({
+      method: 'DELETE',
+      body: JSON.stringify({
+        confirmationPassword: 'pw-delete-target',
       }),
     }))
   })

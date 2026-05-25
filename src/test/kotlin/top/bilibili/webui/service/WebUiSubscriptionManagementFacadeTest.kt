@@ -16,6 +16,8 @@ import top.bilibili.TypeFilter
 import top.bilibili.webui.model.WebUiSubscriptionCreateRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionFilterSaveRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionTemplateSaveRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionTargetSaveRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionUidSaveRequestDto
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -795,5 +797,99 @@ class WebUiSubscriptionManagementFacadeTest {
         assertTrue(edited.success)
         assertTrue(BiliData.atAll.getValue("onebot11:group:10001").getValue(123L).contains(AtAllType.LIVE))
         assertFalse(BiliData.atAll.containsKey("onebot11:group:10002"))
+    }
+
+    /**
+     * 推送群聊编辑器要求输入正整数，并在删除分组群聊时同步影响分组内所有 UID 的实际推送目标和该群附属配置。
+     */
+    @Test
+    fun `target editor should validate positive group ids and clean group target payloads`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("groupRef:team-a"),
+                ),
+                456L to SubData(
+                    name = "Bob",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("groupRef:team-a"),
+                ),
+            )
+            group = mutableMapOf(
+                "team-a" to Group(
+                    name = "team-a",
+                    creator = 1L,
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                ),
+            )
+            filter = mutableMapOf(
+                "onebot11:group:10002" to mutableMapOf(123L to DynamicFilter(), 456L to DynamicFilter()),
+            )
+            dynamicColorByUid = mutableMapOf(
+                "onebot11:group:10002" to mutableMapOf(123L to "#112233", 456L to "#445566"),
+            )
+            atAll = mutableMapOf(
+                "onebot11:group:10002" to mutableMapOf(123L to mutableSetOf(AtAllType.LIVE), 456L to mutableSetOf(AtAllType.DYNAMIC)),
+            )
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+
+        val invalid = facade.saveSubscriptionTarget(
+            "group:team-a",
+            WebUiSubscriptionTargetSaveRequestDto(targetGroup = "0"),
+        )
+        val deleted = facade.deleteSubscriptionTarget("group:team-a", "onebot11:group:10002")
+
+        assertFalse(invalid.success)
+        assertTrue(deleted.success)
+        assertEquals(setOf("onebot11:group:10001"), BiliData.group.getValue("team-a").contacts)
+        assertEquals(setOf("onebot11:group:10001"), BiliData.dynamic.getValue(123L).contacts)
+        assertEquals(setOf("onebot11:group:10001"), BiliData.dynamic.getValue(456L).contacts)
+        assertFalse(BiliData.filter.containsKey("onebot11:group:10002"))
+        assertFalse(BiliData.dynamicColorByUid.containsKey("onebot11:group:10002"))
+        assertFalse(BiliData.atAll.containsKey("onebot11:group:10002"))
+    }
+
+    /**
+     * 分组 UID 删除必须走 WebUI 的 UID 级取消关注链路，确保后端执行真实退订而不是只移除 groupRef。
+     */
+    @Test
+    fun `group uid editor should call backend unsubscribe when deleting uid`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("groupRef:team-a"),
+                ),
+            )
+            group = mutableMapOf(
+                "team-a" to Group(
+                    name = "team-a",
+                    creator = 1L,
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                ),
+            )
+        }
+        val removedUids = mutableListOf<Long>()
+        val facade = WebUiSubscriptionManagementFacade(
+            removeDynamicAction = { uid ->
+                removedUids += uid
+                "取消订阅 Alice 成功"
+            },
+            saveDataAction = { true },
+        )
+
+        val listed = facade.listSubscriptionUids("group:team-a")
+        val invalid = facade.saveSubscriptionUid("group:team-a", WebUiSubscriptionUidSaveRequestDto(uid = "-1"))
+        val deleted = facade.deleteSubscriptionUid("group:team-a", "123")
+
+        assertEquals(listOf("123"), listed.items.map { it.key })
+        assertFalse(invalid.success)
+        assertTrue(deleted.success)
+        assertEquals(listOf(123L), removedUids)
+        assertFalse(BiliData.dynamic.containsKey(123L))
     }
 }

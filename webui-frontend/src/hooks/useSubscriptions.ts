@@ -5,16 +5,22 @@ import {
   deleteSubscription,
   deleteSubscriptionAtAll,
   deleteSubscriptionFilter,
+  deleteSubscriptionTarget,
   deleteSubscriptionTemplate,
+  deleteSubscriptionUid,
   listSubscriptionAtAll,
   listSubscriptionFilters,
   listSubscriptions,
   listSubscriptionTemplates,
+  listSubscriptionTargets,
+  listSubscriptionUids,
   readSubscriptionTheme,
   saveSubscriptionAtAll,
   saveSubscriptionFilter,
+  saveSubscriptionTarget,
   saveSubscriptionTemplate,
   saveSubscriptionTheme,
+  saveSubscriptionUid,
   setSubscriptionTemplateRandom,
 } from '../api/subscriptions'
 import type { WebUiJsonRequestOptions } from '../api/http'
@@ -43,6 +49,12 @@ type SubscriptionAtAllDraft = {
 type SubscriptionThemeDraft = {
   color: string
   targetGroups: string[]
+}
+type SubscriptionTargetDraft = {
+  targetGroup: string
+}
+type SubscriptionUidDraft = {
+  uid: string
 }
 
 /**
@@ -141,6 +153,20 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [requestOptions])
 
   /**
+   * 推送群聊列表作为通用嵌套编辑器读取，三类订阅都可使用。
+   */
+  const loadTargets = useCallback((itemId: string) => {
+    return listSubscriptionTargets(itemId, requestOptions)
+  }, [requestOptions])
+
+  /**
+   * 分组 UID 列表只在分组卡片展示，hook 保持薄封装。
+   */
+  const loadUids = useCallback((itemId: string) => {
+    return listSubscriptionUids(itemId, requestOptions)
+  }, [requestOptions])
+
+  /**
    * 保存过滤器前统一获取 WebUI 密码，调用方不能绕过高风险确认。
    */
   const saveFilter = useCallback(async (itemId: string, draft: SubscriptionFilterDraft) => {
@@ -185,6 +211,28 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
+   * 保存推送群聊前统一获取确认密码，页面只负责正整数输入校验。
+   */
+  const saveTarget = useCallback(async (itemId: string, draft: SubscriptionTargetDraft) => {
+    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存推送群聊')
+    if (!confirmationPassword) {
+      return null
+    }
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTarget(itemId, {...draft, confirmationPassword}, requestOptions), '保存推送群聊失败')
+  }, [requestHighRiskConfirmation, requestOptions])
+
+  /**
+   * 保存分组 UID 前统一获取确认密码，新增 UID 后由后端默认绑定全部推送群聊。
+   */
+  const saveUid = useCallback(async (itemId: string, draft: SubscriptionUidDraft) => {
+    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存订阅UID')
+    if (!confirmationPassword) {
+      return null
+    }
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionUid(itemId, {...draft, confirmationPassword}, requestOptions), '保存订阅UID失败')
+  }, [requestHighRiskConfirmation, requestOptions])
+
+  /**
    * 配置项删除按编辑器类型分发到对应端点，确认密码仍走同一弹窗。
    */
   const removeConfig = useCallback(async (itemId: string, kind: 'filter' | 'template' | 'atall', key: string) => {
@@ -199,6 +247,28 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
       return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTemplate(itemId, key, confirmationPassword, requestOptions), '删除模板失败')
     }
     return ensureSubscriptionWriteSucceeded(await deleteSubscriptionAtAll(itemId, key, confirmationPassword, requestOptions), '删除at全体失败')
+  }, [requestHighRiskConfirmation, requestOptions])
+
+  /**
+   * 删除推送群聊是高风险写操作，后端会按订阅类型清理关联配置。
+   */
+  const removeTarget = useCallback(async (itemId: string, key: string) => {
+    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认删除推送群聊')
+    if (!confirmationPassword) {
+      return null
+    }
+    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTarget(itemId, key, confirmationPassword, requestOptions), '删除推送群聊失败')
+  }, [requestHighRiskConfirmation, requestOptions])
+
+  /**
+   * 删除分组 UID 必须经过确认，后端会走取消关注链路。
+   */
+  const removeUid = useCallback(async (itemId: string, key: string) => {
+    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认删除订阅UID')
+    if (!confirmationPassword) {
+      return null
+    }
+    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionUid(itemId, key, confirmationPassword, requestOptions), '删除订阅UID失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
@@ -222,11 +292,17 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     loadTemplates,
     loadAtAll,
     loadTheme,
+    loadTargets,
+    loadUids,
     saveFilter,
     saveTemplate,
     saveAtAll,
     saveTheme,
+    saveTarget,
+    saveUid,
     removeConfig,
+    removeTarget,
+    removeUid,
     toggleRandomTemplate,
   }
 }

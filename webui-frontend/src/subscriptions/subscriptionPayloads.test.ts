@@ -8,6 +8,8 @@ import {
   buildSubscriptionRandomTemplatePayload,
   buildSubscriptionTemplatePayload,
   buildSubscriptionThemePayload,
+  buildSubscriptionTargetPayload,
+  buildSubscriptionUidPayload,
 } from './subscriptionPayloads'
 
 describe('subscription payload builders', () => {
@@ -88,6 +90,24 @@ describe('subscription payload builders', () => {
 
     expect(buildSubscriptionConfigDeletePayload('pw-config-delete')).toEqual({
       confirmationPassword: 'pw-config-delete',
+    })
+  })
+
+  it('builds target and uid editor payloads with confirmation passwords', () => {
+    expect(buildSubscriptionTargetPayload({
+      targetGroup: '10001',
+      confirmationPassword: 'pw-target',
+    })).toEqual({
+      targetGroup: '10001',
+      confirmationPassword: 'pw-target',
+    })
+
+    expect(buildSubscriptionUidPayload({
+      uid: '12345',
+      confirmationPassword: 'pw-uid',
+    })).toEqual({
+      uid: '12345',
+      confirmationPassword: 'pw-uid',
     })
   })
 })

@@ -11,10 +11,14 @@ import {
   buildSubscriptionFilterPayload,
   buildSubscriptionRandomTemplatePayload,
   buildSubscriptionTemplatePayload,
+  buildSubscriptionTargetPayload,
   buildSubscriptionThemePayload,
+  buildSubscriptionUidPayload,
   type SubscriptionAtAllPayload,
   type SubscriptionFilterPayload,
   type SubscriptionTemplatePayload,
+  type SubscriptionTargetPayload,
+  type SubscriptionUidPayload,
 } from '../subscriptions/subscriptionPayloads'
 
 export {
@@ -25,7 +29,9 @@ export {
   buildSubscriptionFilterPayload,
   buildSubscriptionRandomTemplatePayload,
   buildSubscriptionTemplatePayload,
+  buildSubscriptionTargetPayload,
   buildSubscriptionThemePayload,
+  buildSubscriptionUidPayload,
 }
 
 /**
@@ -68,6 +74,106 @@ export async function deleteSubscription(
     ...options,
     method: 'DELETE',
     body: buildSubscriptionDeletePayload(itemId, confirmationPassword),
+    includeJson: true,
+    authenticated: false,
+  })
+}
+
+/**
+ * 推送群聊列表读取使用独立嵌套端点，支持订阅、分组和番剧三类卡片。
+ */
+export async function listSubscriptionTargets(
+  itemId: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'targets'), {
+    ...options,
+    method: 'GET',
+    authenticated: true,
+    includeJson: false,
+  })
+}
+
+/**
+ * 推送群聊保存通过统一 payload builder 注入确认密码。
+ */
+export async function saveSubscriptionTarget(
+  itemId: string,
+  payload: SubscriptionTargetPayload,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'targets'), {
+    ...options,
+    method: 'POST',
+    body: buildSubscriptionTargetPayload(payload),
+    includeJson: true,
+    authenticated: false,
+  })
+}
+
+/**
+ * 推送群聊删除按 subject key 定位，body 只承载确认密码。
+ */
+export async function deleteSubscriptionTarget(
+  itemId: string,
+  key: string,
+  confirmationPassword: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'targets', key), {
+    ...options,
+    method: 'DELETE',
+    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
+    includeJson: true,
+    authenticated: false,
+  })
+}
+
+/**
+ * 分组订阅 UID 列表只对分组卡片有内容，其他卡片由后端返回空列表。
+ */
+export async function listSubscriptionUids(
+  itemId: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'uids'), {
+    ...options,
+    method: 'GET',
+    authenticated: true,
+    includeJson: false,
+  })
+}
+
+/**
+ * 分组订阅 UID 新增由后端默认绑定到当前分组全部推送群聊。
+ */
+export async function saveSubscriptionUid(
+  itemId: string,
+  payload: SubscriptionUidPayload,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'uids'), {
+    ...options,
+    method: 'POST',
+    body: buildSubscriptionUidPayload(payload),
+    includeJson: true,
+    authenticated: false,
+  })
+}
+
+/**
+ * 分组订阅 UID 删除走后端取消关注链路，前端只传 UID key 和确认密码。
+ */
+export async function deleteSubscriptionUid(
+  itemId: string,
+  key: string,
+  confirmationPassword: string,
+  options: WebUiJsonRequestOptions = {},
+): Promise<unknown> {
+  return requestJson(buildSubscriptionEditorUrl(itemId, 'uids', key), {
+    ...options,
+    method: 'DELETE',
+    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
     includeJson: true,
     authenticated: false,
   })

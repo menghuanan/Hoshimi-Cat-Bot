@@ -28,7 +28,13 @@ import top.bilibili.webui.model.WebUiSubscriptionMutationResultDto
 import top.bilibili.webui.model.WebUiSubscriptionTemplateItemDto
 import top.bilibili.webui.model.WebUiSubscriptionTemplateListDto
 import top.bilibili.webui.model.WebUiSubscriptionTemplateSaveRequestDto
+import top.bilibili.webui.model.WebUiSubscriptionTargetItemDto
+import top.bilibili.webui.model.WebUiSubscriptionTargetListDto
+import top.bilibili.webui.model.WebUiSubscriptionTargetSaveRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionThemeDto
+import top.bilibili.webui.model.WebUiSubscriptionUidItemDto
+import top.bilibili.webui.model.WebUiSubscriptionUidListDto
+import top.bilibili.webui.model.WebUiSubscriptionUidSaveRequestDto
 
 /**
  * WebUI 订阅管理 facade 复用业务服务写入运行态，再通过 BiliConfigManager 统一持久化业务数据。
@@ -113,6 +119,115 @@ class WebUiSubscriptionManagementFacade(
             return result
         }
         return persistMutation(result)
+    }
+
+    /**
+     * 读取订阅、分组或番剧当前绑定的推送群聊，列表 key 使用完整 subject 供删除接口复用。
+     */
+    fun listSubscriptionTargets(itemId: String): WebUiSubscriptionTargetListDto {
+        val context = resolveEditContext(itemId) ?: return WebUiSubscriptionTargetListDto(emptyList())
+        val targets = when (context.kind) {
+            "bangumi" -> BiliData.bangumi[context.primaryBangumiId]?.contacts.orEmpty()
+            else -> context.contactScopes
+        }
+        return WebUiSubscriptionTargetListDto(
+            targets.sorted().map { subject ->
+                WebUiSubscriptionTargetItemDto(
+                    key = subject,
+                    targetGroup = shortGroupId(subject),
+                    summary = "群聊：${shortGroupId(subject)}",
+                )
+            },
+        )
+    }
+
+    /**
+     * 新增推送群聊按卡片类型分发到底层来源模型，输入只允许正整数群号。
+     */
+    suspend fun saveSubscriptionTarget(
+        itemId: String,
+        request: WebUiSubscriptionTargetSaveRequestDto,
+    ): WebUiSubscriptionMutationResultDto {
+        val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持推送群聊")
+        val subject = normalizePositiveGroupTarget(request.targetGroup) ?: return validationFailure("推送群聊必须是正整数")
+        val result = when (context.kind) {
+            "dynamic" -> saveDynamicTarget(context, subject)
+            "group" -> saveGroupTarget(context, subject)
+            "bangumi" -> saveBangumiTarget(context, subject)
+            else -> validationFailure("订阅类型无效")
+        }
+        if (!result.success) return result
+        markSubscriptionCardUpdated(itemId)
+        return persistMutation(result)
+    }
+
+    /**
+     * 删除单条推送群聊时只移除对应目标，并清理该目标 scope 下当前卡片归属的附属配置。
+     */
+    suspend fun deleteSubscriptionTarget(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
+        val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持推送群聊")
+        val subject = normalizeGroupTarget(key) ?: return validationFailure("推送群聊标识无效")
+        val result = when (context.kind) {
+            "dynamic" -> deleteDynamicTarget(context, subject)
+            "group" -> deleteGroupTarget(context, subject)
+            "bangumi" -> deleteBangumiTarget(context, subject)
+            else -> validationFailure("订阅类型无效")
+        }
+        if (!result.success) return result
+        markSubscriptionCardUpdated(itemId)
+        return persistMutation(result)
+    }
+
+    /**
+     * 分组 UID 列表从 groupRef 反查动态订阅，避免前端从卡片摘要中解析 UID。
+     */
+    fun listSubscriptionUids(itemId: String): WebUiSubscriptionUidListDto {
+        val context = resolveEditContext(itemId) ?: return WebUiSubscriptionUidListDto(emptyList())
+        if (context.kind != "group") {
+            return WebUiSubscriptionUidListDto(emptyList())
+        }
+        return WebUiSubscriptionUidListDto(
+            context.uids.map { uid ->
+                WebUiSubscriptionUidItemDto(
+                    key = uid.toString(),
+                    uid = uid,
+                    summary = "UID：$uid",
+                )
+            },
+        )
+    }
+
+    /**
+     * 分组新增 UID 复用后端分组订阅逻辑，新增后默认推送到该分组全部推送群聊。
+     */
+    suspend fun saveSubscriptionUid(
+        itemId: String,
+        request: WebUiSubscriptionUidSaveRequestDto,
+    ): WebUiSubscriptionMutationResultDto {
+        val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持订阅UID")
+        if (context.kind != "group") return validationFailure("仅分组支持编辑订阅UID")
+        val uid = parsePositiveLong(request.uid) ?: return validationFailure("订阅UID必须是正整数")
+        if (context.contactScopes.isEmpty()) return validationFailure("当前分组没有可推送群聊")
+        val groupName = context.groupName()
+        val message = addGroupDynamicAction(uid, groupName)
+        if (!isSuccessMessage(message)) return validationFailure(message)
+        markSubscriptionCardUpdated(itemId)
+        return persistMutation(success(itemId, message))
+    }
+
+    /**
+     * 分组删除 UID 必须走取消关注链路，确保账号侧和本地 UID 级附属数据一起回收。
+     */
+    suspend fun deleteSubscriptionUid(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
+        val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持订阅UID")
+        if (context.kind != "group") return validationFailure("仅分组支持编辑订阅UID")
+        val uid = parsePositiveLong(key) ?: return validationFailure("订阅UID标识无效")
+        if (uid !in context.uids) return validationFailure("订阅UID不存在")
+        val message = removeDynamicAction(uid)
+        if (!isSuccessMessage(message)) return validationFailure(message)
+        removeUidPayload(uid)
+        markSubscriptionCardUpdated(itemId)
+        return persistMutation(success(itemId, message))
     }
 
     /**
@@ -564,6 +679,68 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
+     * 单 UP 新增推送群聊只追加 direct 来源，不影响已有分组或其他 direct 来源。
+     */
+    private suspend fun saveDynamicTarget(context: SubscriptionEditContext, subject: String): WebUiSubscriptionMutationResultDto {
+        val uid = context.uids.firstOrNull() ?: return validationFailure("订阅UID无效")
+        val message = addDynamicAction(uid, subject)
+        return if (isSuccessMessage(message)) success(context.itemId, message) else validationFailure(message)
+    }
+
+    /**
+     * 分组新增推送群聊会刷新所有 groupRef UID 的 contacts 展开，新增 UID 后自然推送到全部群聊。
+     */
+    private fun saveGroupTarget(context: SubscriptionEditContext, subject: String): WebUiSubscriptionMutationResultDto {
+        val group = BiliData.group[context.groupName()] ?: return validationFailure("分组不存在")
+        if (subject in group.contacts) return validationFailure("推送群聊已存在")
+        group.contacts += subject
+        rebuildGroupRefContacts(context.groupName())
+        return success(context.itemId, "推送群聊已保存")
+    }
+
+    /**
+     * 番剧新增推送群聊复用追番链路，保证 season 元信息和 contacts 写入仍由 PgcService 管理。
+     */
+    private suspend fun saveBangumiTarget(context: SubscriptionEditContext, subject: String): WebUiSubscriptionMutationResultDto {
+        val message = followPgcAction("ss${context.primaryBangumiId}", subject)
+        return if (isSuccessMessage(message)) success(context.itemId, message) else validationFailure(message)
+    }
+
+    /**
+     * 单 UP 删除推送群聊走 direct 退订来源；最后一个来源被移除时会触发账号侧取消关注。
+     */
+    private suspend fun deleteDynamicTarget(context: SubscriptionEditContext, subject: String): WebUiSubscriptionMutationResultDto {
+        val uid = context.uids.firstOrNull() ?: return validationFailure("订阅UID无效")
+        if (subject !in context.contactScopes) return validationFailure("推送群聊不存在")
+        val message = DynamicService.removeDirectSubscribe(uid, subject, isSelf = false)
+        if (!isSuccessMessage(message)) return validationFailure(message)
+        cleanupTargetPayload(subject, listOf(uid))
+        return success(context.itemId, message)
+    }
+
+    /**
+     * 分组删除推送群聊会影响分组内所有 UID 的展开目标，并清理该群上的 UID 附属配置。
+     */
+    private fun deleteGroupTarget(context: SubscriptionEditContext, subject: String): WebUiSubscriptionMutationResultDto {
+        val group = BiliData.group[context.groupName()] ?: return validationFailure("分组不存在")
+        if (!group.contacts.remove(subject)) return validationFailure("推送群聊不存在")
+        cleanupTargetPayload(subject, context.uids)
+        rebuildGroupRefContacts(context.groupName())
+        return success(context.itemId, "推送群聊已删除")
+    }
+
+    /**
+     * 番剧删除推送群聊只移除对应 contacts 绑定，最后一个目标移除时底层会回收番剧条目。
+     */
+    private suspend fun deleteBangumiTarget(context: SubscriptionEditContext, subject: String): WebUiSubscriptionMutationResultDto {
+        if (subject !in BiliData.bangumi[context.primaryBangumiId]?.contacts.orEmpty()) {
+            return validationFailure("推送群聊不存在")
+        }
+        val message = deletePgcAction("ss${context.primaryBangumiId}", subject)
+        return if (isSuccessMessage(message)) success(context.itemId, message) else validationFailure(message)
+    }
+
+    /**
      * 删除动态卡片时按 UID 清理所有关联业务数据，保证卡片消失后不留下附属策略。
      */
     private suspend fun deleteDynamicSubscription(rawUid: String): WebUiSubscriptionMutationResultDto {
@@ -665,6 +842,64 @@ class WebUiSubscriptionManagementFacade(
         if (text.isBlank()) return null
         return normalizeContactSubject(text)
             ?: PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, text).toSubject()
+    }
+
+    /**
+     * WebUI 推送群聊新增只接受正整数群号，避免把完整 subject 或非法字符串写成新目标。
+     */
+    private fun normalizePositiveGroupTarget(raw: String): String? {
+        val groupId = parsePositiveLong(raw) ?: return null
+        return PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()).toSubject()
+    }
+
+    /**
+     * 正整数解析统一服务推送群聊和分组 UID 输入，拒绝 0、负数和非数字内容。
+     */
+    private fun parsePositiveLong(raw: String): Long? {
+        val text = raw.trim()
+        if (text.isBlank() || !text.all(Char::isDigit)) return null
+        return text.toLongOrNull()?.takeIf { it > 0L }
+    }
+
+    /**
+     * 删除某个推送群聊后按 UID 清理该 subject 下的过滤器、@全体、冷却和主题色残留。
+     */
+    private fun cleanupTargetPayload(subject: String, uids: List<Long>) {
+        val uidSet = uids.toSet()
+        BiliData.filter[subject]?.let { filtersByUid ->
+            filtersByUid.keys.removeAll(uidSet)
+            if (filtersByUid.isEmpty()) BiliData.filter.remove(subject)
+        }
+        BiliData.dynamicColorByUid[subject]?.let { colorsByUid ->
+            colorsByUid.keys.removeAll(uidSet)
+            if (colorsByUid.isEmpty()) BiliData.dynamicColorByUid.remove(subject)
+        }
+        BiliData.atAll[subject]?.let { atAllByUid ->
+            atAllByUid.keys.removeAll(uidSet)
+            if (atAllByUid.isEmpty()) BiliData.atAll.remove(subject)
+        }
+        uidSet.forEach { uid ->
+            BiliData.atAllCooldownUntil.keys.removeIf { key -> key.startsWith("$subject|$uid|") || key.startsWith("$subject.$uid.") }
+        }
+    }
+
+    /**
+     * 分组联系人变更后按 groupRef 重建所有关联 UID 的实际 contacts，保持推送目标与分组一致。
+     */
+    private fun rebuildGroupRefContacts(groupName: String) {
+        val groupRef = "groupRef:$groupName"
+        BiliData.dynamic.forEach { (_, subData) ->
+            if (groupRef !in subData.sourceRefs) return@forEach
+            val resolvedContacts = linkedSetOf<String>()
+            subData.sourceRefs.forEach { sourceRef ->
+                when {
+                    sourceRef.startsWith("direct:") -> normalizeContactSubject(sourceRef.removePrefix("direct:"))?.let(resolvedContacts::add)
+                    sourceRef == groupRef -> BiliData.group[groupName]?.contacts?.mapNotNullTo(resolvedContacts, ::normalizeContactSubject)
+                }
+            }
+            subData.contacts.clear()
+            subData.contacts.addAll(resolvedContacts)
+        }
     }
 
     /**
@@ -1093,6 +1328,13 @@ class WebUiSubscriptionManagementFacade(
         val filterScopes: List<String> = emptyList(),
         val primaryBangumiId: Long = 0L,
     ) {
+        /**
+         * 分组 itemId 以 group:<name> 保存，内部写入需要取回真实分组名。
+         */
+        fun groupName(): String {
+            return itemId.removePrefix("group:")
+        }
+
         /**
          * 过滤器 key 必须落在当前卡片展开出的联系人 scope 与 UID 组合内。
          */

@@ -851,6 +851,7 @@ describe('webui shell routing', () => {
     expect(editorPanel).not.toBeNull()
     expect(editorPanel).toHaveClass('lg:row-start-2')
     expect(editorPanel).toHaveClass('lg:max-w-md')
+    expect(screen.getByRole('button', {name: '编辑推送群聊'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '编辑过滤器'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '编辑模板'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '编辑at全体'})).toBeInTheDocument()
@@ -1009,6 +1010,129 @@ describe('webui shell routing', () => {
     expect(screen.queryByRole('button', {name: '编辑at全体'})).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '编辑主题色'}))
     expect(await screen.findByLabelText('主题颜色')).toHaveValue('#33aaff')
+  })
+
+  /**
+   * 推送群聊编辑器位于过滤器上方，新增输入必须是正整数并携带确认密码写入后端。
+   */
+  it('edits subscription target groups from the nested editor', async () => {
+    const targetPostBodies: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [{
+              id: 'sub-1',
+              kind: 'dynamic',
+              title: '测试订阅',
+              sourceId: 1,
+              targets: ['onebot11:group:1072150397'],
+              tags: ['动态'],
+              filterCount: 0,
+              templateCount: 0,
+            }],
+          }),
+        }
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/targets') && init?.method === 'POST') {
+        targetPostBodies.push(String(init.body || ''))
+        return {ok: true, status: 200, json: async () => ({success: true})}
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/targets')) {
+        return {ok: true, status: 200, json: async () => ({items: [{key: 'onebot11:group:1072150397', targetGroup: '1072150397', summary: '群聊：1072150397'}]})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('测试订阅')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '编辑'}))
+    const editorDialog = screen.getByRole('dialog', {name: '编辑订阅配置'})
+    await user.click(screen.getByRole('button', {name: '编辑推送群聊'}))
+    expect(await within(editorDialog).findByText('群聊：1072150397')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '新增推送群聊'}))
+    await user.type(screen.getByLabelText('推送群聊'), 'abc')
+    await user.click(screen.getByRole('button', {name: '保存推送群聊'}))
+    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('推送群聊必须是正整数')
+
+    await user.clear(screen.getByLabelText('推送群聊'))
+    await user.type(screen.getByLabelText('推送群聊'), '10001')
+    await user.click(screen.getByRole('button', {name: '保存推送群聊'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'target-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    expect(await screen.findByText('推送群聊已保存')).toBeInTheDocument()
+    expect(JSON.parse(targetPostBodies.at(-1) || '{}')).toMatchObject({
+      targetGroup: '10001',
+      confirmationPassword: 'target-password',
+    })
+  })
+
+  /**
+   * 分组卡片额外展示订阅 UID 编辑器，新增 UID 同样必须是正整数。
+   */
+  it('shows the group uid editor only for group subscriptions', async () => {
+    const uidPostBodies: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [{
+              id: 'group:team-a',
+              kind: 'group',
+              title: 'team-a',
+              sourceId: 0,
+              targets: ['onebot11:group:1072150397'],
+              tags: ['分组'],
+              filterCount: 0,
+              templateCount: 0,
+            }],
+          }),
+        }
+      }
+      if (url.endsWith('/api/subscriptions/group%3Ateam-a/uids') && init?.method === 'POST') {
+        uidPostBodies.push(String(init.body || ''))
+        return {ok: true, status: 200, json: async () => ({success: true})}
+      }
+      if (url.endsWith('/api/subscriptions/group%3Ateam-a/uids')) {
+        return {ok: true, status: 200, json: async () => ({items: [{key: '12345', uid: 12345, summary: 'UID：12345'}]})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('team-a')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '编辑'}))
+    const editorDialog = screen.getByRole('dialog', {name: '编辑订阅配置'})
+    expect(screen.getByRole('button', {name: '编辑订阅UID'})).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '编辑订阅UID'}))
+    expect(await within(editorDialog).findByText('UID：12345')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '新增订阅UID'}))
+    await user.type(screen.getByLabelText('订阅UID'), 'bad')
+    await user.click(screen.getByRole('button', {name: '保存订阅UID'}))
+    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('订阅UID必须是正整数')
+
+    await user.clear(screen.getByLabelText('订阅UID'))
+    await user.type(screen.getByLabelText('订阅UID'), '67890')
+    await user.click(screen.getByRole('button', {name: '保存订阅UID'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'uid-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    expect(await screen.findByText('订阅UID已保存')).toBeInTheDocument()
+    expect(JSON.parse(uidPostBodies.at(-1) || '{}')).toMatchObject({
+      uid: '67890',
+      confirmationPassword: 'uid-password',
+    })
   })
 
   /**

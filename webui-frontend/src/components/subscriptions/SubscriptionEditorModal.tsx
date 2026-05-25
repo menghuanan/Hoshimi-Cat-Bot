@@ -1,20 +1,26 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { formatPasswordErrorMessage } from '../../utils/errorMessages'
 
-type EditorAction = 'overview' | 'filters' | 'templates' | 'atall' | 'theme'
-type EditorFormMode = 'none' | 'filter' | 'template' | 'atall'
-type EditorConfigKind = 'filter' | 'template' | 'atall'
+type EditorAction = 'overview' | 'targets' | 'uids' | 'filters' | 'templates' | 'atall' | 'theme'
+type EditorFormMode = 'none' | 'target' | 'uid' | 'filter' | 'template' | 'atall'
+type EditorConfigKind = 'target' | 'uid' | 'filter' | 'template' | 'atall'
 type SubscriptionItem = Record<string, unknown>
 type SubscriptionEditorActions = {
   loadFilters: (itemId: string) => Promise<unknown>
   loadTemplates: (itemId: string) => Promise<unknown>
   loadAtAll: (itemId: string) => Promise<unknown>
   loadTheme: (itemId: string) => Promise<unknown>
+  loadTargets: (itemId: string) => Promise<unknown>
+  loadUids: (itemId: string) => Promise<unknown>
   saveFilter: (itemId: string, draft: {key: string, kind: string, mode: string, content: string, targetGroups?: string[]}) => Promise<unknown>
   saveTemplate: (itemId: string, draft: {key: string, type: string, name: string, content: string, targetGroups?: string[]}) => Promise<unknown>
   saveAtAll: (itemId: string, draft: {type: string, targetGroups: string[]}) => Promise<unknown>
   saveTheme: (itemId: string, draft: {color: string, targetGroups: string[]}) => Promise<unknown>
+  saveTarget: (itemId: string, draft: {targetGroup: string}) => Promise<unknown>
+  saveUid: (itemId: string, draft: {uid: string}) => Promise<unknown>
   removeConfig: (itemId: string, kind: 'filter' | 'template' | 'atall', key: string) => Promise<unknown>
+  removeTarget: (itemId: string, key: string) => Promise<unknown>
+  removeUid: (itemId: string, key: string) => Promise<unknown>
   toggleRandomTemplate: (itemId: string, enabled: boolean) => Promise<unknown>
 }
 type SubscriptionEditorModalProps = {
@@ -40,6 +46,8 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const [templates, setTemplates] = useState<Record<string, unknown>[]>([])
   const [randomEnabled, setRandomEnabled] = useState(false)
   const [atAllItems, setAtAllItems] = useState<Record<string, unknown>[]>([])
+  const [targetItems, setTargetItems] = useState<Record<string, unknown>[]>([])
+  const [uidItems, setUidItems] = useState<Record<string, unknown>[]>([])
   const [themeColor, setThemeColor] = useState('')
   const [themeTargetGroups, setThemeTargetGroups] = useState<string[]>([])
   const [formMode, setFormMode] = useState<EditorFormMode>('none')
@@ -68,6 +76,16 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
     setActiveAction(nextAction)
     if (!itemId || nextAction === 'overview') {
       return
+    }
+    if (nextAction === 'targets') {
+      const payload = await actions.loadTargets(itemId) as {items?: Record<string, unknown>[]}
+      if (!isCurrentLoad(sequence)) return
+      setTargetItems(Array.isArray(payload?.items) ? payload.items : [])
+    }
+    if (nextAction === 'uids') {
+      const payload = await actions.loadUids(itemId) as {items?: Record<string, unknown>[]}
+      if (!isCurrentLoad(sequence)) return
+      setUidItems(Array.isArray(payload?.items) ? payload.items : [])
     }
     if (nextAction === 'filters') {
       const payload = await actions.loadFilters(itemId) as {filters?: Record<string, unknown>[]}
@@ -145,6 +163,22 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
       return
     }
     try {
+      if (kind === 'target') {
+        await actions.removeTarget(itemId, key)
+        await openAction('targets')
+        await onReload()
+        setStatus('推送群聊已删除')
+        setStatusTone('success')
+        return
+      }
+      if (kind === 'uid') {
+        await actions.removeUid(itemId, key)
+        await openAction('uids')
+        await onReload()
+        setStatus('订阅UID已删除')
+        setStatusTone('success')
+        return
+      }
       await actions.removeConfig(itemId, kind, key)
       await openAction(actionForConfigKind(kind))
       await onReload()
@@ -273,6 +307,66 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   }
 
   /**
+   * 推送群聊新增只接受正整数群号，后端再转换为平台 subject。
+   */
+  const submitTarget = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!itemId) {
+      setStatus('当前条目缺少可保存标识')
+      setStatusTone('error')
+      return
+    }
+    const form = new FormData(event.currentTarget)
+    const targetGroup = String(form.get('targetGroup') || '').trim()
+    if (!isPositiveIntegerText(targetGroup)) {
+      setStatus('推送群聊必须是正整数')
+      setStatusTone('error')
+      return
+    }
+    try {
+      await actions.saveTarget(itemId, {targetGroup})
+      setFormMode('none')
+      await openAction('targets')
+      await onReload()
+      setStatus('推送群聊已保存')
+      setStatusTone('success')
+    } catch (error) {
+      setStatus(formatPasswordErrorMessage(error, '保存推送群聊失败'))
+      setStatusTone('error')
+    }
+  }
+
+  /**
+   * 分组订阅 UID 新增只接受正整数，新增后由后端绑定分组全部推送群聊。
+   */
+  const submitUid = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!itemId) {
+      setStatus('当前条目缺少可保存标识')
+      setStatusTone('error')
+      return
+    }
+    const form = new FormData(event.currentTarget)
+    const uid = String(form.get('uid') || '').trim()
+    if (!isPositiveIntegerText(uid)) {
+      setStatus('订阅UID必须是正整数')
+      setStatusTone('error')
+      return
+    }
+    try {
+      await actions.saveUid(itemId, {uid})
+      setFormMode('none')
+      await openAction('uids')
+      await onReload()
+      setStatus('订阅UID已保存')
+      setStatusTone('success')
+    } catch (error) {
+      setStatus(formatPasswordErrorMessage(error, '保存订阅UID失败'))
+      setStatusTone('error')
+    }
+  }
+
+  /**
    * 主题色保存使用当前输入值，HEX 细节仍由后端二次校验。
    */
   const submitTheme = async (event: FormEvent<HTMLFormElement>) => {
@@ -314,8 +408,11 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const filterFormOpen = formMode === 'filter'
   const templateFormOpen = formMode === 'template'
   const atAllFormOpen = formMode === 'atall'
+  const targetFormOpen = formMode === 'target'
+  const uidFormOpen = formMode === 'uid'
   const showNestedTargetSelector = shouldSelectNestedTargets(item, itemId)
   const showThemeTargets = isDynamicThemeItem(item, itemId) && targets.length > 0
+  const showUidEditor = isGroupItem(item, itemId)
 
   /**
    * 主题色目标群聊用受控复选框保存，便于空颜色只恢复用户勾选的群聊默认色。
@@ -343,6 +440,8 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
         </div>
         <aside className="space-y-3 lg:col-start-1 lg:row-start-2">
           <div className="grid gap-2">
+            <button type="button" onClick={() => void openAction('targets')} className={actionButtonClass(activeAction === 'targets')}>编辑推送群聊</button>
+            {showUidEditor ? <button type="button" onClick={() => void openAction('uids')} className={actionButtonClass(activeAction === 'uids')}>编辑订阅UID</button> : null}
             {supportsNestedConfig ? <button type="button" onClick={() => void openAction('filters')} className={actionButtonClass(activeAction === 'filters')}>编辑过滤器</button> : null}
             {supportsNestedConfig ? <button type="button" onClick={() => void openAction('templates')} className={actionButtonClass(activeAction === 'templates')}>编辑模板</button> : null}
             {supportsNestedConfig ? <button type="button" onClick={() => void openAction('atall')} className={actionButtonClass(activeAction === 'atall')}>编辑at全体</button> : null}
@@ -353,6 +452,30 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
 
         <div data-subscription-editor-panel className="min-w-0 w-full space-y-4 lg:col-start-2 lg:row-start-2 lg:max-w-md">
           {activeAction === 'overview' ? <EditorEmptyState text="选择左侧编辑器开始配置" /> : null}
+          {activeAction === 'targets' ? (
+            <div className="space-y-3">
+              {targetFormOpen ? (
+                <TargetForm onSubmit={submitTarget} onCancel={cancelForm} />
+              ) : (
+                <>
+                  <EditorList items={targetItems} kind="target" emptyText="暂无推送群聊" onDelete={(draft) => void deleteConfigItem('target', draft)} />
+                  <button type="button" onClick={() => startForm('target')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增推送群聊</button>
+                </>
+              )}
+            </div>
+          ) : null}
+          {activeAction === 'uids' ? (
+            <div className="space-y-3">
+              {uidFormOpen ? (
+                <UidForm onSubmit={submitUid} onCancel={cancelForm} />
+              ) : (
+                <>
+                  <EditorList items={uidItems} kind="uid" emptyText="暂无订阅UID" onDelete={(draft) => void deleteConfigItem('uid', draft)} />
+                  <button type="button" onClick={() => startForm('uid')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增订阅UID</button>
+                </>
+              )}
+            </div>
+          ) : null}
           {activeAction === 'filters' ? (
             <div className="space-y-3">
               {filterFormOpen ? (
@@ -552,6 +675,36 @@ function AtAllForm({targets, draft, onSubmit, onCancel}: {targets: string[], dra
 }
 
 /**
+ * 推送群聊表单只暴露群号输入，完整 subject 由后端根据平台默认规则生成。
+ */
+function TargetForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+  return (
+    <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+      <label className="grid gap-1 text-sm font-medium text-slate-700">
+        <span>推送群聊</span>
+        <input name="targetGroup" inputMode="numeric" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </label>
+      <FormButtons submitText="保存推送群聊" onCancel={onCancel} />
+    </form>
+  )
+}
+
+/**
+ * 分组 UID 表单只收 UID，保存后后端会默认推送到该分组全部群聊。
+ */
+function UidForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+  return (
+    <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+      <label className="grid gap-1 text-sm font-medium text-slate-700">
+        <span>订阅UID</span>
+        <input name="uid" inputMode="numeric" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </label>
+      <FormButtons submitText="保存订阅UID" onCancel={onCancel} />
+    </form>
+  )
+}
+
+/**
  * 编辑器表单共用保存和取消按钮，保证新增和编辑页面都能返回列表。
  */
 function FormButtons({submitText, onCancel}: {submitText: string, onCancel: () => void}) {
@@ -577,7 +730,7 @@ function EditorList({items, kind, emptyText, onEdit, onDelete}: {
   items: Record<string, unknown>[]
   kind: EditorConfigKind
   emptyText: string
-  onEdit: (draft: Record<string, unknown>) => void
+  onEdit?: (draft: Record<string, unknown>) => void
   onDelete: (draft: Record<string, unknown>) => void
 }) {
   if (items.length === 0) {
@@ -591,7 +744,7 @@ function EditorList({items, kind, emptyText, onEdit, onDelete}: {
           <div key={readItemField(item, 'key') || `${kind}-${index}`} className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
             <span className="min-w-0 break-words">{label}</span>
             <div className="flex shrink-0 gap-2">
-              <button type="button" onClick={() => onEdit(item)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700">编辑</button>
+              {onEdit ? <button type="button" onClick={() => onEdit(item)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700">编辑</button> : null}
               <button type="button" onClick={() => onDelete(item)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-700">删除</button>
             </div>
           </div>
@@ -614,6 +767,8 @@ function actionButtonClass(active: boolean): string {
  * 嵌套配置类型映射回对应编辑面板，删除或保存后用于刷新当前列表。
  */
 function actionForConfigKind(kind: EditorConfigKind): EditorAction {
+  if (kind === 'target') return 'targets'
+  if (kind === 'uid') return 'uids'
   if (kind === 'filter') return 'filters'
   if (kind === 'template') return 'templates'
   return 'atall'
@@ -622,7 +777,7 @@ function actionForConfigKind(kind: EditorConfigKind): EditorAction {
 /**
  * 编辑表单左上角显示稳定短标题，过滤器显示 key 加类型，模板优先显示名称。
  */
-function editorFormTitle(kind: Exclude<EditorConfigKind, 'atall'>, draft: Record<string, unknown> | null): string {
+function editorFormTitle(kind: Exclude<EditorConfigKind, 'target' | 'uid' | 'atall'>, draft: Record<string, unknown> | null): string {
   if (!draft) {
     return ''
   }
@@ -655,6 +810,8 @@ function filterKindTitle(value: string): string {
  * 配置类型转成用户可见的短标签，供成功和失败状态复用。
  */
 function configKindLabel(kind: EditorConfigKind): string {
+  if (kind === 'target') return '推送群聊'
+  if (kind === 'uid') return '订阅UID'
   if (kind === 'filter') return '过滤器'
   if (kind === 'template') return '模板'
   return 'at全体'
@@ -700,7 +857,7 @@ function readDisplayLabel(item: Record<string, unknown>): string {
  * 删除接口必须拿到稳定 key，缺失 key 时回退到后端聚合字段。
  */
 function readConfigKey(item: Record<string, unknown>): string {
-  return readItemField(item, 'key') || readItemField(item, 'type') || readItemField(item, 'name') || readItemField(item, 'summary')
+  return readItemField(item, 'key') || readItemField(item, 'uid') || readItemField(item, 'targetGroup') || readItemField(item, 'type') || readItemField(item, 'name') || readItemField(item, 'summary')
 }
 
 /**
@@ -723,6 +880,20 @@ function isDynamicThemeItem(item: SubscriptionItem, itemId: string): boolean {
  */
 function shouldSelectNestedTargets(item: SubscriptionItem, itemId: string): boolean {
   return isDynamicThemeItem(item, itemId)
+}
+
+/**
+ * 只有分组卡片展示订阅 UID 编辑器，单 UP 和番剧没有分组 UID 语义。
+ */
+function isGroupItem(item: SubscriptionItem, itemId: string): boolean {
+  return readItemField(item, 'kind') === 'group' || itemId.startsWith('group:')
+}
+
+/**
+ * WebUI 对群号和 UID 做前置校验，后端仍保留同样规则作为安全兜底。
+ */
+function isPositiveIntegerText(value: string): boolean {
+  return /^[1-9]\d*$/.test(value.trim())
 }
 
 /**

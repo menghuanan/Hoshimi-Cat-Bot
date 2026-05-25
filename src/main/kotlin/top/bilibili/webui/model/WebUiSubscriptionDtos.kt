@@ -62,6 +62,60 @@ data class WebUiSubscriptionMutationResultDto(
 )
 
 /**
+ * 推送群聊编辑页响应按单条 subject 拆分，key 保留完整 subject 供删除接口精确定位。
+ */
+@Serializable
+data class WebUiSubscriptionTargetListDto(
+    val items: List<WebUiSubscriptionTargetItemDto>,
+)
+
+/**
+ * 单条推送群聊记录同时返回完整 subject 和短群号，便于前端显示与回传分离。
+ */
+@Serializable
+data class WebUiSubscriptionTargetItemDto(
+    val key: String,
+    val targetGroup: String,
+    val summary: String,
+)
+
+/**
+ * 推送群聊保存请求只接受正整数群号，路由层仍只把确认密码用于高风险鉴权。
+ */
+@Serializable
+data class WebUiSubscriptionTargetSaveRequestDto(
+    val targetGroup: String,
+    val confirmationPassword: String = "",
+)
+
+/**
+ * 分组订阅 UID 编辑页响应按单 UID 拆分，key 直接使用 UID 字符串。
+ */
+@Serializable
+data class WebUiSubscriptionUidListDto(
+    val items: List<WebUiSubscriptionUidItemDto>,
+)
+
+/**
+ * 单条分组 UID 记录保留数值 UID 和展示摘要，避免前端解析分组 identifierLabel。
+ */
+@Serializable
+data class WebUiSubscriptionUidItemDto(
+    val key: String,
+    val uid: Long,
+    val summary: String,
+)
+
+/**
+ * 分组 UID 保存请求只接受正整数 UID，新增后默认绑定分组的全部推送群聊。
+ */
+@Serializable
+data class WebUiSubscriptionUidSaveRequestDto(
+    val uid: String,
+    val confirmationPassword: String = "",
+)
+
+/**
  * 订阅过滤器编辑页的列表响应，按底层 t/r 索引拆成单条可编辑记录。
  */
 @Serializable
