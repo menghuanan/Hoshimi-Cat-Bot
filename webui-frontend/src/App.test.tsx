@@ -981,6 +981,71 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * 动态类型过滤器的规则内容必须使用固定选项，避免用户输入后端不接受的标签值。
+   */
+  it('uses dynamic type options when editing subscription type filters', async () => {
+    const filterPostBodies: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [{
+              id: 'sub-1',
+              kind: 'dynamic',
+              title: '测试订阅',
+              sourceId: 1,
+              targets: ['onebot11:group:1072150397'],
+              tags: ['动态'],
+              filterCount: 0,
+              templateCount: 0,
+            }],
+          }),
+        }
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/filters') && init?.method === 'POST') {
+        filterPostBodies.push(String(init.body || ''))
+        return {ok: true, status: 200, json: async () => ({success: true})}
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/filters')) {
+        return {ok: true, status: 200, json: async () => ({filters: []})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('测试订阅')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '编辑'}))
+    await user.click(screen.getByRole('button', {name: '编辑过滤器'}))
+    await user.click(await screen.findByRole('button', {name: '添加过滤器'}))
+    await user.selectOptions(screen.getByLabelText('过滤类型'), 'type')
+    expect(screen.getByLabelText('规则内容').tagName).toBe('SELECT')
+    expect(screen.getByRole('option', {name: '动态'})).toBeInTheDocument()
+    expect(screen.getByRole('option', {name: '转发动态'})).toBeInTheDocument()
+    expect(screen.getByRole('option', {name: '视频'})).toBeInTheDocument()
+    expect(screen.getByRole('option', {name: '音乐'})).toBeInTheDocument()
+    expect(screen.getByRole('option', {name: '专栏'})).toBeInTheDocument()
+    expect(screen.getByRole('option', {name: '直播'})).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('规则内容'), '视频')
+    await user.click(screen.getByRole('button', {name: '保存过滤器'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    await waitFor(() => expect(filterPostBodies).toHaveLength(1))
+    expect(JSON.parse(filterPostBodies[0])).toMatchObject({
+      kind: 'type',
+      mode: 'black',
+      content: '视频',
+      confirmationPassword: 'filter-password',
+    })
+  })
+
+  /**
    * 编辑器切换订阅时必须清空旧面板，并忽略前一个订阅尚未完成的异步加载。
    */
   it('resets subscription editor state and ignores stale nested config loads when the item changes', async () => {

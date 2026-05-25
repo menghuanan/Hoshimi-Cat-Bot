@@ -24,6 +24,9 @@ type SubscriptionEditorModalProps = {
   onReload: () => Promise<void>
 }
 
+// 动态类型过滤器只允许后端 DynamicFilterType 接受的中文展示值，避免表单提交无效标签。
+const dynamicFilterTypeOptions = ['动态', '转发动态', '视频', '音乐', '专栏', '直播']
+
 /**
  * 订阅配置编辑弹窗承载过滤器、模板、at全体和主题色四类嵌套编辑入口。
  */
@@ -399,12 +402,18 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
  * 过滤器表单保留旧 WebUI 的类型、模式和内容三组核心字段。
  */
 function FilterForm({title, draft, onSubmit, onCancel}: {title?: string, draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+  const initialKind = readItemField(draft || {}, 'kind') || 'regex'
+  const initialContent = readItemField(draft || {}, 'content')
+  const [kind, setKind] = useState(initialKind)
+  const [content, setContent] = useState(initialContent)
+  const typeContent = dynamicFilterTypeOptions.includes(content) ? content : dynamicFilterTypeOptions[0]
+
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
       {title ? <p className="text-sm font-semibold text-slate-900">{title}</p> : null}
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>过滤类型</span>
-        <select name="kind" defaultValue={readItemField(draft || {}, 'kind') || 'regex'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="kind" value={kind} onChange={(event) => setKind(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <option value="regex">正则</option>
           <option value="type">动态类型</option>
         </select>
@@ -418,7 +427,13 @@ function FilterForm({title, draft, onSubmit, onCancel}: {title?: string, draft: 
       </label>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>规则内容</span>
-        <input name="content" defaultValue={readItemField(draft || {}, 'content')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        {kind === 'type' ? (
+          <select name="content" value={typeContent} onChange={(event) => setContent(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            {dynamicFilterTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        ) : (
+          <input name="content" value={content} onChange={(event) => setContent(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        )}
       </label>
       <FormButtons submitText="保存过滤器" onCancel={onCancel} />
     </form>
