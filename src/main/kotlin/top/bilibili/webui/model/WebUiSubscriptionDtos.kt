@@ -169,18 +169,20 @@ data class WebUiSubscriptionAtAllSaveRequestDto(
 )
 
 /**
- * 主题色编辑页只读响应，当前没有配置时返回空字符串。
+ * 主题色编辑页只读响应，当前没有配置时返回空字符串；动态订阅会带回已有颜色覆盖的群聊。
  */
 @Serializable
 data class WebUiSubscriptionThemeDto(
     val color: String,
+    val targetGroups: List<String> = emptyList(),
 )
 
 /**
- * 主题色保存请求允许空值恢复默认；非空颜色由后端负责格式校验和作用域展开。
+ * 主题色保存请求允许空值恢复默认；动态订阅可用 targetGroups 限定本次写入的群聊范围。
  */
 @Serializable
 data class WebUiSubscriptionThemeSaveRequestDto(
     val color: String,
+    val targetGroups: List<String> = emptyList(),
     val confirmationPassword: String = "",
 )

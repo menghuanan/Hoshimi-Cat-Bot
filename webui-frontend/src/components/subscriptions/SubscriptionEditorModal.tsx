@@ -13,7 +13,7 @@ type SubscriptionEditorActions = {
   saveFilter: (itemId: string, draft: {key: string, kind: string, mode: string, content: string}) => Promise<unknown>
   saveTemplate: (itemId: string, draft: {key: string, type: string, name: string, content: string}) => Promise<unknown>
   saveAtAll: (itemId: string, draft: {type: string, targetGroups: string[]}) => Promise<unknown>
-  saveTheme: (itemId: string, color: string) => Promise<unknown>
+  saveTheme: (itemId: string, draft: {color: string, targetGroups: string[]}) => Promise<unknown>
   removeConfig: (itemId: string, kind: 'filter' | 'template' | 'atall', key: string) => Promise<unknown>
   toggleRandomTemplate: (itemId: string, enabled: boolean) => Promise<unknown>
 }
@@ -37,6 +37,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const [randomEnabled, setRandomEnabled] = useState(false)
   const [atAllItems, setAtAllItems] = useState<Record<string, unknown>[]>([])
   const [themeColor, setThemeColor] = useState('')
+  const [themeTargetGroups, setThemeTargetGroups] = useState<string[]>([])
   const [formMode, setFormMode] = useState<EditorFormMode>('none')
   const [editingDraft, setEditingDraft] = useState<Record<string, unknown> | null>(null)
   const [status, setStatus] = useState('')
@@ -81,9 +82,12 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
       setAtAllItems(Array.isArray(payload?.items) ? payload.items : [])
     }
     if (nextAction === 'theme') {
-      const payload = await actions.loadTheme(itemId) as {color?: string}
+      const payload = await actions.loadTheme(itemId) as {color?: string, targetGroups?: unknown[]}
       if (!isCurrentLoad(sequence)) return
-      setThemeColor(String(payload?.color || ''))
+      const loadedColor = String(payload?.color || '')
+      const loadedTargets = Array.isArray(payload?.targetGroups) ? payload.targetGroups.map(String).filter(Boolean) : []
+      setThemeColor(loadedColor)
+      setThemeTargetGroups(resolveInitialThemeTargets(loadedColor, loadedTargets, targets, isDynamicThemeItem(item, itemId)))
     }
   }
 
@@ -247,13 +251,25 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
       setStatusTone('error')
       return
     }
+    const normalizedColor = themeColor.trim()
+    const selectedTargets = isDynamicThemeItem(item, itemId) ? themeTargetGroups.filter((target) => targets.includes(target)) : []
     if (!isValidThemeColor(themeColor)) {
       setStatus('主题颜色必须是 HEX 颜色')
       setStatusTone('error')
       return
     }
+    if (normalizedColor && isDynamicThemeItem(item, itemId) && selectedTargets.length === 0) {
+      setStatus('目标群聊必须至少选择一个')
+      setStatusTone('error')
+      return
+    }
+    if (!normalizedColor && isDynamicThemeItem(item, itemId) && selectedTargets.length === 0) {
+      setStatus('主题色未变更')
+      setStatusTone('success')
+      return
+    }
     try {
-      await actions.saveTheme(itemId, themeColor.trim())
+      await actions.saveTheme(itemId, {color: normalizedColor, targetGroups: selectedTargets})
       await onReload()
       setStatus('主题色已保存')
       setStatusTone('success')
@@ -267,6 +283,19 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const filterFormOpen = formMode === 'filter'
   const templateFormOpen = formMode === 'template'
   const atAllFormOpen = formMode === 'atall'
+  const showThemeTargets = isDynamicThemeItem(item, itemId) && targets.length > 0
+
+  /**
+   * 主题色目标群聊用受控复选框保存，便于空颜色只恢复用户勾选的群聊默认色。
+   */
+  const updateThemeTarget = (target: string, checked: boolean) => {
+    setThemeTargetGroups((current) => {
+      if (checked) {
+        return current.includes(target) ? current : [...current, target]
+      }
+      return current.filter((itemTarget) => itemTarget !== target)
+    })
+  }
 
   return (
     <div data-subscription-editor-overlay className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6 lg:left-[18rem]" role="presentation">
@@ -338,6 +367,19 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
                 <span>主题颜色</span>
                 <input value={themeColor} onChange={(event) => setThemeColor(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
               </label>
+              {showThemeTargets ? (
+                <fieldset className="grid gap-2 rounded-lg border border-slate-200 p-3">
+                  <legend className="px-1 text-sm font-semibold text-slate-700">目标群聊</legend>
+                  <div className="grid gap-2">
+                    {targets.map((target) => (
+                      <label key={target} className="inline-flex min-w-0 items-center gap-2 text-sm text-slate-700">
+                        <input type="checkbox" checked={themeTargetGroups.includes(target)} onChange={(event) => updateThemeTarget(target, event.target.checked)} />
+                        <span className="min-w-0 break-all">{target}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ) : null}
               <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">保存主题色</button>
             </form>
           ) : null}
@@ -592,6 +634,26 @@ function readConfigKey(item: Record<string, unknown>): string {
 function isValidThemeColor(value: string): boolean {
   const text = value.trim()
   return text.length === 0 || /^#[0-9A-Fa-f]{6}$/.test(text)
+}
+
+/**
+ * 只有单 UP 动态订阅按群聊选择主题色目标；分组和番剧保留各自后端语义。
+ */
+function isDynamicThemeItem(item: SubscriptionItem, itemId: string): boolean {
+  return readItemField(item, 'kind') === 'dynamic' || itemId.startsWith('dynamic:')
+}
+
+/**
+ * 主题色打开时优先勾选后端返回的已覆盖群聊；旧响应缺少群聊时按已有颜色回退到全部目标。
+ */
+function resolveInitialThemeTargets(color: string, loadedTargets: string[], targets: string[], supportsTargets: boolean): string[] {
+  if (!supportsTargets) {
+    return []
+  }
+  if (loadedTargets.length > 0) {
+    return loadedTargets.filter((target) => targets.includes(target))
+  }
+  return color.trim() ? targets : []
 }
 
 /**

@@ -38,6 +38,10 @@ type SubscriptionAtAllDraft = {
   type: string
   targetGroups: string[]
 }
+type SubscriptionThemeDraft = {
+  color: string
+  targetGroups: string[]
+}
 
 /**
  * 写接口可能以 HTTP 200 返回业务失败，前端必须把具体 message 暴露给页面状态。
@@ -168,14 +172,14 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
-   * 保存主题色只暴露颜色参数，避免页面层组装确认 payload。
+   * 保存主题色时由 hook 补确认密码，页面只负责提交颜色和可选目标群聊。
    */
-  const saveTheme = useCallback(async (itemId: string, color: string) => {
+  const saveTheme = useCallback(async (itemId: string, draft: SubscriptionThemeDraft) => {
     const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存主题色')
     if (!confirmationPassword) {
       return null
     }
-    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTheme(itemId, color, confirmationPassword, requestOptions), '保存主题色失败')
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTheme(itemId, draft.color, draft.targetGroups, confirmationPassword, requestOptions), '保存主题色失败')
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**

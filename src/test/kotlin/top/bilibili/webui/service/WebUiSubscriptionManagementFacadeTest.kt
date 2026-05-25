@@ -394,7 +394,7 @@ class WebUiSubscriptionManagementFacadeTest {
         val atAllRows = facade.listSubscriptionAtAll("dynamic:123")
         val savedAtAll = facade.saveSubscriptionAtAll("dynamic:123", "全部动态", listOf("onebot11:group:10001"))
         val deletedAtAll = facade.deleteSubscriptionAtAll("dynamic:123", atAllRows.items.first().key)
-        val theme = facade.saveSubscriptionTheme("dynamic:123", "#ABCDEF")
+        val theme = facade.saveSubscriptionTheme("dynamic:123", "#ABCDEF", listOf("onebot11:group:10001"))
 
         assertEquals("直播 10001", atAllRows.items.first().summary)
         assertTrue(savedAtAll.success)
@@ -407,7 +407,7 @@ class WebUiSubscriptionManagementFacadeTest {
     }
 
     /**
-     * 空主题色表示恢复默认色：动态清除当前 UID 覆盖，番剧清空自身颜色字段。
+     * 空主题色表示恢复默认色：动态只清除选中群聊的当前 UID 覆盖，番剧清空自身颜色字段。
      */
     @Test
     fun `theme editor should clear saved color overrides when blank color is submitted`() = runBlocking {
@@ -440,7 +440,7 @@ class WebUiSubscriptionManagementFacadeTest {
         }
         val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
 
-        val clearedDynamic = facade.saveSubscriptionTheme("dynamic:123", " ")
+        val clearedDynamic = facade.saveSubscriptionTheme("dynamic:123", " ", listOf("onebot11:group:10001"))
         val clearedBangumi = facade.saveSubscriptionTheme("bangumi:789", "")
 
         assertTrue(clearedDynamic.success)
@@ -448,6 +448,92 @@ class WebUiSubscriptionManagementFacadeTest {
         assertFalse(BiliData.dynamicColorByUid.getValue("onebot11:group:10001").containsKey(123L))
         assertEquals("#445566", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(456L))
         assertNull(BiliData.bangumi.getValue(789L).color)
+    }
+
+    /**
+     * 单 UP 主题色按所选群聊写入；空颜色空选择是无写入 no-op，空颜色有选择则只恢复所选群聊默认。
+     */
+    @Test
+    fun `dynamic theme editor should apply colors only to selected target groups`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001", "direct:onebot11:group:10002"),
+                ),
+                456L to SubData(
+                    name = "Bob",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            dynamicColorByUid = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(123L to "#112233", 456L to "#445566"),
+                "onebot11:group:10002" to mutableMapOf(123L to "#556677"),
+            )
+        }
+        var saveCalls = 0
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = {
+            saveCalls += 1
+            true
+        })
+
+        val missingTarget = facade.saveSubscriptionTheme("dynamic:123", "#ABCDEF", emptyList())
+        val noopBlank = facade.saveSubscriptionTheme("dynamic:123", " ", emptyList())
+        val savedSelected = facade.saveSubscriptionTheme("dynamic:123", "#ABCDEF", listOf("onebot11:group:10002"))
+        val clearedSelected = facade.saveSubscriptionTheme("dynamic:123", "", listOf("onebot11:group:10002"))
+
+        assertFalse(missingTarget.success)
+        assertTrue(noopBlank.success)
+        assertTrue(savedSelected.success)
+        assertTrue(clearedSelected.success)
+        assertEquals(2, saveCalls)
+        assertEquals("#112233", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(123L))
+        assertEquals("#445566", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(456L))
+        assertFalse(BiliData.dynamicColorByUid.containsKey("onebot11:group:10002"))
+    }
+
+    /**
+     * 分组主题色保持分组级批量语义，不要求像单 UP 一样选择目标群聊。
+     */
+    @Test
+    fun `group theme editor should keep applying colors to every group target`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("groupRef:team-a"),
+                ),
+                456L to SubData(
+                    name = "Bob",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("groupRef:team-a"),
+                ),
+            )
+            group = mutableMapOf(
+                "team-a" to Group(
+                    name = "team-a",
+                    creator = 1L,
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                ),
+            )
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+
+        val saved = facade.saveSubscriptionTheme("group:team-a", "#ABCDEF")
+
+        assertTrue(saved.success)
+        assertEquals("#ABCDEF", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(123L))
+        assertEquals("#ABCDEF", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(456L))
+        assertEquals("#ABCDEF", BiliData.dynamicColorByUid.getValue("onebot11:group:10002").getValue(123L))
+        assertEquals("#ABCDEF", BiliData.dynamicColorByUid.getValue("onebot11:group:10002").getValue(456L))
+
+        val cleared = facade.saveSubscriptionTheme("group:team-a", "")
+
+        assertTrue(cleared.success)
+        assertTrue(BiliData.dynamicColorByUid.isEmpty())
     }
 
     /**

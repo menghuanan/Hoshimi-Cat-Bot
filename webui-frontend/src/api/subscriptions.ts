@@ -262,13 +262,14 @@ export async function readSubscriptionTheme(
 export async function saveSubscriptionTheme(
   itemId: string,
   color: string,
+  targetGroups: string[],
   confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(buildSubscriptionEditorUrl(itemId, 'theme'), {
     ...options,
     method: 'POST',
-    body: buildSubscriptionThemePayload(color, confirmationPassword),
+    body: buildSubscriptionThemePayload(color, confirmationPassword, targetGroups),
     includeJson: true,
     authenticated: false,
   })

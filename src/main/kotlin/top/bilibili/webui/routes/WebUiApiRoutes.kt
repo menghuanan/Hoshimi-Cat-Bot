@@ -197,7 +197,7 @@ fun Route.registerWebUiApiRoutes(
         if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
             return@post
         }
-        val result = subscriptionManagementFacade.saveSubscriptionTheme(id, request.color)
+        val result = subscriptionManagementFacade.saveSubscriptionTheme(id, request.color, request.targetGroups)
         call.respondSubscriptionMutation(result)
     }
 

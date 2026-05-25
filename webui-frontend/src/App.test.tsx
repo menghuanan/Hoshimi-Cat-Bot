@@ -750,7 +750,8 @@ describe('webui shell routing', () => {
    * 订阅页需要恢复旧 WebUI 的列表筛选、新增模式和嵌套编辑器入口。
    */
   it('renders subscription filters, create modes, and nested editor controls', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const themePostBodies: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/subscriptions')) {
         return {
@@ -786,6 +787,10 @@ describe('webui shell routing', () => {
       }
       if (url.endsWith('/api/subscriptions/sub-1/atall')) {
         return {ok: true, status: 200, json: async () => ({items: [{key: '全部动态', type: '全部动态', summary: '全部动态：10001', groups: ['10001']}]})}
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/theme') && init?.method === 'POST') {
+        themePostBodies.push(String(init.body || ''))
+        return {ok: true, status: 200, json: async () => ({success: true})}
       }
       if (url.endsWith('/api/subscriptions/sub-1/theme')) {
         return {ok: true, status: 200, json: async () => ({color: '#33aaff'})}
@@ -900,16 +905,24 @@ describe('webui shell routing', () => {
     await user.click(screen.getByRole('button', {name: '编辑主题色'}))
     const editorDialog = screen.getByRole('dialog', {name: '编辑订阅配置'})
     expect(await screen.findByLabelText('主题颜色')).toHaveValue('#33aaff')
+    expect(screen.getByLabelText('onebot11:group:1072150397')).toBeChecked()
+    expect(screen.getByLabelText('onebot11:group:1245551')).toBeChecked()
     await user.clear(screen.getByLabelText('主题颜色'))
     await user.type(screen.getByLabelText('主题颜色'), 'not-a-color')
     await user.click(screen.getByRole('button', {name: '保存主题色'}))
     expect(within(editorDialog).getByRole('alert')).toHaveTextContent('主题颜色必须是 HEX 颜色')
     await user.clear(screen.getByLabelText('主题颜色'))
     await user.type(screen.getByLabelText('主题颜色'), '#33aaff')
+    await user.click(screen.getByLabelText('onebot11:group:1245551'))
     await user.click(screen.getByRole('button', {name: '保存主题色'}))
     await user.type(await screen.findByLabelText('确认密码'), 'theme-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
     expect(await screen.findByText('主题色已保存')).toBeInTheDocument()
+    expect(JSON.parse(themePostBodies.at(-1) || '{}')).toMatchObject({
+      color: '#33aaff',
+      targetGroups: ['onebot11:group:1072150397'],
+      confirmationPassword: 'theme-password',
+    })
   })
 
   /**

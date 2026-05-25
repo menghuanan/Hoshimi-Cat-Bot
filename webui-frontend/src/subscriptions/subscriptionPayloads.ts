@@ -33,6 +33,7 @@ export type SubscriptionAtAllPayload = WebUiSubscriptionWritePayload & {
 
 export type SubscriptionThemePayload = WebUiSubscriptionWritePayload & {
   color: string
+  targetGroups: string[]
 }
 
 export type SubscriptionRandomTemplatePayload = WebUiSubscriptionWritePayload & {
@@ -116,11 +117,16 @@ export function buildSubscriptionAtAllPayload(input: SubscriptionAtAllPayload): 
 }
 
 /**
- * 主题色写入允许空值恢复默认，非空颜色格式由表单和后端共同兜底。
+ * 主题色写入允许空值恢复默认，单 UP 动态订阅通过 targetGroups 限定本次生效群聊。
  */
-export function buildSubscriptionThemePayload(color: string, confirmationPassword: string): SubscriptionThemePayload {
+export function buildSubscriptionThemePayload(
+  color: string,
+  confirmationPassword: string,
+  targetGroups: string[] = [],
+): SubscriptionThemePayload {
   return {
     color,
+    targetGroups,
     confirmationPassword,
   }
 }

@@ -624,7 +624,7 @@ class WebUiRouteSmokeTest {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"color":"#AABBCC","confirmationPassword":"Better123!@"}""")
+            setBody("""{"color":"#AABBCC","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
         }
         val theme = client.get("/api/subscriptions/dynamic%3A123/theme") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -643,6 +643,7 @@ class WebUiRouteSmokeTest {
         assertEquals(HttpStatusCode.Forbidden, themeMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, themeSaved.status)
         assertEquals("#AABBCC", theme.color)
+        assertEquals(listOf("onebot11:group:10001"), theme.targetGroups)
     }
 
     /**

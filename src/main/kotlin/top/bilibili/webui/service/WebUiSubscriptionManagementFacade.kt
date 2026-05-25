@@ -389,40 +389,54 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
-     * 主题色读取优先返回当前订阅已有的第一条作用域绑定，番剧则读取番剧自身颜色字段。
+     * 主题色读取优先返回当前订阅已有的第一条作用域绑定，并带回动态订阅中已覆盖颜色的群聊。
      */
     fun readSubscriptionTheme(itemId: String): WebUiSubscriptionThemeDto {
         val context = resolveEditContext(itemId) ?: return WebUiSubscriptionThemeDto("")
         if (context.kind == "bangumi") {
             return WebUiSubscriptionThemeDto(BiliData.bangumi[context.primaryBangumiId]?.color.orEmpty())
         }
+        val targetGroups = linkedSetOf<String>()
+        var firstColor = ""
         context.contactScopes.forEach { scope ->
             context.uids.forEach { uid ->
                 val color = BiliData.dynamicColorByUid[scope]?.get(uid)
                 if (!color.isNullOrBlank()) {
-                    return WebUiSubscriptionThemeDto(color)
+                    if (firstColor.isBlank()) {
+                        firstColor = color
+                    }
+                    targetGroups += scope
                 }
             }
         }
-        return WebUiSubscriptionThemeDto("")
+        return WebUiSubscriptionThemeDto(firstColor, targetGroups.toList())
     }
 
     /**
-     * 主题色保存接受空值恢复默认色；非空值只接受单个 HEX 颜色，并展开写入当前订阅的全部推送群。
+     * 主题色保存接受空值恢复默认色；单 UP 动态订阅可按所选群聊写入，分组仍展开到全部群聊。
      */
-    fun saveSubscriptionTheme(itemId: String, color: String): WebUiSubscriptionMutationResultDto {
+    fun saveSubscriptionTheme(
+        itemId: String,
+        color: String,
+        targetGroups: List<String> = emptyList(),
+    ): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持主题色")
         val normalizedColor = color.trim()
-        // 空主题色沿用前端“恢复默认”语义，只清除当前订阅范围内的颜色覆盖。
+        // 空主题色沿用前端“恢复默认”语义；单 UP 只清除所选群聊，分组清除全部绑定群聊。
         if (normalizedColor.isBlank()) {
             if (context.kind == "bangumi") {
                 val bangumi = BiliData.bangumi[context.primaryBangumiId] ?: return validationFailure("番剧订阅不存在")
                 bangumi.color = null
             } else {
-                if (context.contactScopes.isEmpty() || context.uids.isEmpty()) {
+                val scopes = resolveThemeWriteScopes(context, targetGroups, requireSelection = false)
+                    ?: return validationFailure("目标群聊必须至少选择一个")
+                if (scopes.isEmpty()) {
+                    return success(itemId, "主题色未变更")
+                }
+                if (context.uids.isEmpty()) {
                     return validationFailure("当前订阅没有可写入主题色的推送群")
                 }
-                context.contactScopes.forEach { scope ->
+                scopes.forEach { scope ->
                     val colorsByUid = BiliData.dynamicColorByUid[scope] ?: return@forEach
                     context.uids.forEach { uid -> colorsByUid.remove(uid) }
                     if (colorsByUid.isEmpty()) {
@@ -440,10 +454,12 @@ class WebUiSubscriptionManagementFacade(
             val bangumi = BiliData.bangumi[context.primaryBangumiId] ?: return validationFailure("番剧订阅不存在")
             bangumi.color = normalizedColor
         } else {
-            if (context.contactScopes.isEmpty() || context.uids.isEmpty()) {
+            val scopes = resolveThemeWriteScopes(context, targetGroups, requireSelection = true)
+                ?: return validationFailure("目标群聊必须至少选择一个")
+            if (scopes.isEmpty() || context.uids.isEmpty()) {
                 return validationFailure("当前订阅没有可写入主题色的推送群")
             }
-            context.contactScopes.forEach { scope ->
+            scopes.forEach { scope ->
                 val byUid = BiliData.dynamicColorByUid.getOrPut(scope) { mutableMapOf() }
                 context.uids.forEach { uid -> byUid[uid] = normalizedColor }
             }
@@ -902,6 +918,27 @@ class WebUiSubscriptionManagementFacade(
             }
         }
         return scopes.sorted()
+    }
+
+    /**
+     * 单 UP 主题色按前端选择的群聊写入；分组主题色保持旧行为，始终覆盖分组全部推送群。
+     */
+    private fun resolveThemeWriteScopes(
+        context: SubscriptionEditContext,
+        targetGroups: List<String>,
+        requireSelection: Boolean,
+    ): List<String>? {
+        if (context.kind != "dynamic") {
+            return context.contactScopes
+        }
+        val scopes = targetGroups.distinct().filter { it in context.contactScopes }
+        if (targetGroups.isNotEmpty() && scopes.isEmpty()) {
+            return null
+        }
+        if (requireSelection && scopes.isEmpty()) {
+            return null
+        }
+        return scopes
     }
 
     /**

@@ -71,8 +71,9 @@ describe('subscription payload builders', () => {
       confirmationPassword: 'pw-atall',
     })
 
-    expect(buildSubscriptionThemePayload('#33aaff', 'pw-theme')).toEqual({
+    expect(buildSubscriptionThemePayload('#33aaff', 'pw-theme', ['onebot11:group:10001'])).toEqual({
       color: '#33aaff',
+      targetGroups: ['onebot11:group:10001'],
       confirmationPassword: 'pw-theme',
     })
 
