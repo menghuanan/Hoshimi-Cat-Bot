@@ -926,6 +926,61 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * 番剧后端只支持订阅本身和主题色，前端不能展示无效的过滤器、模板和 @全体入口。
+   */
+  it('hides unsupported nested editors for bangumi subscriptions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [{
+              id: 'bangumi:12345',
+              kind: 'bangumi',
+              title: '测试番剧',
+              identifierLabel: 'SS: 12345 / MD: 67890',
+              sourceId: 12345,
+              tags: ['番剧'],
+              targetSectionTitle: '推送目标',
+              targets: ['onebot11:group:1072150397'],
+              filterInfo: '不适用',
+              filterCount: 0,
+              templateNames: [],
+              templateCount: 0,
+              atAllInfo: '未开启',
+              themeColor: '#33aaff',
+              themeColorCount: 1,
+              lastUpdatedEpochMillis: 1_700_000_000_000,
+            }],
+          }),
+        }
+      }
+      if (url.endsWith('/api/subscriptions/bangumi%3A12345/theme')) {
+        return {ok: true, status: 200, json: async () => ({color: '#33aaff'})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('测试番剧')).toBeInTheDocument()
+    expect(screen.queryByText('过滤器信息')).not.toBeInTheDocument()
+    expect(screen.queryByText('模板信息')).not.toBeInTheDocument()
+    expect(screen.queryByText('at全体')).not.toBeInTheDocument()
+    expect(screen.getByText('主题色')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '编辑'}))
+    expect(screen.queryByRole('button', {name: '编辑过滤器'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '编辑模板'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '编辑at全体'})).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '编辑主题色'}))
+    expect(await screen.findByLabelText('主题颜色')).toHaveValue('#33aaff')
+  })
+
+  /**
    * 编辑器切换订阅时必须清空旧面板，并忽略前一个订阅尚未完成的异步加载。
    */
   it('resets subscription editor state and ignores stale nested config loads when the item changes', async () => {

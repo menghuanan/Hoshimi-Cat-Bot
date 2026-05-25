@@ -30,6 +30,7 @@ type SubscriptionEditorModalProps = {
 export function SubscriptionEditorModal({item, actions, onClose, onReload}: SubscriptionEditorModalProps) {
   const itemId = item ? readStableSubscriptionId(item) : ''
   const targets = item ? readItemArray(item, 'targets') : []
+  const supportsNestedConfig = item ? supportsNestedSubscriptionConfig(item, itemId) : false
   const loadSequenceRef = useRef(0)
   const [activeAction, setActiveAction] = useState<EditorAction>('overview')
   const [filters, setFilters] = useState<Record<string, unknown>[]>([])
@@ -311,9 +312,9 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
         </div>
         <aside className="space-y-3 lg:col-start-1 lg:row-start-2">
           <div className="grid gap-2">
-            <button type="button" onClick={() => void openAction('filters')} className={actionButtonClass(activeAction === 'filters')}>编辑过滤器</button>
-            <button type="button" onClick={() => void openAction('templates')} className={actionButtonClass(activeAction === 'templates')}>编辑模板</button>
-            <button type="button" onClick={() => void openAction('atall')} className={actionButtonClass(activeAction === 'atall')}>编辑at全体</button>
+            {supportsNestedConfig ? <button type="button" onClick={() => void openAction('filters')} className={actionButtonClass(activeAction === 'filters')}>编辑过滤器</button> : null}
+            {supportsNestedConfig ? <button type="button" onClick={() => void openAction('templates')} className={actionButtonClass(activeAction === 'templates')}>编辑模板</button> : null}
+            {supportsNestedConfig ? <button type="button" onClick={() => void openAction('atall')} className={actionButtonClass(activeAction === 'atall')}>编辑at全体</button> : null}
             <button type="button" onClick={() => void openAction('theme')} className={actionButtonClass(activeAction === 'theme')}>编辑主题色</button>
           </div>
           <button type="button" onClick={onClose} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">关闭</button>
@@ -641,6 +642,13 @@ function isValidThemeColor(value: string): boolean {
  */
 function isDynamicThemeItem(item: SubscriptionItem, itemId: string): boolean {
   return readItemField(item, 'kind') === 'dynamic' || itemId.startsWith('dynamic:')
+}
+
+/**
+ * 番剧编辑上下文没有 UID、模板 scope 和 at全体 scope，前端只保留后端明确支持的主题色入口。
+ */
+function supportsNestedSubscriptionConfig(item: SubscriptionItem, itemId: string): boolean {
+  return readItemField(item, 'kind') !== 'bangumi' && !itemId.startsWith('bangumi:')
 }
 
 /**

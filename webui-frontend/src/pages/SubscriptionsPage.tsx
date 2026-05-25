@@ -61,7 +61,7 @@ export function SubscriptionsPage() {
     <div data-page="subscriptions" className="space-y-6">
       <PageSection
         title="订阅管理"
-        description="管理动态、番剧和分组订阅，并编辑过滤器、模板、at全体和主题色。"
+        description="管理动态、番剧和分组订阅，并按后端支持范围编辑附属配置和主题色。"
         actions={<button type="button" onClick={() => setCreateOpen(true)} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增订阅</button>}
       >
         {loading ? <p className="text-sm text-slate-500">正在加载</p> : null}
@@ -111,6 +111,7 @@ function SubscriptionCard({item, pending, onEdit, onDelete}: {
   const title = readItemField(item, 'title') || readItemField(item, 'subject') || readItemField(item, 'uid') || '未命名订阅'
   const targets = formatSubscriptionTargets(readItemArray(item, 'targets'))
   const tags = readItemArray(item, 'tags')
+  const supportsNestedConfig = supportsNestedSubscriptionConfig(item)
 
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -134,13 +135,20 @@ function SubscriptionCard({item, pending, onEdit, onDelete}: {
         </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <InfoBlock label="过滤器信息" value={formatCount(item, 'filterCount', '过滤器')} />
-        <InfoBlock label="模板信息" value={formatCount(item, 'templateCount', '模板')} />
-        <InfoBlock label="at全体" value={readItemField(item, 'atAllInfo') || '未开启'} />
+        {supportsNestedConfig ? <InfoBlock label="过滤器信息" value={formatCount(item, 'filterCount', '过滤器')} /> : null}
+        {supportsNestedConfig ? <InfoBlock label="模板信息" value={formatCount(item, 'templateCount', '模板')} /> : null}
+        {supportsNestedConfig ? <InfoBlock label="at全体" value={readItemField(item, 'atAllInfo') || '未开启'} /> : null}
         <InfoBlock label="主题色" value={readItemField(item, 'themeColor') || '默认'} />
       </div>
     </article>
   )
+}
+
+/**
+ * 番剧后端只支持订阅目标和主题色，卡片不展示无写入语义的动态附属配置摘要。
+ */
+function supportsNestedSubscriptionConfig(item: SubscriptionItem): boolean {
+  return readItemField(item, 'kind') !== 'bangumi'
 }
 
 /**
