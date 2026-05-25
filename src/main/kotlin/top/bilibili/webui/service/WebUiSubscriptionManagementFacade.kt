@@ -45,8 +45,14 @@ class WebUiSubscriptionManagementFacade(
     private val addGroupDynamicAction: suspend (Long, String) -> String = { uid, groupName ->
         DynamicService.addGroupSubscribe(uid, groupName)
     },
+    private val removeDynamicAction: suspend (Long) -> String = { uid ->
+        DynamicService.removeUidForWebUi(uid)
+    },
     private val followPgcAction: suspend (String, String) -> String = { id, subject ->
         PgcService.followPgc(id, subject)
+    },
+    private val deletePgcAction: suspend (String, String) -> String = { id, subject ->
+        PgcService.delPgc(id, subject)
     },
 ) {
     // 模板类型规格集中放在 facade 内，避免列表、保存和随机开关维护三套类型映射。
@@ -560,19 +566,23 @@ class WebUiSubscriptionManagementFacade(
     /**
      * 删除动态卡片时按 UID 清理所有关联业务数据，保证卡片消失后不留下附属策略。
      */
-    private fun deleteDynamicSubscription(rawUid: String): WebUiSubscriptionMutationResultDto {
+    private suspend fun deleteDynamicSubscription(rawUid: String): WebUiSubscriptionMutationResultDto {
         val uid = rawUid.toLongOrNull() ?: return validationFailure("订阅UID无效")
         if (!BiliData.dynamic.containsKey(uid)) {
             return validationFailure("订阅不存在")
         }
+        val message = removeDynamicAction(uid)
+        if (!isSuccessMessage(message)) {
+            return validationFailure(message)
+        }
         removeUidPayload(uid)
-        return success("dynamic:$uid", "订阅已删除")
+        return success("dynamic:$uid", message)
     }
 
     /**
      * 删除分组卡片时把分组绑定的 UID 视为该卡片归属，一并清理 UID 下属策略和分组本体。
      */
-    private fun deleteGroupSubscription(groupName: String): WebUiSubscriptionMutationResultDto {
+    private suspend fun deleteGroupSubscription(groupName: String): WebUiSubscriptionMutationResultDto {
         if (!BiliData.group.containsKey(groupName)) {
             return validationFailure("分组不存在")
         }
@@ -581,7 +591,13 @@ class WebUiSubscriptionManagementFacade(
             .filter { (_, subscription) -> groupRef in subscription.sourceRefs }
             .keys
             .toList()
-        linkedUids.forEach(::removeUidPayload)
+        linkedUids.forEach { uid ->
+            val message = removeDynamicAction(uid)
+            if (!isSuccessMessage(message)) {
+                return validationFailure(message)
+            }
+            removeUidPayload(uid)
+        }
         BiliData.group.remove(groupName)
         BiliData.subscriptionCardUpdatedAt.remove("group:$groupName")
         removeScopedPayload(groupRef)
@@ -591,10 +607,14 @@ class WebUiSubscriptionManagementFacade(
     /**
      * 删除番剧卡片时移除整条番剧订阅记录，番剧主题色随记录一起回收。
      */
-    private fun deleteBangumiSubscription(rawSeasonId: String): WebUiSubscriptionMutationResultDto {
+    private suspend fun deleteBangumiSubscription(rawSeasonId: String): WebUiSubscriptionMutationResultDto {
         val seasonId = rawSeasonId.toLongOrNull() ?: return validationFailure("番剧号无效")
-        if (BiliData.bangumi.remove(seasonId) == null) {
-            return validationFailure("番剧订阅不存在")
+        val bangumi = BiliData.bangumi[seasonId] ?: return validationFailure("番剧订阅不存在")
+        bangumi.contacts.toList().forEach { subject ->
+            val message = deletePgcAction("ss$seasonId", subject)
+            if (!isSuccessMessage(message)) {
+                return validationFailure(message)
+            }
         }
         BiliData.subscriptionCardUpdatedAt.remove("bangumi:$seasonId")
         return success("bangumi:$seasonId", "番剧订阅已删除")

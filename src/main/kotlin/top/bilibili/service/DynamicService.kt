@@ -133,6 +133,15 @@ object DynamicService {
     }
 
     /**
+     * WebUI 卡片删除是 UID 级完整退订，必须无视 direct/groupRef 来源并触发账号侧取消关注。
+     */
+    suspend fun removeUidForWebUi(uid: Long) = mutex.withLock {
+        val user = dynamic[uid] ?: return@withLock "还未订阅此人哦"
+        removeUidCompletely(uid, user.contacts.toSet())
+        "取消订阅 ${user.name} 成功"
+    }
+
+    /**
      * 从全部模板策略表中移除指定 UID。
      * 清理时同时回收空 scope，避免策略树在长期运行中残留无效壳层。
      */

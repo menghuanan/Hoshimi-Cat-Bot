@@ -134,6 +134,48 @@ class WebUiSubscriptionManagementFacadeTest {
     }
 
     /**
+     * 删除番剧卡片复用现有番剧取消订阅链路，只移除本地推送绑定，不扩展追番取消行为。
+     */
+    @Test
+    fun `delete bangumi subscription should delegate to existing pgc delete flow`() = runBlocking {
+        BiliData.apply {
+            bangumi = mutableMapOf(
+                456L to Bangumi(
+                    title = "Bangumi A",
+                    seasonId = 456L,
+                    mediaId = 789L,
+                    type = "bangumi",
+                    color = "#334455",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                ),
+            )
+            subscriptionCardUpdatedAt = mutableMapOf("bangumi:456" to 1234L)
+        }
+        val deletedBindings = mutableListOf<Pair<String, String>>()
+        val facade = WebUiSubscriptionManagementFacade(
+            deletePgcAction = { id, subject ->
+                deletedBindings += id to subject
+                BiliData.bangumi.getValue(456L).contacts.remove(subject)
+                if (BiliData.bangumi.getValue(456L).contacts.isEmpty()) {
+                    BiliData.bangumi.remove(456L)
+                }
+                "删除成功"
+            },
+            saveDataAction = { true },
+        )
+
+        val result = facade.deleteSubscription("bangumi:456")
+
+        assertTrue(result.success)
+        assertEquals(
+            listOf("ss456" to "onebot11:group:10001", "ss456" to "onebot11:group:10002"),
+            deletedBindings,
+        )
+        assertFalse(BiliData.bangumi.containsKey(456L))
+        assertFalse(BiliData.subscriptionCardUpdatedAt.containsKey("bangumi:456"))
+    }
+
+    /**
      * 新增分组卡片时记录管理更新时间，避免尚无推送内容的卡片显示暂无更新。
      */
     @Test
@@ -152,10 +194,61 @@ class WebUiSubscriptionManagementFacadeTest {
     }
 
     /**
-     * 删除分组卡片需要清理分组本身及其绑定 UID 的过滤器、模板、@全体和主题色配置。
+     * 删除动态卡片必须委托完整退订动作，并由 WebUI 兜底清理过滤器、模板、@全体和主题色配置。
      */
     @Test
-    fun `delete group subscription should remove group bound uid payloads`() = runBlocking {
+    fun `delete dynamic subscription should unsubscribe uid and remove attached payloads`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            filter = mutableMapOf("onebot11:group:10001" to mutableMapOf(123L to DynamicFilter()))
+            dynamicTemplatePolicyByScope = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(123L to TemplatePolicy(templates = mutableListOf("DyMsg"))),
+            )
+            liveTemplatePolicyByScope = mutableMapOf()
+            liveCloseTemplatePolicyByScope = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(123L to TemplatePolicy(templates = mutableListOf("CloseMsg"))),
+            )
+            dynamicColorByUid = mutableMapOf("onebot11:group:10001" to mutableMapOf(123L to "#112233"))
+            atAll = mutableMapOf("onebot11:group:10001" to mutableMapOf(123L to mutableSetOf(AtAllType.LIVE)))
+            atAllCooldownUntil = mutableMapOf("onebot11:group:10001.123.LIVE" to 999L)
+            subscriptionCardUpdatedAt = mutableMapOf("dynamic:123" to 1234L)
+        }
+        val removedUids = mutableListOf<Long>()
+        val facade = WebUiSubscriptionManagementFacade(
+            removeDynamicAction = { uid ->
+                removedUids += uid
+                BiliData.dynamic.remove(uid)
+                "取消订阅 Alice 成功"
+            },
+            saveDataAction = { true },
+        )
+
+        val result = facade.deleteSubscription("dynamic:123")
+
+        assertTrue(result.success)
+        assertEquals(listOf(123L), removedUids)
+        assertFalse(BiliData.dynamic.containsKey(123L))
+        assertTrue(BiliData.filter.isEmpty())
+        assertTrue(BiliData.dynamicTemplatePolicyByScope.isEmpty())
+        assertTrue(BiliData.liveTemplatePolicyByScope.isEmpty())
+        assertTrue(BiliData.liveCloseTemplatePolicyByScope.isEmpty())
+        assertTrue(BiliData.dynamicColorByUid.isEmpty())
+        assertTrue(BiliData.atAll.isEmpty())
+        assertTrue(BiliData.atAllCooldownUntil.isEmpty())
+        assertFalse(BiliData.subscriptionCardUpdatedAt.containsKey("dynamic:123"))
+    }
+
+    /**
+     * 删除分组卡片需要对绑定 UID 执行完整退订，并清理分组本身及 groupRef 附属配置。
+     */
+    @Test
+    fun `delete group subscription should unsubscribe group bound uids and remove payloads`() = runBlocking {
         BiliData.apply {
             dynamic = mutableMapOf(
                 123L to SubData(
@@ -183,16 +276,26 @@ class WebUiSubscriptionManagementFacadeTest {
                 ),
             )
         }
-        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+        val removedUids = mutableListOf<Long>()
+        val facade = WebUiSubscriptionManagementFacade(
+            removeDynamicAction = { uid ->
+                removedUids += uid
+                BiliData.dynamic.remove(uid)
+                "取消订阅 Alice 成功"
+            },
+            saveDataAction = { true },
+        )
 
         val result = facade.deleteSubscription("group:team-a")
 
         assertTrue(result.success)
+        assertEquals(listOf(123L), removedUids)
         assertFalse(BiliData.group.containsKey("team-a"))
         assertFalse(BiliData.dynamic.containsKey(123L))
         assertTrue(BiliData.filter.isEmpty())
         assertTrue(BiliData.dynamicTemplatePolicyByScope.isEmpty())
         assertTrue(BiliData.liveTemplatePolicyByScope.isEmpty())
+        assertTrue(BiliData.liveCloseTemplatePolicyByScope.isEmpty())
         assertTrue(BiliData.dynamicColorByUid.isEmpty())
         assertTrue(BiliData.atAll.isEmpty())
         assertTrue(BiliData.atAllCooldownUntil.isEmpty())
@@ -220,7 +323,14 @@ class WebUiSubscriptionManagementFacadeTest {
                 ),
             )
         }
-        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+        val removedUids = mutableListOf<Long>()
+        val facade = WebUiSubscriptionManagementFacade(
+            removeDynamicAction = { uid ->
+                removedUids += uid
+                "取消订阅 Alice 成功"
+            },
+            saveDataAction = { true },
+        )
 
         val initial = facade.listSubscriptionFilters("dynamic:123")
         val regexKey = initial.filters.first { it.kind == "regex" }.key
@@ -240,6 +350,7 @@ class WebUiSubscriptionManagementFacadeTest {
         assertEquals("标签过滤", initial.filters.first().label)
         assertTrue(updated.success)
         assertTrue(deleted.success)
+        assertTrue(removedUids.isEmpty())
         assertEquals(listOf(DynamicFilterType.FORWARD), BiliData.filter.getValue("onebot11:group:10001").getValue(123L).typeSelect.list)
         assertTrue(BiliData.filter.getValue("onebot11:group:10001").getValue(123L).regularSelect.list.isEmpty())
     }
@@ -328,6 +439,7 @@ class WebUiSubscriptionManagementFacadeTest {
         }
         var savedConfig = false
         var savedData = false
+        val removedUids = mutableListOf<Long>()
         val facade = WebUiSubscriptionManagementFacade(
             configProvider = { runtimeConfig },
             saveConfigAction = {
@@ -337,6 +449,10 @@ class WebUiSubscriptionManagementFacadeTest {
             saveDataAction = {
                 savedData = true
                 true
+            },
+            removeDynamicAction = { uid ->
+                removedUids += uid
+                "取消订阅 Alice 成功"
             },
         )
 
@@ -361,6 +477,7 @@ class WebUiSubscriptionManagementFacadeTest {
         assertTrue(BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).randomEnabled)
         assertTrue(savedConfig)
         assertTrue(savedData)
+        assertTrue(removedUids.isEmpty())
     }
 
     /**
@@ -496,7 +613,14 @@ class WebUiSubscriptionManagementFacadeTest {
                 "onebot11:group:10001" to mutableMapOf(123L to "#112233", 456L to "#445566"),
             )
         }
-        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+        val removedUids = mutableListOf<Long>()
+        val facade = WebUiSubscriptionManagementFacade(
+            removeDynamicAction = { uid ->
+                removedUids += uid
+                "取消订阅 Alice 成功"
+            },
+            saveDataAction = { true },
+        )
 
         val atAllRows = facade.listSubscriptionAtAll("dynamic:123")
         val savedAtAll = facade.saveSubscriptionAtAll("dynamic:123", "全部动态", listOf("onebot11:group:10001"))
@@ -511,6 +635,7 @@ class WebUiSubscriptionManagementFacadeTest {
         assertTrue(BiliData.atAll.getValue("onebot11:group:10001").getValue(456L).contains(AtAllType.DYNAMIC))
         assertEquals("#ABCDEF", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(123L))
         assertEquals("#445566", BiliData.dynamicColorByUid.getValue("onebot11:group:10001").getValue(456L))
+        assertTrue(removedUids.isEmpty())
     }
 
     /**

@@ -600,13 +600,13 @@ class WebUiRouteSmokeTest {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"key":"$filterKey","kind":"regex","mode":"white","content":"^new","confirmationPassword":"Better123!@"}""")
+            setBody("""{"key":"$filterKey","kind":"regex","mode":"white","content":"^new","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
         }
         val templateSaved = client.post("/api/subscriptions/dynamic%3A123/templates") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"type":"dynamic","name":"WebTpl","content":"{name}","confirmationPassword":"Better123!@"}""")
+            setBody("""{"type":"dynamic","name":"WebTpl","content":"{name}","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
         }
         val randomSaved = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
             contentType(ContentType.Application.Json)
