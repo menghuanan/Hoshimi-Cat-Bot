@@ -432,13 +432,13 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
         role="dialog"
         aria-modal="true"
         aria-labelledby="subscription-editor-title"
-        className="grid max-h-[90vh] w-full max-w-[46rem] gap-4 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl lg:grid-cols-[13rem_minmax(0,28rem)] lg:grid-rows-[auto_minmax(0,1fr)]"
+        className="grid max-h-[90vh] w-full max-w-[52rem] items-start gap-5 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl lg:grid-cols-[minmax(12rem,14rem)_minmax(0,1fr)]"
       >
-        <div className="lg:col-start-1 lg:row-start-1">
-          <h3 id="subscription-editor-title" className="text-base font-semibold text-slate-950">编辑订阅配置</h3>
-          <p className="mt-1 text-sm text-slate-600">{readItemField(item, 'title') || '未命名订阅'}</p>
-        </div>
-        <aside className="space-y-3 lg:col-start-1 lg:row-start-2">
+        <aside className="space-y-4 lg:col-start-1">
+          <div>
+            <h3 id="subscription-editor-title" className="text-base font-semibold text-slate-950">编辑订阅配置</h3>
+            <p className="mt-1 text-sm text-slate-600">{readItemField(item, 'title') || '未命名订阅'}</p>
+          </div>
           <div className="grid gap-2">
             <button type="button" onClick={() => void openAction('targets')} className={actionButtonClass(activeAction === 'targets')}>编辑推送群聊</button>
             {showUidEditor ? <button type="button" onClick={() => void openAction('uids')} className={actionButtonClass(activeAction === 'uids')}>编辑订阅UID</button> : null}
@@ -450,7 +450,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
           <button type="button" onClick={onClose} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">关闭</button>
         </aside>
 
-        <div data-subscription-editor-panel className="min-w-0 w-full space-y-4 lg:col-start-2 lg:row-start-2 lg:max-w-md">
+        <div data-subscription-editor-panel className="min-w-0 w-full space-y-4 lg:col-start-2 lg:max-w-lg">
           {activeAction === 'overview' ? <EditorEmptyState text="选择左侧编辑器开始配置" /> : null}
           {activeAction === 'targets' ? (
             <div className="space-y-3">
