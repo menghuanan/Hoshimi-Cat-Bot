@@ -3,7 +3,7 @@ import { StatusCard } from '../components/StatusCard'
 import { useRuntimeSummary } from '../hooks/useRuntimeSummary'
 
 // 最近推送记录使用同一列宽，保证表头和每条记录在视觉上严格对齐。
-const RECENT_PUSH_GRID_CLASS = 'grid-cols-[minmax(7rem,1fr)_3.5rem_2.5rem_10.5rem]'
+const RECENT_PUSH_GRID_CLASS = 'grid-cols-[8.75rem_4rem_1.25rem_2rem_minmax(0,1fr)_10.5rem]'
 
 /**
  * 二态运行值缺失时展示稳定占位，避免首页在旧响应上抛错。
@@ -146,25 +146,30 @@ export function DashboardPage() {
         <PageSection title="最近推送记录">
           <div className="flex h-full min-h-[16rem] max-h-[22rem] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             {/* 固定表头独立于记录滚动区，确保空记录和有记录时列语义一致。 */}
-            <div data-testid="recent-push-header" className={`grid ${RECENT_PUSH_GRID_CLASS} gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600`}>
+            <div data-testid="recent-push-header" className={`grid ${RECENT_PUSH_GRID_CLASS} gap-1 border-b border-slate-200 bg-slate-50 px-2 py-3 text-xs font-semibold text-slate-600`}>
               <span className="min-w-0 truncate whitespace-nowrap">订阅名称</span>
               <span className="min-w-0 truncate whitespace-nowrap">推送类型</span>
+              {/* 类型与状态之间保留固定空列，剩余空间放到状态之后，避免宽屏下状态被推得过远。 */}
+              <span aria-hidden="true" />
               <span className="min-w-0 truncate whitespace-nowrap">状态</span>
+              <span aria-hidden="true" />
               <span className="min-w-0 truncate whitespace-nowrap text-left">时间</span>
             </div>
             {visibleRecentPushRecords.length === 0 ? (
-              <div className="grid flex-1 place-items-center px-4 py-5 text-sm text-slate-500">暂无最近推送记录</div>
+              <div className="grid flex-1 place-items-center px-2 py-5 text-sm text-slate-500">暂无最近推送记录</div>
             ) : (
               <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
                 {visibleRecentPushRecords.map((record, index) => (
-                  <div data-testid={`recent-push-row-${index}`} key={`${record.timestampEpochMillis || index}-${record.subscriptionInfo || index}`} className="px-4 py-2 text-sm">
-                    <div className={`grid ${RECENT_PUSH_GRID_CLASS} gap-3`}>
+                  <div data-testid={`recent-push-row-${index}`} key={`${record.timestampEpochMillis || index}-${record.subscriptionInfo || index}`} className="px-2 py-2 text-sm">
+                    <div className={`grid ${RECENT_PUSH_GRID_CLASS} gap-1`}>
                       <PushRecordCell value={record.subscriptionInfo} />
                       <PushRecordCell value={record.typeLabel} />
+                      <span aria-hidden="true" />
                       <PushRecordCell
                         value={record.statusLabel}
                         valueClassName={record.statusLabel === '成功' || record.statusLabel === '已发送' ? 'text-emerald-600' : 'text-rose-700'}
                       />
+                      <span aria-hidden="true" />
                       <PushRecordCell
                         value={formatEpochMillis(record.timestampEpochMillis ?? null)}
                         align="right"

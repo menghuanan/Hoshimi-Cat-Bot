@@ -363,7 +363,9 @@ describe('webui shell routing', () => {
     expect(cells[1]).toHaveClass('text-left')
     expect(cells[2]).toHaveClass('text-left')
     expect(cells[3]).toHaveClass('text-right')
-    expect(screen.getByTestId('recent-push-header')).toHaveClass('grid-cols-[minmax(7rem,1fr)_3.5rem_2.5rem_10.5rem]')
+    expect(screen.getByTestId('recent-push-header')).toHaveClass('grid-cols-[8.75rem_4rem_1.25rem_2rem_minmax(0,1fr)_10.5rem]')
+    expect(screen.getByTestId('recent-push-header')).toHaveClass('gap-1')
+    expect(screen.getByTestId('recent-push-header')).toHaveClass('px-2')
     expect(within(screen.getByTestId('recent-push-header')).getByText('时间')).toHaveClass('text-left')
   })
 
