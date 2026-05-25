@@ -393,6 +393,99 @@ class WebUiConfigWriteFacadeTest {
         assertEquals("", request.oneBot11Token)
     }
 
+    /**
+     * message_format 当前由后端固定规范化为 array，缺失字段不能再依赖 DTO 默认副作用。
+     */
+    @Test
+    fun `bot config writes should normalize omitted onebot message format to array`() {
+        val currentBotConfig = BotConfig(
+            platform = PlatformConfig(
+                type = PlatformType.ONEBOT11,
+                adapter = "onebot11",
+                onebot11 = NapCatConfig(
+                    host = "127.0.0.1",
+                    port = 3001,
+                    messageFormat = "legacy-string",
+                ),
+            ),
+        )
+        var savedBotConfig: BotConfig? = null
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { currentBotConfig },
+            ),
+            botConfigProvider = { currentBotConfig },
+            saveBotConfigAction = { botConfig ->
+                savedBotConfig = botConfig
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(botConfigProvider = { currentBotConfig }).readBotConfig().snapshotToken
+        val request = Json.decodeFromString<WebUiBotConfigWriteRequestDto>(
+            """
+            {
+              "snapshotToken": "$snapshotToken",
+              "platformType": "ONEBOT11",
+              "adapter": "onebot11",
+              "oneBot11Host": "127.0.0.1",
+              "oneBot11Port": 3001,
+              "confirmationPassword": "Better123!@"
+            }
+            """.trimIndent(),
+        )
+        val result = facade.saveBotConfig(request)
+
+        assertTrue(result.success)
+        assertEquals("array", savedBotConfig?.selectedOneBot11Config()?.messageFormat)
+    }
+
+    /**
+     * 当前运行态只支持 array 消息格式，外部 API 提交其他值必须被拒绝。
+     */
+    @Test
+    fun `bot config writes should reject unsupported onebot message format`() {
+        val currentBotConfig = BotConfig(
+            platform = PlatformConfig(
+                type = PlatformType.ONEBOT11,
+                adapter = "onebot11",
+                onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001),
+            ),
+        )
+        var saveCalls = 0
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { currentBotConfig },
+            ),
+            botConfigProvider = { currentBotConfig },
+            saveBotConfigAction = {
+                saveCalls += 1
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(botConfigProvider = { currentBotConfig }).readBotConfig().snapshotToken
+        val result = facade.saveBotConfig(
+            WebUiBotConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                platformType = "ONEBOT11",
+                adapter = "onebot11",
+                oneBot11Host = "127.0.0.1",
+                oneBot11Port = 3001,
+                oneBot11MessageFormat = "string",
+            ),
+        )
+
+        assertFalse(result.success)
+        assertEquals(WebUiSaveEffectLevel.REJECTED_VALIDATION, result.effectiveLevel)
+        assertTrue(result.validationErrors.contains("oneBot11MessageFormat is invalid"))
+        assertEquals(0, saveCalls)
+    }
+
     @Test
     fun `bot config writes should go only through bot config owner and preserve masked token`() {
         var currentBotConfig = BotConfig(
@@ -451,6 +544,105 @@ class WebUiConfigWriteFacadeTest {
         assertEquals("raw-token", savedBotConfig?.selectedOneBot11Config()?.token)
         assertEquals(0, savedBiliConfigCalls)
         assertEquals(0, savedBiliDataCalls)
+    }
+
+    /**
+     * admins 未提交时代表无关配置保存，必须保留原始联系人字段而不是用空列表覆盖。
+     */
+    @Test
+    fun `bot config writes should preserve admins when omitted`() {
+        val currentBotConfig = BotConfig(
+            platform = PlatformConfig(
+                type = PlatformType.ONEBOT11,
+                adapter = "onebot11",
+                onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001),
+            ),
+            admins = mutableListOf(
+                GroupAdminConfig(
+                    groupId = 0L,
+                    userIds = mutableListOf(),
+                    groupContact = "custom:room:alpha",
+                    userContacts = mutableListOf("custom:user:beta"),
+                ),
+            ),
+        )
+        var savedBotConfig: BotConfig? = null
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { currentBotConfig },
+            ),
+            botConfigProvider = { currentBotConfig },
+            saveBotConfigAction = { botConfig ->
+                savedBotConfig = botConfig
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(botConfigProvider = { currentBotConfig }).readBotConfig().snapshotToken
+        val request = Json.decodeFromString<WebUiBotConfigWriteRequestDto>(
+            """
+            {
+              "snapshotToken": "$snapshotToken",
+              "platformType": "ONEBOT11",
+              "adapter": "onebot11",
+              "oneBot11Host": "10.0.0.2",
+              "oneBot11Port": 3100,
+              "confirmationPassword": "Better123!@"
+            }
+            """.trimIndent(),
+        )
+        val result = facade.saveBotConfig(request)
+
+        assertTrue(result.success)
+        assertEquals("custom:room:alpha", savedBotConfig?.admins?.single()?.groupContact)
+        assertEquals(listOf("custom:user:beta"), savedBotConfig?.admins?.single()?.userContacts?.toList())
+    }
+
+    /**
+     * admins 显式提交空列表时代表用户清空配置，不能被保留语义吞掉。
+     */
+    @Test
+    fun `bot config writes should clear admins when empty list is submitted`() {
+        val currentBotConfig = BotConfig(
+            platform = PlatformConfig(
+                type = PlatformType.ONEBOT11,
+                adapter = "onebot11",
+                onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001),
+            ),
+            admins = mutableListOf(
+                GroupAdminConfig(1L, mutableListOf(2L), "onebot11:group:1", mutableListOf("onebot11:private:2")),
+            ),
+        )
+        var savedBotConfig: BotConfig? = null
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { currentBotConfig },
+            ),
+            botConfigProvider = { currentBotConfig },
+            saveBotConfigAction = { botConfig ->
+                savedBotConfig = botConfig
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(botConfigProvider = { currentBotConfig }).readBotConfig().snapshotToken
+        val result = facade.saveBotConfig(
+            WebUiBotConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                platformType = "ONEBOT11",
+                adapter = "onebot11",
+                oneBot11Host = "127.0.0.1",
+                oneBot11Port = 3001,
+                admins = emptyList(),
+            ),
+        )
+
+        assertTrue(result.success)
+        assertTrue(savedBotConfig?.admins?.isEmpty() == true)
     }
 
     @Test

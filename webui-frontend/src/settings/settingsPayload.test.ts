@@ -223,4 +223,39 @@ describe('settings payload helpers', () => {
       baiduSecurityKey: 'secret',
     })
   })
+
+  /**
+   * 管理员字段未进入 values 时必须保持省略，普通 bot 保存才不会覆盖用户已有管理员配置。
+   */
+  it('omits admins when adminsText was not submitted', () => {
+    const payload = buildSettingsSavePayload({
+      file: 'botConfig',
+      snapshotToken: 'bot-token',
+      confirmationPassword: 'pw',
+      values: {
+        'platform.type': 'onebot11',
+        'platform.adapter': 'onebot11',
+        'platform.onebot11.host': '127.0.0.1',
+        'platform.onebot11.port': '3001',
+      },
+    })
+
+    expect(payload).not.toHaveProperty('admins')
+  })
+
+  /**
+   * 管理员字段显式提交空文本时表示清空，后端需要收到 admins: []。
+   */
+  it('includes empty admins when adminsText was explicitly submitted empty', () => {
+    const payload = buildSettingsSavePayload({
+      file: 'botConfig',
+      snapshotToken: 'bot-token',
+      confirmationPassword: 'pw',
+      values: {
+        adminsText: '',
+      },
+    })
+
+    expect(payload.admins).toEqual([])
+  })
 })

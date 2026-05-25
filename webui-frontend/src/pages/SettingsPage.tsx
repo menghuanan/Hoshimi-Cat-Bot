@@ -129,10 +129,13 @@ export function SettingsPage() {
         saveResults.push(biliSaveResult)
       }
       if (botToken && shouldSaveBot) {
+        const botFields = shouldSubmitAdminProjection(visibleSettingsFields, editedValues)
+          ? omitKey(completeBotValues, 'platform.onebot11.token')
+          : omitKeys(completeBotValues, ['platform.onebot11.token', 'adminsText'])
         botSaveResult = await saveBot({
           snapshotToken: botToken,
           token: String(completeBotValues['platform.onebot11.token'] || ''),
-          fields: omitKey(completeBotValues, 'platform.onebot11.token'),
+          fields: botFields,
         }, confirmationMessage)
         saveResults.push(botSaveResult)
       }
@@ -535,6 +538,23 @@ function hasEditedValuesForFile(fields: SettingsFieldDefinition[], values: Setti
  */
 function omitKey(values: Record<string, unknown>, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(values).filter(([entryKey]) => entryKey !== key))
+}
+
+/**
+ * 多个特殊字段可按保存语义排除，避免完整快照补齐时把无关字段投影进 payload。
+ */
+function omitKeys(values: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  const excluded = new Set(keys)
+  return Object.fromEntries(Object.entries(values).filter(([entryKey]) => !excluded.has(entryKey)))
+}
+
+/**
+ * adminsText 只有用户在管理员分区实际暂存或编辑后才提交，普通 bot 保存不重建管理员 DTO。
+ */
+function shouldSubmitAdminProjection(fields: SettingsFieldDefinition[], values: SettingsFormValues): boolean {
+  return fields.some((field) => (
+    field.key === 'adminsText' && Object.prototype.hasOwnProperty.call(values, field.key)
+  ))
 }
 
 /**

@@ -675,6 +675,66 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * 保存平台连接参数时不应提交 admins 投影，避免把 custom subject 管理员配置重建为普通 OneBot11 数字项。
+   */
+  it('does not submit admins when saving onebot connection settings', async () => {
+    let botPostBody: Record<string, unknown> | null = null
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-config')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: 'bili-token', fields: []})}
+      }
+      if (url.includes('/api/config/bot') && init?.method === 'POST') {
+        botPostBody = JSON.parse(String(init.body || '{}'))
+        return {ok: true, status: 200, json: async () => ({success: true, message: 'bot saved', snapshotToken: 'bot-token-2'})}
+      }
+      if (url.includes('/api/config/bot')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token-1',
+            fields: [
+              {key: 'platform.type', label: '平台类型', value: 'onebot11', capability: 'EDITABLE', editable: true},
+              {key: 'platform.adapter', label: '适配器', value: 'onebot11', capability: 'EDITABLE', editable: true},
+              {key: 'platform.onebot11.host', label: 'OneBot11 主机', value: '127.0.0.1', capability: 'EDITABLE', editable: true},
+              {key: 'platform.onebot11.port', label: 'OneBot11 端口', value: '3001', capability: 'EDITABLE', editable: true},
+              {key: 'platform.onebot11.token', label: 'OneBot11 Token', value: '******', capability: 'MASKED', editable: true},
+              {key: 'platform.onebot11.useTls', label: '启用 TLS', value: 'false', capability: 'EDITABLE', editable: true},
+              {key: 'platform.onebot11.heartbeatInterval', label: '心跳间隔', value: '30000', capability: 'EDITABLE', editable: true},
+              {key: 'platform.onebot11.reconnectInterval', label: '重连间隔', value: '5000', capability: 'EDITABLE', editable: true},
+              {key: 'platform.onebot11.sendMode', label: '图片发送方式', value: 'base64', capability: 'EDITABLE', editable: true},
+              {key: 'platform.onebot11.maxReconnectAttempts', label: '最大重连次数', value: '-1', capability: 'EDITABLE', editable: true},
+              {key: 'platform.onebot11.connectTimeout', label: '连接超时', value: '10000', capability: 'EDITABLE', editable: true},
+              {key: 'webui.enabled', label: '启用 WebUI', value: 'false', capability: 'EDITABLE', editable: true},
+              {
+                key: 'admins',
+                label: 'admins',
+                value: JSON.stringify([{groupId: 0, userIds: [], groupContact: 'custom:room:alpha', userContacts: ['custom:user:beta']}]),
+                capability: 'EDITABLE',
+                editable: true,
+              },
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+    await user.clear(await screen.findByLabelText('OneBot11 主机'))
+    await user.type(screen.getByLabelText('OneBot11 主机'), '10.0.0.2')
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    await waitFor(() => expect(botPostBody).not.toBeNull())
+    expect(botPostBody).not.toHaveProperty('admins')
+  })
+
+  /**
    * 只修改群普通管理员时不应写入 BiliConfig，避免无关旧配置校验失败挡住 bot.yml 保存。
    */
   it('does not save BiliConfig when only group admins changed', async () => {

@@ -97,6 +97,7 @@ data class WebUiGroupAdminConfigWriteDto(
 
 /**
  * `bot.yml` 写请求保持文件级独立边界；空 token/appSecret 值表示保留后端当前敏感配置。
+ * message_format 缺省时由后端规范化，admins 缺省时表示本次保存不修改管理员配置。
  */
 @Serializable
 data class WebUiBotConfigWriteRequestDto(
@@ -109,7 +110,7 @@ data class WebUiBotConfigWriteRequestDto(
     val oneBot11UseTls: Boolean = false,
     val oneBot11HeartbeatInterval: Long = 30000L,
     val oneBot11ReconnectInterval: Long = 5000L,
-    val oneBot11MessageFormat: String = "array",
+    val oneBot11MessageFormat: String? = null,
     val oneBot11SendMode: String = "base64",
     val oneBot11MaxReconnectAttempts: Int = -1,
     val oneBot11ConnectTimeout: Long = 10000L,
@@ -123,6 +124,6 @@ data class WebUiBotConfigWriteRequestDto(
     val webUiTokenTtlSeconds: Long = 3600L,
     val webUiStaticDir: String = "",
     val targets: List<WebUiTargetConfigWriteDto> = emptyList(),
-    val admins: List<WebUiGroupAdminConfigWriteDto> = emptyList(),
+    val admins: List<WebUiGroupAdminConfigWriteDto>? = null,
     val confirmationPassword: String = "",
 )

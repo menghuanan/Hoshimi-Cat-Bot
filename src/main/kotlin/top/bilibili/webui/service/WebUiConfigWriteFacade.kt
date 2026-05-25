@@ -30,6 +30,7 @@ import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiBiliDataWriteRequestDto
 import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
+import top.bilibili.webui.model.WebUiGroupAdminConfigWriteDto
 import top.bilibili.webui.model.WebUiRecommendedAction
 import top.bilibili.webui.model.WebUiSaveEffectLevel
 
@@ -48,6 +49,14 @@ class WebUiConfigWriteFacade(
         ConfigManager.saveConfig(configToSave)
     },
 ) {
+    private companion object {
+        /**
+         * OneBot11 message_format 当前只开放 array，未来支持新格式时在这里扩展支持集。
+         */
+        const val DefaultOneBot11MessageFormat = "array"
+        val SupportedOneBot11MessageFormats = setOf(DefaultOneBot11MessageFormat)
+    }
+
     /**
      * 保存 `BiliConfig.yml` 的受控字段；只要快照未冲突，就通过主配置 owner 路径持久化。
      */
@@ -233,7 +242,7 @@ class WebUiConfigWriteFacade(
                     useTls = request.oneBot11UseTls,
                     heartbeatInterval = request.oneBot11HeartbeatInterval,
                     reconnectInterval = request.oneBot11ReconnectInterval,
-                    messageFormat = request.oneBot11MessageFormat.trim().ifBlank { selectedOneBot11.messageFormat },
+                    messageFormat = resolveOneBot11MessageFormat(request.oneBot11MessageFormat),
                     sendMode = request.oneBot11SendMode.trim().lowercase(),
                     maxReconnectAttempts = request.oneBot11MaxReconnectAttempts,
                     connectTimeout = request.oneBot11ConnectTimeout,
@@ -253,14 +262,7 @@ class WebUiConfigWriteFacade(
                 staticDir = current.webui.staticDir,
             ).normalized(),
             targets = current.targets.toMutableList(),
-            admins = request.admins.map { admin ->
-                GroupAdminConfig(
-                    groupId = admin.groupId,
-                    userIds = admin.userIds.toMutableList(),
-                    groupContact = admin.groupContact.trim(),
-                    userContacts = admin.userContacts.map { it.trim() }.filter { it.isNotBlank() }.toMutableList(),
-                )
-            }.toMutableList(),
+            admins = resolveAdmins(current.admins, request.admins),
         )
 
         return runCatching {
@@ -315,6 +317,9 @@ class WebUiConfigWriteFacade(
         }
         if (request.oneBot11SendMode.trim().lowercase() !in setOf("base64", "file")) {
             errors += "oneBot11SendMode is invalid"
+        }
+        if (!isSupportedOneBot11MessageFormat(request.oneBot11MessageFormat)) {
+            errors += "oneBot11MessageFormat is invalid"
         }
         if (request.webUiPort !in 1..65535) {
             errors += "webUiPort is invalid"
@@ -379,6 +384,41 @@ class WebUiConfigWriteFacade(
             errors += "proxyUpdateMode is invalid"
         }
         return errors
+    }
+
+    /**
+     * 当前 OneBot11 消息格式由后端策略收口，缺省和空白都固定落到运行态支持的 array。
+     */
+    private fun resolveOneBot11MessageFormat(submitted: String?): String {
+        val normalized = submitted?.trim()?.lowercase().orEmpty()
+        return if (normalized.isBlank()) DefaultOneBot11MessageFormat else normalized
+    }
+
+    /**
+     * OneBot11 message_format 支持集集中声明，后续扩展格式时只需同步增加集合和前端选项。
+     */
+    private fun isSupportedOneBot11MessageFormat(submitted: String?): Boolean {
+        return resolveOneBot11MessageFormat(submitted) in SupportedOneBot11MessageFormats
+    }
+
+    /**
+     * admins 未提交表示本次保存不涉及管理员；显式提交空列表才表达清空管理员配置。
+     */
+    private fun resolveAdmins(
+        currentAdmins: List<GroupAdminConfig>,
+        submittedAdmins: List<WebUiGroupAdminConfigWriteDto>?,
+    ): MutableList<GroupAdminConfig> {
+        if (submittedAdmins == null) {
+            return currentAdmins.toMutableList()
+        }
+        return submittedAdmins.map { admin ->
+            GroupAdminConfig(
+                groupId = admin.groupId,
+                userIds = admin.userIds.toMutableList(),
+                groupContact = admin.groupContact.trim(),
+                userContacts = admin.userContacts.map { it.trim() }.filter { it.isNotBlank() }.toMutableList(),
+            )
+        }.toMutableList()
     }
 
     /**
