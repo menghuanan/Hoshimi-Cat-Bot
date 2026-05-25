@@ -10,8 +10,8 @@ type SubscriptionEditorActions = {
   loadTemplates: (itemId: string) => Promise<unknown>
   loadAtAll: (itemId: string) => Promise<unknown>
   loadTheme: (itemId: string) => Promise<unknown>
-  saveFilter: (itemId: string, draft: {key: string, kind: string, mode: string, content: string}) => Promise<unknown>
-  saveTemplate: (itemId: string, draft: {key: string, type: string, name: string, content: string}) => Promise<unknown>
+  saveFilter: (itemId: string, draft: {key: string, kind: string, mode: string, content: string, targetGroups?: string[]}) => Promise<unknown>
+  saveTemplate: (itemId: string, draft: {key: string, type: string, name: string, content: string, targetGroups?: string[]}) => Promise<unknown>
   saveAtAll: (itemId: string, draft: {type: string, targetGroups: string[]}) => Promise<unknown>
   saveTheme: (itemId: string, draft: {color: string, targetGroups: string[]}) => Promise<unknown>
   removeConfig: (itemId: string, kind: 'filter' | 'template' | 'atall', key: string) => Promise<unknown>
@@ -168,11 +168,24 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
     }
     try {
       const form = new FormData(event.currentTarget)
+      const content = String(form.get('content') || '').trim()
+      const targetGroups = shouldSelectNestedTargets(item, itemId) ? readSelectedTargetGroups(form, targets) : []
+      if (!content) {
+        setStatus('规则内容必须填写')
+        setStatusTone('error')
+        return
+      }
+      if (shouldSelectNestedTargets(item, itemId) && targetGroups.length === 0) {
+        setStatus('目标群聊必须至少选择一个')
+        setStatusTone('error')
+        return
+      }
       await actions.saveFilter(itemId, {
         key: readItemField(editingDraft || {}, 'key'),
         kind: String(form.get('kind') || 'regex'),
         mode: String(form.get('mode') || 'black'),
-        content: String(form.get('content') || '').trim(),
+        content,
+        targetGroups,
       })
       setFormMode('none')
       setEditingDraft(null)
@@ -198,11 +211,25 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
     }
     try {
       const form = new FormData(event.currentTarget)
+      const name = String(form.get('name') || '').trim()
+      const content = String(form.get('content') || '')
+      const targetGroups = shouldSelectNestedTargets(item, itemId) ? readSelectedTargetGroups(form, targets) : []
+      if (!name || !content.trim()) {
+        setStatus('模板名称和模板内容必须填写')
+        setStatusTone('error')
+        return
+      }
+      if (shouldSelectNestedTargets(item, itemId) && targetGroups.length === 0) {
+        setStatus('目标群聊必须至少选择一个')
+        setStatusTone('error')
+        return
+      }
       await actions.saveTemplate(itemId, {
         key: readItemField(editingDraft || {}, 'key'),
         type: String(form.get('type') || 'dynamic'),
-        name: String(form.get('name') || '').trim(),
-        content: String(form.get('content') || ''),
+        name,
+        content,
+        targetGroups,
       })
       setFormMode('none')
       setEditingDraft(null)
@@ -287,6 +314,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
   const filterFormOpen = formMode === 'filter'
   const templateFormOpen = formMode === 'template'
   const atAllFormOpen = formMode === 'atall'
+  const showNestedTargetSelector = shouldSelectNestedTargets(item, itemId)
   const showThemeTargets = isDynamicThemeItem(item, itemId) && targets.length > 0
 
   /**
@@ -328,7 +356,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
           {activeAction === 'filters' ? (
             <div className="space-y-3">
               {filterFormOpen ? (
-                <FilterForm title={editorFormTitle('filter', editingDraft)} draft={editingDraft} onSubmit={submitFilter} onCancel={cancelForm} />
+                <FilterForm title={editorFormTitle('filter', editingDraft)} targets={showNestedTargetSelector ? targets : []} draft={editingDraft} onSubmit={submitFilter} onCancel={cancelForm} />
               ) : (
                 <>
                   <EditorList items={filters} kind="filter" emptyText="暂无过滤器" onEdit={(draft) => startForm('filter', draft)} onDelete={(draft) => void deleteConfigItem('filter', draft)} />
@@ -340,7 +368,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
           {activeAction === 'templates' ? (
             <div className="space-y-3">
               {templateFormOpen ? (
-                <TemplateForm title={editorFormTitle('template', editingDraft)} draft={editingDraft} onSubmit={submitTemplate} onCancel={cancelForm} />
+                <TemplateForm title={editorFormTitle('template', editingDraft)} targets={showNestedTargetSelector ? targets : []} draft={editingDraft} onSubmit={submitTemplate} onCancel={cancelForm} />
               ) : (
                 <>
                   <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -401,7 +429,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
 /**
  * 过滤器表单保留旧 WebUI 的类型、模式和内容三组核心字段。
  */
-function FilterForm({title, draft, onSubmit, onCancel}: {title?: string, draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+function FilterForm({title, targets, draft, onSubmit, onCancel}: {title?: string, targets: string[], draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   const initialKind = readItemField(draft || {}, 'kind') || 'regex'
   const initialContent = readItemField(draft || {}, 'content')
   const [kind, setKind] = useState(initialKind)
@@ -435,6 +463,7 @@ function FilterForm({title, draft, onSubmit, onCancel}: {title?: string, draft: 
           <input name="content" value={content} onChange={(event) => setContent(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         )}
       </label>
+      <TargetGroupsField targets={targets} draft={draft} />
       <FormButtons submitText="保存过滤器" onCancel={onCancel} />
     </form>
   )
@@ -443,7 +472,7 @@ function FilterForm({title, draft, onSubmit, onCancel}: {title?: string, draft: 
 /**
  * 模板表单保持类型、名称和正文，正文不做前端重写。
  */
-function TemplateForm({title, draft, onSubmit, onCancel}: {title?: string, draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+function TemplateForm({title, targets, draft, onSubmit, onCancel}: {title?: string, targets: string[], draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
     <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
       {title ? <p className="text-sm font-semibold text-slate-900">{title}</p> : null}
@@ -463,8 +492,30 @@ function TemplateForm({title, draft, onSubmit, onCancel}: {title?: string, draft
         <span>模板内容</span>
         <textarea name="content" defaultValue={readItemField(draft || {}, 'content')} className="min-h-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </label>
+      <TargetGroupsField targets={targets} draft={draft} />
       <FormButtons submitText="保存模板" onCancel={onCancel} />
     </form>
+  )
+}
+
+/**
+ * 过滤器和模板复用 @全体的目标群聊多选形态，只在动态订阅编辑时展示。
+ */
+function TargetGroupsField({targets, draft}: {targets: string[], draft: Record<string, unknown> | null}) {
+  if (targets.length === 0) {
+    return null
+  }
+  const selectedGroups = new Set([...readItemArray(draft || {}, 'targetGroups'), readItemField(draft || {}, 'scope')].filter(Boolean))
+  return (
+    <fieldset className="grid gap-2 rounded-lg border border-slate-200 p-3">
+      <legend className="px-1 text-sm font-medium text-slate-700">目标群聊</legend>
+      {targets.map((target) => (
+        <label key={target} className="inline-flex min-w-0 items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="targetGroups" value={target} defaultChecked={selectedGroups.has(target)} />
+          <span className="min-w-0 break-all">{target}</span>
+        </label>
+      ))}
+    </fieldset>
   )
 }
 
@@ -625,6 +676,14 @@ function readItemArray(item: Record<string, unknown>, key: string): string[] {
 }
 
 /**
+ * 表单提交只接受当前订阅目标中的群聊，避免伪造值越权写入其他 scope。
+ */
+function readSelectedTargetGroups(form: FormData, targets: string[]): string[] {
+  const allowedTargets = new Set(targets)
+  return form.getAll('targetGroups').map(String).filter((target) => allowedTargets.has(target))
+}
+
+/**
  * 列表显示优先使用后端摘要，再回退到常见字段和 JSON。
  */
 function readDisplayLabel(item: Record<string, unknown>): string {
@@ -657,6 +716,13 @@ function isValidThemeColor(value: string): boolean {
  */
 function isDynamicThemeItem(item: SubscriptionItem, itemId: string): boolean {
   return readItemField(item, 'kind') === 'dynamic' || itemId.startsWith('dynamic:')
+}
+
+/**
+ * 过滤器和模板的目标群聊选择只开放给单 UP 动态订阅，分组和番剧保持原编辑语义。
+ */
+function shouldSelectNestedTargets(item: SubscriptionItem, itemId: string): boolean {
+  return isDynamicThemeItem(item, itemId)
 }
 
 /**

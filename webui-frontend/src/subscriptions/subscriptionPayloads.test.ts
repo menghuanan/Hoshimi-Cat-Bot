@@ -38,12 +38,14 @@ describe('subscription payload builders', () => {
       kind: 'regex',
       mode: 'black',
       content: '广告',
+      targetGroups: ['onebot11:group:10001'],
       confirmationPassword: 'pw-filter',
     })).toEqual({
       key: 'filter-1',
       kind: 'regex',
       mode: 'black',
       content: '广告',
+      targetGroups: ['onebot11:group:10001'],
       confirmationPassword: 'pw-filter',
     })
 
@@ -52,12 +54,14 @@ describe('subscription payload builders', () => {
       type: 'dynamic',
       name: '动态模板',
       content: '{{title}}',
+      targetGroups: ['onebot11:group:10001'],
       confirmationPassword: 'pw-template',
     })).toEqual({
       key: 'template-1',
       type: 'dynamic',
       name: '动态模板',
       content: '{{title}}',
+      targetGroups: ['onebot11:group:10001'],
       confirmationPassword: 'pw-template',
     })
 

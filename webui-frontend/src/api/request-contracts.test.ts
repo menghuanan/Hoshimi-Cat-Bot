@@ -236,6 +236,7 @@ describe('webui api contracts', () => {
       kind: 'regex',
       mode: 'black',
       content: '广告',
+      targetGroups: ['onebot11:group:10001'],
       confirmationPassword: 'pw-filter',
     }, {fetchImpl})
     await setSubscriptionTemplateRandom('item/1', true, 'pw-random', {fetchImpl})
@@ -258,6 +259,7 @@ describe('webui api contracts', () => {
         kind: 'regex',
         mode: 'black',
         content: '广告',
+        targetGroups: ['onebot11:group:10001'],
         confirmationPassword: 'pw-filter',
       }),
     }))

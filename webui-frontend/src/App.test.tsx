@@ -751,6 +751,8 @@ describe('webui shell routing', () => {
    */
   it('renders subscription filters, create modes, and nested editor controls', async () => {
     const themePostBodies: string[] = []
+    const filterPostBodies: string[] = []
+    const templatePostBodies: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/subscriptions')) {
@@ -779,8 +781,16 @@ describe('webui shell routing', () => {
           }),
         }
       }
+      if (url.endsWith('/api/subscriptions/sub-1/filters') && init?.method === 'POST') {
+        filterPostBodies.push(String(init.body || ''))
+        return {ok: true, status: 200, json: async () => ({success: true})}
+      }
       if (url.endsWith('/api/subscriptions/sub-1/filters')) {
         return {ok: true, status: 200, json: async () => ({filters: [{key: 'filter-1', kind: 'regex', mode: 'black', content: '广告', label: '正则', prefix: '黑名单'}]})}
+      }
+      if (url.endsWith('/api/subscriptions/sub-1/templates') && init?.method === 'POST') {
+        templatePostBodies.push(String(init.body || ''))
+        return {ok: true, status: 200, json: async () => ({success: true})}
       }
       if (url.endsWith('/api/subscriptions/sub-1/templates')) {
         return {ok: true, status: 200, json: async () => ({templates: [{key: 'template-1', type: 'dynamic', typeLabel: '动态', name: '默认模板', content: '{{title}}'}], randomEnabled: true})}
@@ -845,6 +855,7 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '编辑模板'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '编辑at全体'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '编辑主题色'})).toBeInTheDocument()
+    const editorDialog = screen.getByRole('dialog', {name: '编辑订阅配置'})
 
     await user.click(screen.getByRole('button', {name: '编辑过滤器'}))
     const filterRow = (await screen.findByText('广告')).closest('div')
@@ -862,11 +873,21 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('button', {name: '取消'})).toBeInTheDocument()
     expect(screen.queryByText('暂无过滤器')).not.toBeInTheDocument()
     expect(screen.queryByText('广告')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '保存过滤器'}))
+    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('规则内容必须填写')
     await user.type(screen.getByLabelText('规则内容'), '广告')
+    await user.click(screen.getByRole('button', {name: '保存过滤器'}))
+    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('目标群聊必须至少选择一个')
+    await user.click(screen.getByLabelText('onebot11:group:1072150397'))
     await user.click(screen.getByRole('button', {name: '保存过滤器'}))
     await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
     expect(await screen.findByText('过滤器已保存')).toBeInTheDocument()
+    expect(JSON.parse(filterPostBodies.at(-1) || '{}')).toMatchObject({
+      content: '广告',
+      targetGroups: ['onebot11:group:1072150397'],
+      confirmationPassword: 'filter-password',
+    })
 
     await user.click(screen.getByRole('button', {name: '编辑模板'}))
     expect(await screen.findByLabelText('随机模板')).toBeChecked()
@@ -883,12 +904,23 @@ describe('webui shell routing', () => {
     expect(screen.queryByText('暂无模板')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('随机模板')).not.toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('模板类型'), 'dynamic')
+    await user.click(screen.getByRole('button', {name: '保存模板'}))
+    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('模板名称和模板内容必须填写')
     await user.type(screen.getByLabelText('模板名称'), '默认模板')
-    await user.type(screen.getByLabelText('模板内容'), '{{title}}')
+    fireEvent.change(screen.getByLabelText('模板内容'), {target: {value: '{{title}}'}})
+    await user.click(screen.getByRole('button', {name: '保存模板'}))
+    expect(within(editorDialog).getByRole('alert')).toHaveTextContent('目标群聊必须至少选择一个')
+    await user.click(screen.getByLabelText('onebot11:group:1072150397'))
     await user.click(screen.getByRole('button', {name: '保存模板'}))
     await user.type(await screen.findByLabelText('确认密码'), 'template-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
     expect(await screen.findByText('模板已保存')).toBeInTheDocument()
+    expect(JSON.parse(templatePostBodies.at(-1) || '{}')).toMatchObject({
+      name: '默认模板',
+      content: '{{title}}',
+      targetGroups: ['onebot11:group:1072150397'],
+      confirmationPassword: 'template-password',
+    })
 
     await user.click(screen.getByRole('button', {name: '编辑at全体'}))
     expect(await screen.findByRole('button', {name: '添加at全体'})).toBeInTheDocument()
@@ -903,7 +935,6 @@ describe('webui shell routing', () => {
     expect(await screen.findByText('@全体已保存')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '编辑主题色'}))
-    const editorDialog = screen.getByRole('dialog', {name: '编辑订阅配置'})
     expect(await screen.findByLabelText('主题颜色')).toHaveValue('#33aaff')
     expect(screen.getByLabelText('onebot11:group:1072150397')).toBeChecked()
     expect(screen.getByLabelText('onebot11:group:1245551')).toBeChecked()
@@ -1033,6 +1064,9 @@ describe('webui shell routing', () => {
 
     await user.selectOptions(screen.getByLabelText('规则内容'), '视频')
     await user.click(screen.getByRole('button', {name: '保存过滤器'}))
+    expect(screen.getByRole('alert')).toHaveTextContent('目标群聊必须至少选择一个')
+    await user.click(screen.getByLabelText('onebot11:group:1072150397'))
+    await user.click(screen.getByRole('button', {name: '保存过滤器'}))
     await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
 
@@ -1041,6 +1075,7 @@ describe('webui shell routing', () => {
       kind: 'type',
       mode: 'black',
       content: '视频',
+      targetGroups: ['onebot11:group:1072150397'],
       confirmationPassword: 'filter-password',
     })
   })

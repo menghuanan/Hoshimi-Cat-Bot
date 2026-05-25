@@ -85,7 +85,7 @@ data class WebUiSubscriptionFilterItemDto(
 )
 
 /**
- * 过滤器保存请求同时覆盖新增和编辑；key 为空表示追加到当前订阅的所有适用目标，确认密码只供路由鉴权。
+ * 过滤器保存请求同时覆盖新增和编辑；动态订阅用 targetGroups 限定目标群聊，确认密码只供路由鉴权。
  */
 @Serializable
 data class WebUiSubscriptionFilterSaveRequestDto(
@@ -93,6 +93,7 @@ data class WebUiSubscriptionFilterSaveRequestDto(
     val kind: String,
     val mode: String,
     val content: String,
+    val targetGroups: List<String> = emptyList(),
     val confirmationPassword: String = "",
 )
 
@@ -119,7 +120,7 @@ data class WebUiSubscriptionTemplateItemDto(
 )
 
 /**
- * 模板保存请求会同时写入模板正文和当前订阅的模板策略绑定，确认密码只供路由鉴权。
+ * 模板保存请求会同时写入模板正文和策略绑定；动态订阅用 targetGroups 限定目标群聊。
  */
 @Serializable
 data class WebUiSubscriptionTemplateSaveRequestDto(
@@ -127,6 +128,7 @@ data class WebUiSubscriptionTemplateSaveRequestDto(
     val type: String,
     val name: String,
     val content: String,
+    val targetGroups: List<String> = emptyList(),
     val confirmationPassword: String = "",
 )
 

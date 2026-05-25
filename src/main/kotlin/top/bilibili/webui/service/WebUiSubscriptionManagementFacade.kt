@@ -150,7 +150,7 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
-     * 新增或编辑过滤器；新增会展开到当前订阅的全部推送群，编辑只更新 key 指向的单条规则。
+     * 新增或编辑过滤器；动态订阅按目标群聊写入，分组保持原有上下文展开语义。
      */
     fun saveSubscriptionFilter(
         itemId: String,
@@ -160,26 +160,30 @@ class WebUiSubscriptionManagementFacade(
         val kind = normalizeFilterKind(request.kind) ?: return validationFailure("过滤方式无效")
         val mode = parseFilterMode(request.mode) ?: return validationFailure("黑白名单类型无效")
         val content = request.content.trim()
-        if (kind == "regex" && content.isBlank()) {
-            return validationFailure("正则内容必须填写")
+        if (content.isBlank()) {
+            return validationFailure("规则内容必须填写")
         }
         val type = if (kind == "type") parseDynamicFilterType(content) ?: return validationFailure("标签类型无效") else null
+        val selectedScopes = resolveNestedTargetScopes(context, request.targetGroups)
+        if (context.kind == "dynamic" && selectedScopes == null) {
+            return validationFailure("目标群聊必须至少选择一个")
+        }
 
         if (request.key.isNotBlank()) {
             val parsedKey = parseFilterKey(request.key) ?: return validationFailure("过滤器标识无效")
-            if (!context.ownsFilterKey(parsedKey) || !updateFilterRow(parsedKey, kind, mode, content, type)) {
+            if (!context.ownsFilterKey(parsedKey) || !removeFilterRow(parsedKey)) {
                 return validationFailure("过滤器不存在")
             }
-        } else {
-            val scopes = if (context.filterScopes.isNotEmpty()) context.filterScopes else context.contactScopes
-            if (scopes.isEmpty() || context.uids.isEmpty()) {
-                return validationFailure("当前订阅没有可写入过滤器的推送群")
-            }
-            scopes.forEach { scope ->
-                context.uids.forEach { uid ->
-                    val filter = BiliData.filter.getOrPut(scope) { mutableMapOf() }.getOrPut(uid) { DynamicFilter() }
-                    appendFilterRow(filter, kind, mode, content, type)
-                }
+            cleanupEmptyFilter(parsedKey.scope, parsedKey.uid)
+        }
+        val scopes = selectedScopes ?: if (context.filterScopes.isNotEmpty()) context.filterScopes else context.contactScopes
+        if (scopes.isEmpty() || context.uids.isEmpty()) {
+            return validationFailure("当前订阅没有可写入过滤器的推送群")
+        }
+        scopes.forEach { scope ->
+            context.uids.forEach { uid ->
+                val filter = BiliData.filter.getOrPut(scope) { mutableMapOf() }.getOrPut(uid) { DynamicFilter() }
+                appendFilterRow(filter, kind, mode, content, type)
             }
         }
         markSubscriptionCardUpdated(itemId)
@@ -235,7 +239,7 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
-     * 保存模板正文并绑定到当前订阅策略；编辑旧模板时只移除所选策略里的旧名称。
+     * 保存模板正文并绑定到当前订阅策略；动态订阅按目标群聊选择写入策略。
      */
     fun saveSubscriptionTemplate(
         itemId: String,
@@ -247,7 +251,15 @@ class WebUiSubscriptionManagementFacade(
         if (name.isBlank()) {
             return validationFailure("模板名称必须填写")
         }
-        if (context.templateScopes.isEmpty() || context.uids.isEmpty()) {
+        if (request.content.isBlank()) {
+            return validationFailure("模板内容必须填写")
+        }
+        val selectedScopes = resolveNestedTargetScopes(context, request.targetGroups)
+        if (context.kind == "dynamic" && selectedScopes == null) {
+            return validationFailure("目标群聊必须至少选择一个")
+        }
+        val scopes = selectedScopes ?: context.templateScopes
+        if (scopes.isEmpty() || context.uids.isEmpty()) {
             return validationFailure("当前订阅没有可写入模板的作用域")
         }
 
@@ -257,15 +269,13 @@ class WebUiSubscriptionManagementFacade(
             if (!context.ownsTemplateKey(key)) {
                 return validationFailure("模板不存在")
             }
-            if (key.type != spec.storageType || key.name != name) {
+            if (key.scope !in scopes || key.type != spec.storageType || key.name != name) {
                 TemplateRuntimeCoordinator.removeTemplate(key.type, key.scope, key.uid, key.name)
             }
-            TemplateRuntimeCoordinator.appendTemplate(spec.storageType, key.scope, key.uid, name)
-        } ?: run {
-            context.templateScopes.forEach { scope ->
-                context.uids.forEach { uid ->
-                    TemplateRuntimeCoordinator.appendTemplate(spec.storageType, scope, uid, name)
-                }
+        }
+        scopes.forEach { scope ->
+            context.uids.forEach { uid ->
+                TemplateRuntimeCoordinator.appendTemplate(spec.storageType, scope, uid, name)
             }
         }
 
@@ -787,23 +797,15 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
-     * 更新 key 指向的单条过滤规则；如果切换过滤方式，则先删除旧项再追加到目标列表。
+     * 删除 key 指向的旧过滤规则，编辑保存会再按当前目标群聊重新追加。
      */
-    private fun updateFilterRow(
-        key: ParsedFilterKey,
-        kind: String,
-        mode: FilterMode,
-        content: String,
-        type: DynamicFilterType?,
-    ): Boolean {
+    private fun removeFilterRow(key: ParsedFilterKey): Boolean {
         val filter = BiliData.filter[key.scope]?.get(key.uid) ?: return false
         val removed = when (key.kind) {
             "type" -> filter.typeSelect.list.removeAtOrNull(key.index)
             "regex" -> filter.regularSelect.list.removeAtOrNull(key.index)
             else -> null
         } ?: return false
-        appendFilterRow(filter, kind, mode, content, type)
-        cleanupEmptyFilter(key.scope, key.uid)
         return removed is DynamicFilterType || removed is String
     }
 
@@ -939,6 +941,20 @@ class WebUiSubscriptionManagementFacade(
             return null
         }
         return scopes
+    }
+
+    /**
+     * 过滤器和模板只在动态订阅中按目标群聊收窄写入；其他卡片返回 null 表示沿用旧 scope。
+     */
+    private fun resolveNestedTargetScopes(
+        context: SubscriptionEditContext,
+        targetGroups: List<String>,
+    ): List<String>? {
+        if (context.kind != "dynamic") {
+            return null
+        }
+        val scopes = targetGroups.distinct().filter { it in context.contactScopes }
+        return scopes.ifEmpty { null }
     }
 
     /**

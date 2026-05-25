@@ -27,12 +27,14 @@ type SubscriptionFilterDraft = {
   kind: string
   mode: string
   content: string
+  targetGroups?: string[]
 }
 type SubscriptionTemplateDraft = {
   key: string
   type: string
   name: string
   content: string
+  targetGroups?: string[]
 }
 type SubscriptionAtAllDraft = {
   type: string

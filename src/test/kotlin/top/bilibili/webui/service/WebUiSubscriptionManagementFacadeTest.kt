@@ -231,6 +231,7 @@ class WebUiSubscriptionManagementFacadeTest {
                 kind = "regex",
                 mode = "black",
                 content = "新内容.*",
+                targetGroups = listOf("onebot11:group:10001"),
             ),
         )
         val deleted = facade.deleteSubscriptionFilter("dynamic:123", regexKey)
@@ -347,6 +348,7 @@ class WebUiSubscriptionManagementFacadeTest {
                 type = "dynamic",
                 name = "WebDy",
                 content = "{name}\n{link}",
+                targetGroups = listOf("onebot11:group:10001"),
             ),
         )
         val random = facade.setSubscriptionTemplateRandom("dynamic:123", true)
@@ -359,6 +361,111 @@ class WebUiSubscriptionManagementFacadeTest {
         assertTrue(BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).randomEnabled)
         assertTrue(savedConfig)
         assertTrue(savedData)
+    }
+
+    /**
+     * 动态订阅新增过滤器时必须按前端选择的目标群聊限定写入范围，不能默认扩散到全部推送群。
+     */
+    @Test
+    fun `dynamic filter editor should save only selected target groups`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001", "direct:onebot11:group:10002"),
+                ),
+            )
+            filter = mutableMapOf()
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { true })
+
+        val missingTarget = facade.saveSubscriptionFilter(
+            "dynamic:123",
+            WebUiSubscriptionFilterSaveRequestDto(
+                key = "",
+                kind = "regex",
+                mode = "black",
+                content = "广告",
+                targetGroups = emptyList(),
+            ),
+        )
+        val saved = facade.saveSubscriptionFilter(
+            "dynamic:123",
+            WebUiSubscriptionFilterSaveRequestDto(
+                key = "",
+                kind = "regex",
+                mode = "black",
+                content = "广告",
+                targetGroups = listOf("onebot11:group:10001"),
+            ),
+        )
+
+        assertFalse(missingTarget.success)
+        assertTrue(saved.success)
+        assertEquals(listOf("广告"), BiliData.filter.getValue("onebot11:group:10001").getValue(123L).regularSelect.list)
+        assertFalse(BiliData.filter.containsKey("onebot11:group:10002"))
+    }
+
+    /**
+     * 动态订阅新增模板策略时只绑定到选中的群聊，模板正文仍写入全局模板配置。
+     */
+    @Test
+    fun `dynamic template editor should save only selected target groups`() = runBlocking {
+        val runtimeConfig = BiliConfig()
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001", "onebot11:group:10002"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001", "direct:onebot11:group:10002"),
+                ),
+            )
+            dynamicTemplatePolicyByScope = mutableMapOf()
+        }
+        val facade = WebUiSubscriptionManagementFacade(
+            configProvider = { runtimeConfig },
+            saveConfigAction = { true },
+            saveDataAction = { true },
+        )
+
+        val missingContent = facade.saveSubscriptionTemplate(
+            "dynamic:123",
+            WebUiSubscriptionTemplateSaveRequestDto(
+                key = "",
+                type = "dynamic",
+                name = "WebDy",
+                content = "",
+                targetGroups = listOf("onebot11:group:10001"),
+            ),
+        )
+        val missingTarget = facade.saveSubscriptionTemplate(
+            "dynamic:123",
+            WebUiSubscriptionTemplateSaveRequestDto(
+                key = "",
+                type = "dynamic",
+                name = "WebDy",
+                content = "{name}",
+                targetGroups = emptyList(),
+            ),
+        )
+        val saved = facade.saveSubscriptionTemplate(
+            "dynamic:123",
+            WebUiSubscriptionTemplateSaveRequestDto(
+                key = "",
+                type = "dynamic",
+                name = "WebDy",
+                content = "{name}",
+                targetGroups = listOf("onebot11:group:10001"),
+            ),
+        )
+
+        assertFalse(missingContent.success)
+        assertFalse(missingTarget.success)
+        assertTrue(saved.success)
+        assertEquals("{name}", runtimeConfig.templateConfig.dynamicPush["WebDy"])
+        assertEquals(listOf("WebDy"), BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).templates)
+        assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey("onebot11:group:10002"))
     }
 
     /**

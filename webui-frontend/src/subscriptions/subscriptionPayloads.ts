@@ -17,6 +17,7 @@ export type SubscriptionFilterPayload = WebUiSubscriptionWritePayload & {
   kind: string
   mode: string
   content: string
+  targetGroups?: string[]
 }
 
 export type SubscriptionTemplatePayload = WebUiSubscriptionWritePayload & {
@@ -24,6 +25,7 @@ export type SubscriptionTemplatePayload = WebUiSubscriptionWritePayload & {
   type: string
   name: string
   content: string
+  targetGroups?: string[]
 }
 
 export type SubscriptionAtAllPayload = WebUiSubscriptionWritePayload & {
@@ -88,6 +90,7 @@ export function buildSubscriptionFilterPayload(input: SubscriptionFilterPayload)
     kind: input.kind,
     mode: input.mode,
     content: input.content,
+    targetGroups: input.targetGroups || [],
     confirmationPassword: input.confirmationPassword,
   }
 }
@@ -101,6 +104,7 @@ export function buildSubscriptionTemplatePayload(input: SubscriptionTemplatePayl
     type: input.type,
     name: input.name,
     content: input.content,
+    targetGroups: input.targetGroups || [],
     confirmationPassword: input.confirmationPassword,
   }
 }
