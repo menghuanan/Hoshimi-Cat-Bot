@@ -105,7 +105,7 @@ data class WebUiBotConfigWriteRequestDto(
     val adapter: String,
     val oneBot11Host: String,
     val oneBot11Port: Int,
-    val oneBot11Token: String,
+    val oneBot11Token: String = "",
     val oneBot11UseTls: Boolean = false,
     val oneBot11HeartbeatInterval: Long = 30000L,
     val oneBot11ReconnectInterval: Long = 5000L,

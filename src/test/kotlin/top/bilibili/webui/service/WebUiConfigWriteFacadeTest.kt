@@ -32,6 +32,7 @@ import top.bilibili.webui.model.WebUiGroupAdminConfigWriteDto
 import top.bilibili.webui.model.WebUiRecommendedAction
 import top.bilibili.webui.model.WebUiSaveEffectLevel
 import top.bilibili.webui.model.WebUiTargetConfigWriteDto
+import kotlinx.serialization.json.Json
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -369,6 +370,27 @@ class WebUiConfigWriteFacadeTest {
         assertEquals(WebUiSaveEffectLevel.REJECTED_CONFLICT, result.effectiveLevel)
         assertEquals(WebUiRecommendedAction.REFRESH_AND_RETRY, result.recommendedAction)
         assertEquals(0, saveCalls)
+    }
+
+    /**
+     * 前端对未编辑的敏感 token 不提交字段，后端 DTO 必须把缺失值视为保留现有 secret。
+     */
+    @Test
+    fun `bot config write dto should allow omitted onebot token to preserve current secret`() {
+        val request = Json.decodeFromString<WebUiBotConfigWriteRequestDto>(
+            """
+            {
+              "snapshotToken": "bot-token",
+              "platformType": "ONEBOT11",
+              "adapter": "onebot11",
+              "oneBot11Host": "127.0.0.1",
+              "oneBot11Port": 3001,
+              "confirmationPassword": "Better123!@"
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("", request.oneBot11Token)
     }
 
     @Test
