@@ -502,16 +502,19 @@ open class BiliClient(
                         )
                         throw throwable
                     }
-                    logger.warn(
-                        buildRetryLogMessage(
-                            trace = trace,
-                            retryNumber = retryCount + 1,
-                            maxAttempts = maxRetries + 1,
-                            clientIndex = selectedClientIndex,
-                            proxyEnabled = proxyEnabled,
-                            throwable = throwable,
+                    // 首次失败只负责触发重试，不提前刷出失败日志，避免短暂抖动直接进入日志视野。
+                    if (retryCount > 0) {
+                        logger.warn(
+                            buildRetryLogMessage(
+                                trace = trace,
+                                retryNumber = retryCount + 1,
+                                maxAttempts = maxRetries + 1,
+                                clientIndex = selectedClientIndex,
+                                proxyEnabled = proxyEnabled,
+                                throwable = throwable,
+                            )
                         )
-                    )
+                    }
                     retryCount++
                     delay(3000)
                     if (shouldRotateRetrySlot(throwable)) {
