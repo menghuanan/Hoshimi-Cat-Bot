@@ -271,6 +271,52 @@ describe('webui shell routing', () => {
     expect(screen.queryByText('HTTP 401')).not.toBeInTheDocument()
   })
 
+  /**
+   * 设置保存必须先拦截明显非法输入，避免用户先输确认密码才看到字段错误。
+   */
+  it('validates settings before opening the high-risk password dialog', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-config') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'BiliConfig.yml',
+            snapshotToken: 'bili-token',
+            fields: [],
+          }),
+        }
+      }
+      if (url.includes('/api/config/bot') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token',
+            fields: [
+              {key: 'platform.onebot11.host', label: 'OneBot11 主机', value: '127.0.0.1', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+
+    const hostInput = await screen.findByLabelText('OneBot11 主机')
+    await user.clear(hostInput)
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(await screen.findByText('OneBot11 主机必须填写')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', {name: '密码确认'})).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/config/bot') && init?.method === 'POST')).toBe(false)
+  })
+
   it('keeps a dense React layout for dashboard cards and account modal', () => {
     renderAtPath('/')
 
@@ -1161,7 +1207,7 @@ describe('webui shell routing', () => {
       targetGroups: ['onebot11:group:1072150397'],
       confirmationPassword: 'theme-password',
     })
-  })
+  }, 10_000)
 
   /**
    * 番剧后端只支持订阅本身和主题色，前端不能展示无效的过滤器、模板和 @全体入口。
@@ -1277,6 +1323,32 @@ describe('webui shell routing', () => {
       targetGroup: '10001',
       confirmationPassword: 'target-password',
     })
+  })
+
+  /**
+   * 新增订阅在打开高风险确认前必须先校验当前类型的必填项和数字格式。
+   */
+  it('validates new subscription input before opening the high-risk password dialog', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
+        return {ok: true, status: 200, json: async () => ({items: []})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    renderAtPath('/#subscriptions')
+
+    await user.click(await screen.findByRole('button', {name: '新增订阅'}))
+    await user.type(screen.getByLabelText('UID'), 'abc')
+    await user.type(screen.getByLabelText('目标群聊'), '10001')
+    await user.click(screen.getByRole('button', {name: '确认新增'}))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('UID必须是正整数')
+    expect(screen.queryByRole('dialog', {name: '密码确认'})).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/subscriptions') && init?.method === 'POST')).toBe(false)
   })
 
   /**

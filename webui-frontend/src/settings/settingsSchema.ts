@@ -205,15 +205,34 @@ export const settingsFieldByKey = new Map(
  */
 export function validateSettingsValues(values: Record<string, unknown>): string[] {
   return [
+    ...validateRequiredText('OneBot11 主机', values['platform.onebot11.host']),
     ...validatePort('OneBot11 端口', values['platform.onebot11.port']),
+    ...validatePositiveInteger('心跳间隔', values['platform.onebot11.heartbeatInterval']),
+    ...validatePositiveInteger('重连间隔', values['platform.onebot11.reconnectInterval']),
+    ...validatePositiveInteger('连接超时', values['platform.onebot11.connectTimeout']),
+    ...validateRequiredText('WebUI 主机', values['webui.host']),
     ...validatePort('WebUI 端口', values['webui.port']),
+    ...validatePositiveInteger('会话有效秒数', values['webui.tokenTtlSeconds']),
     ...validateHourRange('低频时段', values['checkConfig.lowSpeedTime']),
     ...validateIntervalRange('低频间隔', values['checkConfig.lowSpeedRange']),
     ...validateIntervalRange('正常间隔', values['checkConfig.normalRange']),
+    ...validatePositiveInteger('状态报告间隔', values['checkConfig.checkReportInterval']),
+    ...validatePositiveInteger('请求超时', values['checkConfig.timeout']),
     ...validateHexColor('默认颜色', values['imageConfig.defaultColor']),
     ...['DRAW', 'IMAGES', 'EMOJI', 'USER', 'OTHER'].flatMap((key) => validatePositiveInteger(`缓存 ${key}`, values[`cacheConfig.expires.${key}`])),
+    ...validatePositiveInteger('消息间隔', values['pushConfig.messageInterval']),
+    ...validatePositiveInteger('推送间隔', values['pushConfig.pushInterval']),
+    ...validatePositiveInteger('超级管理员 QQ', values.adminContactQQ),
     ...validateAdminLines(values.adminsText),
   ]
+}
+
+/**
+ * 必填文本字段只在当前分区提交该字段时校验，避免未展示字段缺省时误拦保存。
+ */
+function validateRequiredText(label: string, value: unknown): string[] {
+  if (value === undefined) return []
+  return String(value ?? '').trim() ? [] : [`${label}必须填写`]
 }
 
 /**

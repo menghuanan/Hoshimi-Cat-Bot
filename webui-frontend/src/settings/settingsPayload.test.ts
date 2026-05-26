@@ -124,17 +124,31 @@ describe('settings payload helpers', () => {
    */
   it('validates editable settings before building backend payloads', () => {
     expect(validateSettingsValues({
+      'platform.onebot11.host': '',
       'platform.onebot11.port': '70000',
+      'platform.onebot11.heartbeatInterval': '0',
+      'webui.host': '',
+      'webui.tokenTtlSeconds': '0',
       'checkConfig.lowSpeedTime': 'bad',
       'checkConfig.normalRange': '120-30',
+      'checkConfig.timeout': '0',
       'imageConfig.defaultColor': 'blue',
       'cacheConfig.expires.DRAW': '0',
+      'pushConfig.messageInterval': '0',
+      adminContactQQ: '-1',
     })).toEqual(expect.arrayContaining([
+      'OneBot11 主机必须填写',
       'OneBot11 端口必须在 1-65535 之间',
+      '心跳间隔 必须大于 0',
+      'WebUI 主机必须填写',
+      '会话有效秒数 必须大于 0',
       '低频时段必须使用 0-23 的 时-时 格式',
       '正常间隔必须使用 起始-结束 格式，且结束不小于起始',
+      '请求超时 必须大于 0',
       '默认颜色必须是 HEX 颜色',
       '缓存 DRAW 必须大于 0',
+      '消息间隔 必须大于 0',
+      '超级管理员 QQ 必须大于 0',
     ]))
   })
 
