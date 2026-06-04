@@ -162,7 +162,7 @@ data class DynamicItem(
  * @param face 头像
  * @param faceNFT 是否为NFT头像
  * @param pendant 头像挂件
- * @param following 是否关注(未关注为null)
+ * @param following 关注状态码，接口未返回时为 null
  * @param iconBadge 徽标图案, 现已知 充电专属
  * @param label 标签
  * @param jumpUrl 跳转URL
@@ -197,7 +197,7 @@ data class ModuleAuthor(
     @SerialName("face_nft")
     val faceNFT: Boolean? = null,
     @SerialName("following")
-    val following: Boolean? = null,
+    val following: Int? = null,
     @SerialName("icon_badge")
     val iconBadge: IconBadge? = null,
     @SerialName("label")
