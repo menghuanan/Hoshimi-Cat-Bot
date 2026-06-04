@@ -249,6 +249,21 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `docker runtime should remove unused pebble binary inherited from base image`() {
+        val dockerfile = read("Dockerfile")
+
+        // 基础镜像可能携带 Go 编译的 pebble 工具；项目运行不需要它，必须在最终镜像中移除以降低无关 CVE 暴露面。
+        assertTrue(
+            dockerfile.contains("/usr/bin/pebble"),
+            "Dockerfile should explicitly reference the inherited pebble binary that must be removed",
+        )
+        assertTrue(
+            Regex("""RUN\s+rm\s+-f\s+/usr/bin/pebble""").containsMatchIn(dockerfile),
+            "Dockerfile should remove unused /usr/bin/pebble from the final runtime image",
+        )
+    }
+
+    @Test
     fun `docker runtime should cap skiko resource cache size explicitly`() {
         val dockerfile = read("Dockerfile")
 

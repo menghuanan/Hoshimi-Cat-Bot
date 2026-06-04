@@ -38,6 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # 清理缓存
     && rm -rf /var/lib/apt/lists/*
 
+# 移除基础根文件系统自带的 pebble；本项目不使用该 ACME 测试工具，保留会触发无关 Go CVE 扫描。
+RUN rm -f /usr/bin/pebble
+
 # 预生成 fontconfig 缓存，避免容器首次绘制阶段触发全量字体扫描。
 RUN fc-cache -fv
 
