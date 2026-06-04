@@ -24,11 +24,11 @@ jobs:
     steps:
     # 步骤 1：拉取仓库代码。
     - name: Checkout Code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     # 步骤 2：准备 JDK 17。
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -36,7 +36,7 @@ jobs:
 
     # 步骤 3.1：显式固定 Node 22，并缓存 WebUI 依赖，避免前端构建依赖 runner 预装版本。
     - name: Set up Node.js 22
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: '22'
         cache: 'npm'
@@ -44,7 +44,7 @@ jobs:
 
     # 步骤 4：初始化 Gradle 环境。
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v4
+      uses: gradle/actions/setup-gradle@v6
 
     # 步骤 5：先采集环境信息。
     - name: Environment Diagnostics
@@ -128,7 +128,7 @@ jobs:
     # 步骤 11：上传诊断文件。
     - name: Upload CI Diagnostics
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ci-diagnostics
         path: |
@@ -141,7 +141,7 @@ jobs:
     # 步骤 12：仅在成功时上传构建产物。
     - name: Upload Build Artifact
       if: success()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: hoshimi-cat-bot-artifacts.zip
         path: build/libs/*.jar
