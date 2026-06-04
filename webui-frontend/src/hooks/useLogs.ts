@@ -9,7 +9,7 @@ type UseLogsOptions = WebUiJsonRequestOptions & {
   autoRefreshMs?: number
 }
 
-const logsAutoRefreshCookieName = 'dynamic_bot_webui_logs_auto_refresh'
+const logsAutoRefreshCookieName = 'hoshimi_cat_bot_webui_logs_auto_refresh'
 
 /**
  * 日志行解析兼容 `[LEVEL] [module] message` 和纯文本行，过滤时纯文本归为 PLAIN。

@@ -24,7 +24,7 @@ const createJsonResponse = (status: number, payload: unknown) => ({
 
 describe('webui api contracts', () => {
   it('requestJson should attach CSRF headers for unsafe requests without bearer auth', async () => {
-    document.cookie = 'dynamic_bot_webui_csrf=csrf-123; path=/'
+    document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-123; path=/'
     const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem')
     const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem')
     const removeItemSpy = vi.spyOn(window.sessionStorage, 'removeItem')
@@ -77,7 +77,7 @@ describe('webui api contracts', () => {
   })
 
   it('loginWithPassword should post the password without writing a token', async () => {
-    document.cookie = 'dynamic_bot_webui_csrf=csrf-login; path=/'
+    document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-login; path=/'
     const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem')
     const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem')
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {mustChangePassword: false}))
@@ -230,7 +230,7 @@ describe('webui api contracts', () => {
   })
 
   it('subscription nested config requests should target existing backend routes', async () => {
-    document.cookie = 'dynamic_bot_webui_csrf=csrf-subscription; path=/'
+    document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-subscription; path=/'
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {success: true}))
 
     await listSubscriptionFilters('item/1', {fetchImpl})
@@ -282,7 +282,7 @@ describe('webui api contracts', () => {
    * 模板删除是高风险确认写接口，403 必须保留为密码错误而不是触发登录重定向。
    */
   it('deleteSubscriptionTemplate should surface 403 as a password error without redirecting', async () => {
-    document.cookie = 'dynamic_bot_webui_csrf=csrf-template-delete; path=/'
+    document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-template-delete; path=/'
     const redirectToLogin = vi.fn()
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(403, {message: 'bad password'}))
 
@@ -309,7 +309,7 @@ describe('webui api contracts', () => {
    * 推送群聊编辑器复用订阅嵌套路由，新增和删除都必须携带高风险确认密码。
    */
   it('subscription target helpers should use nested target routes with confirmation payloads', async () => {
-    document.cookie = 'dynamic_bot_webui_csrf=csrf-target; path=/'
+    document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-target; path=/'
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {success: true}))
 
     await listSubscriptionTargets('item/1', {fetchImpl})

@@ -938,8 +938,8 @@ describe('webui shell routing', () => {
    * 登录页必须沿用 cookie 里的主题模式，并把认证失败翻成普通提示。
    */
   it('renders the login page in the cookie theme and shows a friendly auth error', async () => {
-    window.localStorage.removeItem('dynamic_bot_webui_theme')
-    document.cookie = 'dynamic_bot_webui_theme=dark; path=/'
+    window.localStorage.removeItem('hoshimi_cat_bot_webui_theme')
+    document.cookie = 'hoshimi_cat_bot_webui_theme=dark; path=/'
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/api/auth/login')) {
@@ -957,8 +957,8 @@ describe('webui shell routing', () => {
 
     expect(await screen.findByText('密码错误，请重试')).toBeInTheDocument()
     expect(screen.queryByText('HTTP 401')).not.toBeInTheDocument()
-    document.cookie = 'dynamic_bot_webui_theme=; Max-Age=0; path=/'
-    window.localStorage.removeItem('dynamic_bot_webui_theme')
+    document.cookie = 'hoshimi_cat_bot_webui_theme=; Max-Age=0; path=/'
+    window.localStorage.removeItem('hoshimi_cat_bot_webui_theme')
     document.documentElement.classList.remove('theme-system', 'theme-light', 'theme-dark')
     delete document.documentElement.dataset.theme
   })

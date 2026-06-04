@@ -382,7 +382,7 @@ describe('webui domain hooks', () => {
       }
       return Promise.resolve(createJsonResponse(200, {}))
     })
-    document.cookie = 'dynamic_bot_webui_logs_auto_refresh=; Max-Age=0; path=/'
+    document.cookie = 'hoshimi_cat_bot_webui_logs_auto_refresh=; Max-Age=0; path=/'
     const first = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
       result: {current: ReturnType<typeof useLogs>}
       unmount: () => void
@@ -390,7 +390,7 @@ describe('webui domain hooks', () => {
 
     await waitFor(() => expect(first.result.current.sourceId).toBe('source-1'))
     first.result.current.setAutoRefresh(true)
-    expect(document.cookie).toContain('dynamic_bot_webui_logs_auto_refresh=true')
+    expect(document.cookie).toContain('hoshimi_cat_bot_webui_logs_auto_refresh=true')
     first.unmount()
 
     const second = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
@@ -491,7 +491,7 @@ describe('webui domain hooks', () => {
 
     result.current.setPreference('dark')
 
-    expect(window.localStorage.getItem('dynamic_bot_webui_theme')).toBe('dark')
+    expect(window.localStorage.getItem('hoshimi_cat_bot_webui_theme')).toBe('dark')
   })
 
   /**
@@ -504,6 +504,6 @@ describe('webui domain hooks', () => {
 
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.documentElement.classList.contains('theme-dark')).toBe(true)
-    expect(document.cookie).toContain('dynamic_bot_webui_theme=dark')
+    expect(document.cookie).toContain('hoshimi_cat_bot_webui_theme=dark')
   })
 })

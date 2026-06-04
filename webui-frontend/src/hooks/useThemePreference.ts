@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 type ThemePreference = 'system' | 'light' | 'dark'
 
-const themePreferenceStorageKey = 'dynamic_bot_webui_theme'
+const themePreferenceStorageKey = 'hoshimi_cat_bot_webui_theme'
 const themeClassNames = ['theme-system', 'theme-light', 'theme-dark']
 
 /**

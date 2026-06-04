@@ -222,7 +222,7 @@ object BiliBiliBot : CoroutineScope {
         }
 
         logger.info("========================================")
-        logger.info("  欢迎使用 BiliBili Dynamic Bot")
+        logger.info("  欢迎使用 Hoshimi-Cat-Bot")
         logger.info("========================================")
 
         try {

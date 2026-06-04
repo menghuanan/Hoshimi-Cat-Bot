@@ -504,8 +504,8 @@ internal class QQOfficialAdapter(
                 })
                 put("properties", buildJsonObject {
                     put("\$os", "windows")
-                    put("\$browser", "dynamic-bot")
-                    put("\$device", "dynamic-bot")
+                    put("\$browser", "hoshimi-cat-bot")
+                    put("\$device", "hoshimi-cat-bot")
                 })
             })
         }
@@ -658,7 +658,7 @@ internal class QQOfficialAdapter(
         return mapOf(
             "Authorization" to "QQBot $token",
             "X-Union-Appid" to config.appId,
-            "User-Agent" to "dynamic-bot",
+            "User-Agent" to "hoshimi-cat-bot",
         )
     }
 

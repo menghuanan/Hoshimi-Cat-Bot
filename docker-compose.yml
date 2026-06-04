@@ -1,11 +1,11 @@
 services:
-  dynamic-bot:
+  hoshimi-cat-bot:
     # 镜像标签（默认直接使用 Docker Hub 镜像）
-    image: menghuanan/dynamic-bot:latest
+    image: menghuanan/hoshimi-cat-bot:latest
     pull_policy: always
 
     # 容器名称
-    container_name: dynamic-bot
+    container_name: hoshimi-cat-bot
 
     # 重启策略
     restart: unless-stopped

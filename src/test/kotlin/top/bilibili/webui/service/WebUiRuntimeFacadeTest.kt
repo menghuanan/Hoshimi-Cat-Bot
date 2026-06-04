@@ -256,7 +256,7 @@ class WebUiRuntimeFacadeTest {
                             type = "DYNAMIC",
                             success = true,
                             summary = """/home/alice/dynamic /mnt/secret/bot secret=raw-secret api_key=raw-key 10.0.0.8""",
-                            target = """http://172.16.0.4:3001/private D:\services\dynamic-bot\config""",
+                            target = """http://172.16.0.4:3001/private D:\services\hoshimi-cat-bot\config""",
                         ),
                     ),
                 )

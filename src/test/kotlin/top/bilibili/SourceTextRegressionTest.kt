@@ -17,7 +17,7 @@ class SourceTextRegressionTest {
             "src/main/kotlin/top/bilibili/core/BiliBiliBot.kt" to listOf(
                 "Bot is already running, ignoring duplicate start request",
                 "Debug mode enabled from",
-                "Welcome to BiliBili Dynamic Bot",
+                "Welcome to Hoshimi-Cat-Bot",
                 "Initializing required directories...",
                 "Bot started successfully",
                 "Shutdown summary: reason=",

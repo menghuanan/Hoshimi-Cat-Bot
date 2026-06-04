@@ -104,7 +104,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
         {/* 桌面侧边栏整体固定在视口左侧，移动端折叠布局保持原样。 */}
         <aside className="fixed inset-y-0 left-0 z-30 flex h-full w-72 flex-col border-r border-slate-200 bg-white px-5 py-6 max-lg:static max-lg:w-full max-lg:border-b max-lg:border-r-0">
           <div className="mb-6">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">dynamic-bot</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Hoshimi-Cat-Bot</p>
             <h1 className="mt-2 text-xl font-semibold text-slate-950">动态机器人 WebUI</h1>
           </div>
           <nav className="grid gap-2.5 max-lg:grid-cols-4 max-sm:grid-cols-2">

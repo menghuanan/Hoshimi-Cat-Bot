@@ -49,15 +49,15 @@ fun main(args: Array<String>) {
                 """
                 BiliBili 动态推送 Bot ${currentVersionLabel()}
 
-                用法: java -jar dynamic-bot.jar [选项]
+                用法: java -jar hoshimi-cat-bot.jar [选项]
 
                 选项:
                   --debug, -d    启用 Debug 日志模式
                   --help, -h     显示帮助信息
 
                 示例:
-                  java -jar dynamic-bot.jar
-                  java -jar dynamic-bot.jar --debug
+                  java -jar hoshimi-cat-bot.jar
+                  java -jar hoshimi-cat-bot.jar --debug
                 """.trimIndent(),
             )
             exitProcess(0)

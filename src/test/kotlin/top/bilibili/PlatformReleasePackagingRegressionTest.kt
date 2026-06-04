@@ -17,11 +17,11 @@ class PlatformReleasePackagingRegressionTest {
         val workflow = read(".github/workflows/release.yml")
 
         assertTrue(
-            workflow.contains("dynamic-bot-windows-x64-v"),
+            workflow.contains("hoshimi-cat-bot-windows-x64-v"),
             "release workflow should upload a Windows-specific release asset",
         )
         assertTrue(
-            workflow.contains("dynamic-bot-linux-x64-v"),
+            workflow.contains("hoshimi-cat-bot-linux-x64-v"),
             "release workflow should upload a Linux-specific release asset",
         )
         assertFalse(
@@ -44,11 +44,11 @@ class PlatformReleasePackagingRegressionTest {
             "build script should register a dedicated Linux distribution task",
         )
         assertTrue(
-            buildScript.contains("dynamic-bot-windows-x64-v"),
+            buildScript.contains("hoshimi-cat-bot-windows-x64-v"),
             "Windows distribution should use a platform-specific archive name",
         )
         assertTrue(
-            buildScript.contains("dynamic-bot-linux-x64-v"),
+            buildScript.contains("hoshimi-cat-bot-linux-x64-v"),
             "Linux distribution should use a platform-specific archive name",
         )
         assertTrue(

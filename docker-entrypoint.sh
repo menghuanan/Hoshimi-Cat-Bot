@@ -123,10 +123,10 @@ trap cleanup SIGTERM SIGINT
 # ============================================
 # 4. 启动 Java 应用
 # ============================================
-log "Starting dynamic-bot..."
+log "Starting hoshimi-cat-bot..."
 
 # shellcheck disable=SC2086
-java $JAVA_OPTS -jar /app/dynamic-bot.jar &
+java $JAVA_OPTS -jar /app/hoshimi-cat-bot.jar &
 JAVA_PID=$!
 
 # 仅在显式配置正数阈值时才启动 watchdog，默认运行不再强制内存阈值。

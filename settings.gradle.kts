@@ -11,4 +11,4 @@ pluginManagement {
         maven("https://dl.bintray.com/kotlin/kotlin-eap")
     }
 }
-rootProject.name = "dynamic-bot"
+rootProject.name = "hoshimi-cat-bot"

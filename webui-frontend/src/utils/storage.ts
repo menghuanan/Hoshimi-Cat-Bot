@@ -11,7 +11,7 @@ export function readCookieValue(name: string, cookieSource = document.cookie): s
   return rawValue ? decodeURIComponent(rawValue) : ''
 }
 
-const webUiCsrfCookieName = 'dynamic_bot_webui_csrf'
+const webUiCsrfCookieName = 'hoshimi_cat_bot_webui_csrf'
 
 /**
  * WebUI unsafe 请求从同源 CSRF cookie 读取令牌，再统一写到 X-CSRF-Token 头里。

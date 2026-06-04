@@ -111,22 +111,22 @@ ARG APP_VERSION=auto
 RUN mkdir -p /app/config /app/data /app/temp /app/logs
 
 # 复制预编译的 JAR 文件（支持自动选择最新版本）
-COPY build/libs/dynamic-bot-*.jar /tmp/build-libs/
+COPY build/libs/hoshimi-cat-bot-*.jar /tmp/build-libs/
 RUN set -eux; \
     if [ "$APP_VERSION" = "auto" ]; then \
-        selected_jar="$(ls -1 /tmp/build-libs/dynamic-bot-*.jar | sort -V | tail -n 1)"; \
+        selected_jar="$(ls -1 /tmp/build-libs/hoshimi-cat-bot-*.jar | sort -V | tail -n 1)"; \
     else \
-        selected_jar="/tmp/build-libs/dynamic-bot-${APP_VERSION}.jar"; \
+        selected_jar="/tmp/build-libs/hoshimi-cat-bot-${APP_VERSION}.jar"; \
     fi; \
     test -f "$selected_jar"; \
-    cp "$selected_jar" /app/dynamic-bot.jar; \
+    cp "$selected_jar" /app/hoshimi-cat-bot.jar; \
     rm -rf /tmp/build-libs
 
 # ============================================
 # 健康检查 - 检查 Java 进程是否存活
 # ============================================
 HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
-    CMD pgrep -f "dynamic-bot.jar" > /dev/null || exit 1
+    CMD pgrep -f "hoshimi-cat-bot.jar" > /dev/null || exit 1
 
 # ============================================
 # 启动脚本

@@ -1,7 +1,7 @@
-# BiliBili 动态推送 Bot v1.8
+# Hoshimi-Cat-Bot v1.8
 
-[![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
-[![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
+[![Docker Hub](https://img.shields.io/docker/v/menghuanan/hoshimi-cat-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/hoshimi-cat-bot)
+[![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/hoshimi-cat-bot)](https://hub.docker.com/r/menghuanan/hoshimi-cat-bot)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
@@ -42,7 +42,7 @@
 ## 项目结构
 
 ```
-dynamic-bot/
+hoshimi-cat-bot/
 ├── src/main/kotlin/top/bilibili/     # Kotlin 源代码
 │   ├── api/                          # B站 API 接口
 │   ├── client/                       # HTTP 客户端
@@ -124,11 +124,11 @@ platform:
 > 
 > 请务必使用最新稳定版本的源码或可执行文件，以避免遇到已知问题。
 
-#### 方法 一：从 [Releases](https://github.com/menghuanan/dynamic-bot/releases) 下载
+#### 方法 一：从 [Releases](https://github.com/menghuanan/hoshimi-cat-bot/releases) 下载
 请根据你的系统下载对应的平台发行包：
 1. 在项目主页点击Releases标签。
-2. Windows x64 下载 `dynamic-bot-windows-x64-v<版本>.zip`。
-3. Linux x64 下载 `dynamic-bot-linux-x64-v<版本>.tar.gz`。
+2. Windows x64 下载 `hoshimi-cat-bot-windows-x64-v<版本>.zip`。
+3. Linux x64 下载 `hoshimi-cat-bot-linux-x64-v<版本>.tar.gz`。
 4. 解压后直接通过包内启动脚本运行，发行包已内置精简 runtime，无需额外安装 JDK。
 
 #### 方法 二：本地自行编译
@@ -145,8 +145,8 @@ chmod +x gradlew
 ./gradlew linuxReleaseDistTar
 ```
 发行包位于 `build/distributions/`：
-- Windows：`dynamic-bot-windows-x64-v<版本>.zip`
-- Linux：`dynamic-bot-linux-x64-v<版本>.tar.gz`
+- Windows：`hoshimi-cat-bot-windows-x64-v<版本>.zip`
+- Linux：`hoshimi-cat-bot-linux-x64-v<版本>.tar.gz`
 
 ### 2. 运行 Bot
 
@@ -156,15 +156,15 @@ chmod +x gradlew
 
 Windows 解压并启动：
 ```powershell
-Expand-Archive -Force dynamic-bot-windows-x64-v<版本>.zip .
-cd dynamic-bot-windows-x64-v<版本>
+Expand-Archive -Force hoshimi-cat-bot-windows-x64-v<版本>.zip .
+cd hoshimi-cat-bot-windows-x64-v<版本>
 .\bin\start.bat
 ```
 
 Linux 解压并启动：
 ```bash
-tar -xzf dynamic-bot-linux-x64-v<版本>.tar.gz
-cd dynamic-bot-linux-x64-v<版本>
+tar -xzf hoshimi-cat-bot-linux-x64-v<版本>.tar.gz
+cd hoshimi-cat-bot-linux-x64-v<版本>
 chmod +x bin/start.sh
 ./bin/start.sh
 ```
@@ -175,16 +175,16 @@ Linux 启动脚本会优先复用已经包含 `libjemalloc.so.2` 的 `LD_PRELOAD
 
 ```bash
 # 拉取镜像
-docker pull menghuanan/dynamic-bot:latest
+docker pull menghuanan/hoshimi-cat-bot:latest
 
 # 启动容器
-docker run -d --name dynamic-bot \
+docker run -d --name hoshimi-cat-bot \
   --network bridge \
   -v ./config:/app/config \
   -v ./data:/app/data \
   -v ./temp:/app/temp \
   -v ./logs:/app/logs \
-  menghuanan/dynamic-bot:latest
+  menghuanan/hoshimi-cat-bot:latest
 ```
 
 详细的 Docker 部署说明请查看 [Docker 部署](#docker-部署) 章节。
@@ -558,12 +558,12 @@ linkResolveConfig:             # 链接解析配置
 
 无需编译，直接从 Docker Hub 拉取预构建镜像快速部署。
 
-**Docker Hub 仓库：** https://hub.docker.com/r/menghuanan/dynamic-bot
+**Docker Hub 仓库：** https://hub.docker.com/r/menghuanan/hoshimi-cat-bot
 
 #### 1. 拉取镜像
 
 ```bash
-docker pull menghuanan/dynamic-bot:latest
+docker pull menghuanan/hoshimi-cat-bot:latest
 ```
 
 #### 2. 创建配置目录
@@ -576,14 +576,14 @@ mkdir -p config data temp logs
 
 ```bash
 docker run -d \
-  --name dynamic-bot \
+  --name hoshimi-cat-bot \
   --restart unless-stopped \
   --network bridge \
   -v ./config:/app/config \
   -v ./data:/app/data \
   -v ./temp:/app/temp \
   -v ./logs:/app/logs \
-  menghuanan/dynamic-bot:latest
+  menghuanan/hoshimi-cat-bot:latest
 ```
 
 #### 4. 使用 docker-compose（推荐）
@@ -594,9 +594,9 @@ docker run -d \
 version: '3.8'
 
 services:
-  dynamic-bot:
-    image: menghuanan/dynamic-bot:latest
-    container_name: dynamic-bot
+  hoshimi-cat-bot:
+    image: menghuanan/hoshimi-cat-bot:latest
+    container_name: hoshimi-cat-bot
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
@@ -653,7 +653,7 @@ docker-compose up -d
 ```bash
 docker-compose logs -f
 # 或
-docker logs -f dynamic-bot
+docker logs -f hoshimi-cat-bot
 ```
 
 ### 方式二：从源码构建部署
@@ -665,7 +665,7 @@ docker logs -f dynamic-bot
    - 或保持 `127.0.0.1`（如果 onebot平台 也在容器内）
 
 2. **先构建可运行 JAR**
-   当前 `Dockerfile` 会直接复制 `build/libs/dynamic-bot-*.jar`，因此需要先执行：
+   当前 `Dockerfile` 会直接复制 `build/libs/hoshimi-cat-bot-*.jar`，因此需要先执行：
    ```bash
    # Windows
    .\gradlew.bat shadowJar

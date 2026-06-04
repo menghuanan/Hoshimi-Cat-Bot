@@ -169,7 +169,7 @@ tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
 
 // Shadow JAR 配置 - 打包所有依赖
 tasks.shadowJar {
-    archiveBaseName.set("dynamic-bot")
+    archiveBaseName.set("hoshimi-cat-bot")
     archiveClassifier.set("")
     archiveVersion.set(version.toString())
 
@@ -310,7 +310,7 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
                 exit /b 1
             )
 
-            "%JAVA_BIN%" %JAVA_OPTS% -jar lib\dynamic-bot-${version}.jar
+            "%JAVA_BIN%" %JAVA_OPTS% -jar lib\hoshimi-cat-bot-${version}.jar
             pause
             """.trimIndent()
         )
@@ -373,7 +373,7 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
                                         ;;
                                 esac
                             else
-                                echo "ERROR: libjemalloc.so.2 not found. Install jemalloc manually with your system package manager before starting dynamic-bot on Linux bare metal." >&2
+                                echo "ERROR: libjemalloc.so.2 not found. Install jemalloc manually with your system package manager before starting hoshimi-cat-bot on Linux bare metal." >&2
                                 exit 1
                             fi
 
@@ -412,7 +412,7 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
                 exit 1
             fi
 
-            "${'$'}JAVA_BIN" ${'$'}JAVA_OPTS -jar lib/dynamic-bot-${version}.jar
+            "${'$'}JAVA_BIN" ${'$'}JAVA_OPTS -jar lib/hoshimi-cat-bot-${version}.jar
             """.trimIndent()
         )
 
@@ -448,7 +448,7 @@ val windowsReleaseDistZip = tasks.register<Zip>("windowsReleaseDistZip") {
     onlyIf { hostOs.isWindows }
 
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
-    archiveFileName.set("dynamic-bot-windows-x64-v${project.version}.zip")
+    archiveFileName.set("hoshimi-cat-bot-windows-x64-v${project.version}.zip")
 
     from(sharedReleaseContentsDir)
     from(createDistributionStartScripts) {
@@ -465,7 +465,7 @@ val linuxReleaseDistTar = tasks.register<Tar>("linuxReleaseDistTar") {
     onlyIf { hostOs.isLinux }
 
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
-    archiveFileName.set("dynamic-bot-linux-x64-v${project.version}.tar.gz")
+    archiveFileName.set("hoshimi-cat-bot-linux-x64-v${project.version}.tar.gz")
     compression = Compression.GZIP
 
     from(sharedReleaseContentsDir)

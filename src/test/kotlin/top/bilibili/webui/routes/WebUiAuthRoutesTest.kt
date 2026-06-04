@@ -63,10 +63,10 @@ class WebUiAuthRoutesTest {
         assertEquals(HttpStatusCode.OK, login.status)
         assertEquals("no-store", login.headers[HttpHeaders.CacheControl])
         assertFalse(body.contains("token"))
-        assertNotNull(login.cookieValue("dynamic_bot_webui_session"))
-        assertNotNull(login.cookieValue("dynamic_bot_webui_csrf"))
-        assertTrue(login.setCookieFor("dynamic_bot_webui_session").contains("HttpOnly"))
-        assertFalse(login.setCookieFor("dynamic_bot_webui_csrf").contains("HttpOnly"))
+        assertNotNull(login.cookieValue("hoshimi_cat_bot_webui_session"))
+        assertNotNull(login.cookieValue("hoshimi_cat_bot_webui_csrf"))
+        assertTrue(login.setCookieFor("hoshimi_cat_bot_webui_session").contains("HttpOnly"))
+        assertFalse(login.setCookieFor("hoshimi_cat_bot_webui_csrf").contains("HttpOnly"))
     }
 
     /**
@@ -152,11 +152,11 @@ class WebUiAuthRoutesTest {
         }.body<WebUiSessionDto>()
 
         assertEquals(HttpStatusCode.OK, changed.status)
-        assertCookieCleared(changed, "dynamic_bot_webui_session")
-        assertCookieCleared(changed, "dynamic_bot_webui_csrf")
+        assertCookieCleared(changed, "hoshimi_cat_bot_webui_session")
+        assertCookieCleared(changed, "hoshimi_cat_bot_webui_csrf")
         assertEquals(HttpStatusCode.OK, logout.status)
-        assertCookieCleared(logout, "dynamic_bot_webui_session")
-        assertCookieCleared(logout, "dynamic_bot_webui_csrf")
+        assertCookieCleared(logout, "hoshimi_cat_bot_webui_session")
+        assertCookieCleared(logout, "hoshimi_cat_bot_webui_csrf")
         assertFalse(sessionAfterLogout.authenticated)
     }
 
@@ -229,8 +229,8 @@ class WebUiAuthRoutesTest {
             contentType(ContentType.Application.Json)
             setBody(WebUiLoginRequestDto(password = password))
         }
-        val sessionCookie = response.setCookieFor("dynamic_bot_webui_session").substringBefore(";")
-        val csrfCookie = response.setCookieFor("dynamic_bot_webui_csrf").substringBefore(";")
+        val sessionCookie = response.setCookieFor("hoshimi_cat_bot_webui_session").substringBefore(";")
+        val csrfCookie = response.setCookieFor("hoshimi_cat_bot_webui_csrf").substringBefore(";")
         return LoginCookies(
             sessionCookie = sessionCookie,
             csrfCookie = csrfCookie,

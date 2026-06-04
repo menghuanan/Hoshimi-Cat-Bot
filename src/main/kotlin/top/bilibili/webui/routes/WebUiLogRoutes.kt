@@ -54,7 +54,7 @@ fun Route.registerWebUiLogRoutes(
         val safeFileSourceId = sourceId.replace(Regex("""[^A-Za-z0-9._-]"""), "_").ifBlank { "logs" }
         call.response.header(
             HttpHeaders.ContentDisposition,
-            """attachment; filename="dynamic-bot-${safeFileSourceId}.log"""",
+            """attachment; filename="hoshimi-cat-bot-${safeFileSourceId}.log"""",
         )
         call.respondText(text, ContentType.Text.Plain.withCharset(Charsets.UTF_8))
     }

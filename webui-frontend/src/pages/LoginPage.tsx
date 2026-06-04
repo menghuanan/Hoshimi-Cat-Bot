@@ -92,7 +92,7 @@ export function LoginPage() {
     <main className="min-h-screen bg-slate-100 text-slate-950">
       <section className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">dynamic-bot</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Hoshimi-Cat-Bot</p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">{mustChangePassword ? '修改初始密码' : '登录'}</h1>
           {mustChangePassword ? (
             <form className="mt-6 space-y-4" onSubmit={submitPasswordChange}>

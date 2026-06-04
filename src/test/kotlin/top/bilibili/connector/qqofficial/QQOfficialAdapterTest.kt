@@ -539,7 +539,7 @@ class QQOfficialAdapterTest {
                         put("session_id", "session-demo")
                         put("user", buildJsonObject {
                             put("id", "bot_openid_demo")
-                            put("username", "dynamic-bot")
+                            put("username", "hoshimi-cat-bot")
                             put("bot", true)
                         })
                         put("shard", buildJsonArray {

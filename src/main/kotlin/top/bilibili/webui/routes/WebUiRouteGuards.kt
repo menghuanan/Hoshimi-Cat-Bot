@@ -14,8 +14,8 @@ import top.bilibili.webui.auth.WebUiAuthenticatedSession
 import top.bilibili.webui.model.WebUiAuthResponseDto
 import top.bilibili.webui.service.WebUiAuditService
 
-internal const val WebUiSessionCookieName = "dynamic_bot_webui_session"
-internal const val WebUiCsrfCookieName = "dynamic_bot_webui_csrf"
+internal const val WebUiSessionCookieName = "hoshimi_cat_bot_webui_session"
+internal const val WebUiCsrfCookieName = "hoshimi_cat_bot_webui_csrf"
 internal const val WebUiCsrfHeaderName = "X-CSRF-Token"
 
 /**

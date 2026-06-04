@@ -44,7 +44,7 @@ fun Route.registerWebUiApiRoutes(
     get("/api/health") {
         call.respond(
             WebUiHealthResponse(
-                service = "dynamic-bot-webui",
+                service = "hoshimi-cat-bot-webui",
                 phase = "foundation-phase2",
                 status = "ok",
             ),
