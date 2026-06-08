@@ -90,3 +90,18 @@
 ## 当前迭代焦点
 
 见 [`context/current-state.md`](context/current-state.md)。
+
+## 当前文档补齐状态
+
+本轮文档体系按当前代码入口补齐时，长期维护文档的覆盖边界如下：
+
+| 子系统 | 当前代码入口 | 长期维护文档 | 补齐重点 |
+| --- | --- | --- | --- |
+| 后端主程序 | `src/main/kotlin/top/bilibili` | `architecture/*`、`modules/*`、`domain/*`、`operations/*` | 启动、配置、平台、服务、Tasker、Skia、WebUI 和资源生命周期 |
+| WebUI 服务端 | `src/main/kotlin/top/bilibili/webui` | `modules/webui.md`、`modules/config.md`、`architecture/layer-contracts.md` | 路由矩阵、cookie/CSRF/确认密码、配置写入、订阅编辑、日志白名单和审计 |
+| WebUI 前端 | `webui-frontend/src`、`webui-frontend/e2e` | `modules/webui-frontend.md`、`development/build-ci-release.md` | 页面、hook、payload、router、主题、确认弹窗、Vitest/Playwright 与 Vite 构建输出 |
+| 平台适配 | `connector/*`、`config/NapCatConfig.kt` | `modules/connector.md`、`domain/platform-adapters.md`、ADR-001 | OneBot11 通用层、NapCat、LlBot、QQ 官方、能力 guard 和观测快照 |
+| 资源与绘图 | `draw/*`、`skia/*`、`src/main/resources/*` | `modules/draw.md`、`modules/skia.md`、`modules/resources.md` | DrawingSession、图片降级、字体/图标/静态产物和 native 生命周期 |
+| 后台任务 | `tasker/*`、`TaskBootstrapService`、`TaskResourcePolicyRegistry` | `modules/tasker.md`、`architecture/invariants.md`、`operations/monitoring.md` | 启动顺序、worker 自愈、队列容量、推送统计、清理和守护 |
+
+`docs/plans/`、`docs/release/`、`docs/规则/` 和 `docs/过期文档/` 中已有内容本轮不作为当前规则改写来源；若需要追溯历史，只能回到当前维护文档确认是否已经落地。

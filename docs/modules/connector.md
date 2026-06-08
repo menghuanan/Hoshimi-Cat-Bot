@@ -33,6 +33,22 @@ Connector 模块把平台 vendor 协议转换为项目平台中立模型，并�
 | LlBot vendor | `onebot11/vendors/llbot/*` | vendor 差异只能通过 adapter/transport 封装，不得泄露到 service/tasker。 |
 | QQ Official | `qqofficial/*` | 新能力必须补齐 `declaredCapabilities()` 和发送降级路径。 |
 
+## 当前适配器矩阵
+
+| adapter kind | 平台类型 | 代码入口 | 发送/接收边界 | 当前能力要点 |
+| --- | --- | --- | --- | --- |
+| `ONEBOT11` | `ONEBOT11` | `GenericOneBot11Adapter`、`KtorOneBot11Transport`、`OneBot11Models.kt` | 通用 OneBot11 WebSocket 与 action 请求 | 保守支持文本发送；图片和 @全体按能力 guard 降级 |
+| `NAPCAT` | `ONEBOT11` | `NapCatAdapter`、`NapCatClient`、`OneBotModels.kt` | NapCat vendor DTO 只停留在 vendor 包内 | 支持 NapCat 配置、sendMode、连接重试和运行态观测 |
+| `LLBOT` | `ONEBOT11` | `LlBotAdapter`、`LlBotClient`、`LlBotTransport`、`LlBotModels.kt` | LlBot vendor 模型只在 vendor 包内转换 | 与 NapCat 分离 client/transport，业务层只看中立能力 |
+| `QQ_OFFICIAL` | `QQ_OFFICIAL` | `QQOfficialAdapter`、`QQOfficialTransport`、`QQOfficialConfig` | 非 OneBot11 平台，必须使用 `PlatformContact` 字符串 ID | 新能力必须显式声明，并提供不支持时的降级或拒绝结果 |
+
+## 运行态观测
+
+- `PlatformRuntimeStatus` 只描述连接是否可用和重连次数，供 Dashboard、ProcessGuardian 和业务 guard 使用。
+- `PlatformObservabilitySnapshot` 聚合 adapter、transport、WebSocket session、HTTP client、dispatcher 和 note；实现层需要清洗或避免暴露 token、header、完整 URL 中的敏感参数。
+- 新增 transport 或 vendor client 时，必须提供 `runtimeObservability()`，即使当前只能返回 `PlatformObservabilitySnapshot.empty(note)`，也要说明不可观测原因。
+- 停机后 `PlatformConnectorManager.currentAdapter()` 不得隐式创建新实例；发送失败应表现为平台未初始化或不可用，而不是重新拉起连接。
+
 ## 生命周期规则
 
 `PlatformConnectorManager` 状态：

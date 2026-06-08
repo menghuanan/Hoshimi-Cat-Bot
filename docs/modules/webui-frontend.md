@@ -32,6 +32,26 @@
 - 组装设置、订阅和日志的页面级 payload，而不直接接触后端文件格式。
 - 通过 Vitest 和 Playwright 验证前端契约、页面行为和 bundled runtime。
 
+## 页面与状态入口
+
+| 页面/能力 | 代码入口 | 后端契约 | 维护要点 |
+| --- | --- | --- | --- |
+| 登录与改密 | `pages/LoginPage.tsx`、`api/auth.ts`、`types/auth.ts` | `/api/auth/*` | 登录结果只依赖 cookie-backed session，不把 bearer token 存入浏览器状态 |
+| 仪表盘 | `pages/DashboardPage.tsx`、`hooks/useRuntimeSummary.ts`、`types/runtime.ts` | `/api/runtime/summary` | 展示生命周期、账号、平台连接、推送统计、宿主 CPU/内存/磁盘和最近推送记录 |
+| 设置 | `pages/SettingsPage.tsx`、`settings/*`、`api/settings.ts` | `/api/config/*` | schema 控制字段、分组、校验和 payload，保存需要确认密码 |
+| 订阅 | `pages/SubscriptionsPage.tsx`、`components/subscriptions/*`、`hooks/useSubscriptions.ts`、`subscriptions/*` | `/api/subscriptions*` | 支持动态、分组和番剧卡片，以及 targets、uids、filters、templates、atall、theme 子编辑器 |
+| 日志 | `pages/LogsPage.tsx`、`hooks/useLogs.ts`、`api/logs.ts`、`types/logs.ts` | `/api/logs/*` | sourceId 来自后端白名单，清空日志需要确认密码，自动刷新状态保存在 cookie |
+| 页面壳与导航 | `components/Shell.tsx`、`router/webuiRouter.ts`、`contexts/WebUiNavigationContext.tsx` | Ktor 静态路由 | `/login` 是独立路径，其他页面可 hash 切换并支持直接刷新 |
+| 高风险确认 | `contexts/ConfirmationContext.tsx`、`hooks/useHighRiskConfirmation.ts` | 所有写操作 DTO 的 `confirmationPassword` | 确认弹窗是前端交互壳，真正授权只以后端当前密码校验为准 |
+
+## 请求与 payload 契约
+
+- 所有 JSON 请求必须经过 `src/api/http.ts` 的统一入口，unsafe 方法自动携带 CSRF 头。
+- `settings/settingsSchema.ts` 是设置页字段来源；`settings/settingsPayload.ts` 负责把表单值转换为后端 DTO。
+- `subscriptions/subscriptionPayloads.ts` 是订阅写操作 payload 来源；新增订阅子编辑器时必须同步 hook、payload、类型和后端 DTO。
+- `utils/errorMessages.ts` 负责把 HTTP、英文异常和密码策略错误归一成可见文案；页面不应直接展示原始 exception 对象。
+- `utils/storage.ts` 只读取前端所需 cookie，例如 CSRF token；不能尝试读取 HttpOnly session cookie。
+
 ## 日常开发入口
 
 - `cd webui-frontend; npm run dev`
@@ -59,6 +79,7 @@
 - `vite.config.ts` 固定 `src` 为根目录，并把构建产物输出到后端静态资源目录。
 - `playwright.config.ts` 只针对 bundled runtime 的 mock 路径运行测试。
 - 前端页面只处理 API DTO、表单 payload 和浏览器状态，不写 `bot.yml`、`BiliConfig.yml` 或 `BiliData.yml`。
+- 当前前端依赖 React 19、TypeScript 6、Vite 8、Tailwind CSS 4、Vitest 3 和 Playwright 1；升级这些工具时必须同步检查 lint、build、Vitest、Playwright 和后端静态资源打包。
 
 ## 测试与验证
 

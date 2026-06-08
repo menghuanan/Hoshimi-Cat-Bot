@@ -25,6 +25,39 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - 记录认证、配置保存和高风险动作审计。
 - 将 React 前端构建产物打包到 `src/main/resources/webui/react`，供 Ktor 静态路由直接服务；当 `bot.yml.webui.static_dir` 指向有效外部目录时，`WebUiConfig.toSettings()` 会优先解析该目录，`WebUiStaticRoutes` 也会优先从那里提供 `/login`、`/` 和 `/assets`，便于独立部署和前端调试；前端源码与测试见 `webui-frontend` 模块。
 
+## 当前路由矩阵
+
+| 路由组 | 入口 | 认证要求 | 关键约束 |
+| --- | --- | --- | --- |
+| 健康检查 | `GET /api/health` | 无 session 要求 | 只返回 WebUI 基础骨架状态，不暴露运行态细节 |
+| 认证 | `/api/auth/session`、`/api/auth/login`、`/api/auth/change-password`、`/api/auth/logout` | login 无 session；改密和登出需要 session | session 只经 HttpOnly cookie，CSRF 经可读 cookie 和 `X-CSRF-Token` 双提交 |
+| 运行态 | `GET /api/runtime/summary` | 需要 session | 只读即时快照，文本会脱敏路径、内网地址和凭据键值 |
+| 配置读取 | `GET /api/config/bili-config`、`/api/config/bili-data`、`/api/config/bot` | 需要 session | facade 输出字段级快照和 snapshot token，不向前端暴露可变对象 |
+| 配置写入 | `POST /api/config/bili-config`、`/api/config/bili-data`、`/api/config/bot` | session、CSRF、高风险确认 | 按文件边界走 `WebUiConfigWriteFacade`，保存结果映射到 OK、BadRequest、Conflict 或 InternalServerError |
+| 订阅概览 | `GET /api/subscriptions` | 需要 session | 由 `WebUiConfigFacade.readSubscriptions()` 汇总动态、分组和番剧卡片 |
+| 订阅编辑 | `/api/subscriptions/{id}/targets|uids|filters|templates|atall|theme` | 读需要 session；写需要 session、CSRF、高风险确认 | key 使用 path-safe 格式，写入后统一经 `BiliConfigManager.saveData()` 或配置/数据双保存 |
+| 日志 | `/api/logs/sources`、`/api/logs/{sourceId}`、`/api/logs/{sourceId}/export`、`/api/logs/{sourceId}/clear` | 读需要 session；清空需要高风险确认 | sourceId 必须命中白名单，导出文件名只由 sourceId 派生 |
+| 动作 | `/api/actions/reload-config`、`/api/actions/shutdown`、`/api/actions/request-restart` | session、CSRF、高风险确认 | HTTP 层只做 guard 和 facade 调用，风险结果必须写审计 |
+
+## 认证与高风险确认
+
+- `WebUiAuthService` 组合凭据存储、密码策略、token 生命周期、登录节流和高风险确认窗口，不承载 HTTP 路由细节。
+- 登录成功只写 `hoshimi_cat_bot_webui_session` 与 `hoshimi_cat_bot_webui_csrf` cookie；route guard 不再信任 bearer header。
+- unsafe HTTP 方法必须同时通过 session cookie、CSRF cookie 与 `X-CSRF-Token` 头校验。
+- 首次默认密码或强制改密状态下，只允许进入改密相关路径；其他受保护路由返回 `password change required`。
+- 高风险确认以当前密码校验为准，成功后只在当前 session token 上缓存短时授权；改密会清空 token 与确认窗口。
+- 登录失败会同时推进单 IP 和全局 backoff，外部响应保持通用错误，避免泄露凭据状态。
+
+## 订阅编辑边界
+
+| 卡片类型 | `itemId` | 可编辑子项 | 写入边界 |
+| --- | --- | --- | --- |
+| 单 UP 动态 | `dynamic:<uid>` | 推送群、过滤器、模板、@全体、主题色 | 动态订阅按联系人 subject 展开，过滤/模板/主题可按目标群聊收窄 |
+| 分组 | `group:<name>` | 推送群、订阅 ID、过滤器、模板、@全体、主题色 | 分组订阅使用 `groupRef:<name>` 作为模板 scope，订阅 ID 可是 UID 或 ss/md/ep 番剧标识 |
+| 番剧 | `bangumi:<seasonId>` | 推送群 | 番剧写入仍复用 PGC service，WebUI 不直接操作 B 站关注接口 |
+
+过滤器 key、模板 key 都使用 `|` 分隔的无斜杠格式，供 REST path 安全传递。删除附属配置时必须同步回收空 UID 桶和空 subject 桶，避免页面误判仍有配置。
+
 ## 关键流程
 
 1. `BotConfig.webui` 生成 `WebUiSettings`，决定是否启用、监听地址、端口和凭据文件位置。
@@ -54,8 +87,15 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 ## 测试与验证
 
 - `./gradlew test --tests top.bilibili.webui.server.WebUiManagerTest`
-- `./gradlew test --tests top.bilibili.webui.routes.WebUiRouteSmokeTest`
+- `./gradlew test --tests top.bilibili.webui.WebUiRouteSmokeTest`
 - `./gradlew test --tests top.bilibili.webui.auth.WebUiAuthServiceTest`
+- `./gradlew test --tests top.bilibili.webui.auth.WebUiTokenServiceTest`
+- `./gradlew test --tests top.bilibili.webui.auth.WebUiCredentialStoreTest`
+- `./gradlew test --tests top.bilibili.webui.service.WebUiSubscriptionManagementFacadeTest`
+- `./gradlew test --tests top.bilibili.webui.service.WebUiConfigWriteFacadeTest`
+- `./gradlew test --tests top.bilibili.webui.service.WebUiRuntimeFacadeTest`
+- `./gradlew test --tests top.bilibili.webui.service.WebUiLogFacadeTest`
+- `./gradlew test --tests top.bilibili.webui.service.WebUiAuditServiceTest`
 - `./gradlew processResources`
 
 ## 禁止事项

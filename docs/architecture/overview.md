@@ -58,6 +58,8 @@ dynamic-bot 是一个常驻运行的 B 站动态/直播推送机器人。它通�
 
 **关键约束**：WebUI 只能通过 facade 和 manager 访问配置、数据和日志，不能直写文件、直读任意路径或绕过确认审计。
 
+**当前范围**：服务端路由覆盖 `/api/auth/*`、`/api/runtime/summary`、`/api/config/*`、`/api/subscriptions*`、`/api/logs/*` 和 `/api/actions/*`；前端页面覆盖登录、仪表盘、设置、订阅和日志。写操作必须同时通过 session、CSRF 和当前密码确认。
+
 ### Tasker 层
 
 **代码位置**：`tasker/*`
@@ -120,6 +122,8 @@ dynamic-bot 是一个常驻运行的 B 站动态/直播推送机器人。它通�
 - BiliClient retry slot、平台 transport、Skia 队列。
 - Linux 下 `/proc/self/status`、`smaps_rollup` 和可降级 NMT summary。
 - RSS 软限制和可选重启退出码。
+
+WebUI Dashboard 通过 `WebUiRuntimeFacade` 读取同一批公开快照，并额外展示宿主 CPU、内存、磁盘、平台 WebSocket、今日推送统计和最近推送记录；Dashboard 文本必须脱敏本机路径、内网地址和凭据键值。
 
 ## 架构风险
 

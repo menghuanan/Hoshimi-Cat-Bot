@@ -36,6 +36,22 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 10. `SkiaCleanupTasker`
 11. `ProcessGuardian`
 
+## 当前任务职责表
+
+| Tasker | 类型 | 主要职责 | 关键资源 |
+| --- | --- | --- | --- |
+| `ListenerTasker` | 长生命周期 worker | 消费平台入站消息并交给 service 分发 | 平台入口、`messageChannel` |
+| `DynamicCheckTasker` | 周期轮询 | 检查动态更新，支持手动 `/check` | 共享 `BiliClient`、`dynamicChannel` |
+| `LiveCheckTasker` | 周期轮询 | 检查开播状态 | 共享 `BiliClient`、`liveChannel` |
+| `LiveCloseCheckTasker` | 周期轮询 | 检查下播状态 | 共享 `BiliClient`、`liveChannel` |
+| `DynamicMessageTasker` | channel consumer | 把动态数据构造成业务消息 | `dynamicChannel`、绘图/模板链路 |
+| `LiveMessageTasker` | channel consumer | 把直播状态构造成业务消息 | `liveChannel`、模板链路 |
+| `SendTasker` | channel consumer + 内部队列 | 选择模板、渲染消息段、执行平台发送和降级 | `messageChannel`、容量 100 的发送队列、推送统计 |
+| `CacheClearTasker` | 周期维护 | 清理图片缓存 | `ImageCache` |
+| `LogClearTasker` | 周期维护 | 清理日志文件 | `logs/*` |
+| `SkiaCleanupTasker` | 周期维护 | 触发 Skia 普通或紧急清理 | `SkiaManager`、Skia native cache |
+| `ProcessGuardian` | 周期守护 | 汇总健康、资源、平台、NMT/RSS、channel 和 tasker 自愈 | 管理/观测快照，不直接替代资源 owner |
+
 ## 关键流程
 
 启动阶段由 `TaskBootstrapService` 按固定顺序创建并启动 tasker，每个 tasker 启动前必须能从 `TaskResourcePolicyRegistry` 查到资源策略。长生命周期循环通过 `launchManagedWorker` 接入自愈和退避；停机时由 `ResourceSupervisor` 按资源分区回收，tasker 不能自行绕过分区顺序。

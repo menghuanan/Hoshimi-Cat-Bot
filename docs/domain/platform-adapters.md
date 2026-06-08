@@ -114,6 +114,23 @@
 - 发送前能力判断应通过 `PlatformCapabilityService`。
 - @全体失败时，`SendTasker` 会降级为普通消息并节流通知管理员。
 
+当前能力表：
+
+| 能力 | 中立入口 | 业务期望 | 不支持或临时不可用时 |
+| --- | --- | --- | --- |
+| 文本发送 | `PlatformAdapter.sendMessage()`、`MessageGatewayProvider` | 所有平台都应尽量支持 | 返回 `Unsupported` 或 `Degraded`，调用方不得直连 vendor |
+| 图片发送 | `OutgoingPart.Image`、`ImageSource` | 支持本地文件、远程 URL 或二进制来源的一个子集即可 | `PlatformMessageSupport` 和 gateway 应降级为文本或跳过图片 |
+| 回复 | `OutgoingPart.Reply` | 仅平台支持时使用 | 不支持时不能把 reply 当普通文本拼接进协议字段 |
+| @全体 | `OutgoingPart.MentionAll`、`PlatformCapabilityService.guardAtAllInContact()` | 只在群聊且平台允许时发送 | `SendTasker` 降级普通消息并按冷却通知管理员 |
+| 链接解析 | `PlatformCapability.LINK_RESOLVE` | 由业务策略判断是否响应入站文本 | 平台不支持入站或链接解析时应在入口拒绝，不绕过策略 |
+
+## 运行态观测契约
+
+- adapter 必须返回 `PlatformRuntimeStatus`，至少包含 connected 和 reconnectAttempts。
+- transport/client 应返回 `PlatformObservabilitySnapshot`，用于 WebUI Dashboard 和 `ProcessGuardian` 汇总连接、WebSocket session、HTTP client 与 note。
+- 观测快照只用于运行态诊断，不得作为业务权限来源；权限仍以 `CapabilityGuardResult` 和配置为准。
+- 快照文本不得包含 token、cookie、完整 authorization header 或未脱敏的敏感 URL。
+
 ## 联系人 subject
 
 当前项目推荐统一 subject 格式：
@@ -135,4 +152,3 @@
 - [ ] 声明 `declaredCapabilities()` 并实现运行时 guard。
 - [ ] 增加 connector、capability、message gateway 回归测试。
 - [ ] 更新本文件、[`../architecture/decisions/adr-001-platform-adapter.md`](../architecture/decisions/adr-001-platform-adapter.md) 和 [`../modules/connector.md`](../modules/connector.md)。
-

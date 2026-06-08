@@ -128,6 +128,35 @@ Skia native memory 证据测试：
 
 修改 `utils/*`、字体、图片、SVG、日志配置或资源路径时必须运行相关测试。若新增资源影响发行包，必须同时检查打包产物。
 
+### WebUI 服务端
+
+代表测试：
+
+- `WebUiAuthServiceTest`
+- `WebUiTokenServiceTest`
+- `WebUiCredentialStoreTest`
+- `WebUiPasswordPolicyTest`
+- `WebUiRouteSmokeTest`
+- `WebUiAuthRoutesTest`
+- `WebUiManagerTest`
+- `WebUiSubscriptionManagementFacadeTest`
+- `WebUiConfigWriteFacadeTest`
+- `WebUiRuntimeFacadeTest`
+- `WebUiLogFacadeTest`
+- `WebUiAuditServiceTest`
+
+新增 WebUI facade 时应优先补同层单元测试，再补路由测试。修改认证、CSRF、高风险确认、日志白名单或配置写入时必须运行对应服务端测试。
+
+### WebUI 前端
+
+代表测试：
+
+- `webui-frontend/src/**/*.test.ts`
+- `webui-frontend/src/**/*.test.tsx`
+- `webui-frontend/e2e/*`
+
+Vitest 和 Testing Library 验证 hook、payload、错误文案和页面契约。Playwright 验证 bundled runtime，默认通过 `webuiApiMock` 固定后端契约，不依赖生产端口或真实凭据。修改前端 API DTO、payload、router 或静态资源输出时，应至少运行 `npm run test` 和 `npm run build`；涉及页面流和 bundled runtime 时再运行 `npm run test:e2e`。
+
 ## 查询 checklist
 
 - [ ] 是否已确认测试属于哪个模块或运行环境？
@@ -157,3 +186,4 @@ Skia native memory 证据测试：
 - `git diff -- docs` 人工确认。
 
 不要把 `docs` 内容复制进 `src/test`。
+当前维护文档位于被 `.gitignore` 忽略的 docs 分区时，仍要按 UTF-8 读取、修改和检查链接；不能因为未跟踪就跳过验证。

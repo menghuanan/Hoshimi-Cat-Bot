@@ -39,6 +39,8 @@
 - Kotlin、依赖和插件升级必须说明兼容影响，并优先运行最小相关测试，再运行完整测试。
 - 新增 Gradle task 必须有清晰输入、输出和是否参与 CI/Release 的说明。
 - 变更 `gradle.properties` 时必须确认 JVM 参数是否只影响构建期，还是也影响运行期。
+- `webui-frontend` 是独立 Node/Vite 工程；`npm run build` 会把 React 静态产物输出到 `src/main/resources/webui/react`，随后再由 Gradle `processResources` 打入后端发行包。
+- 前端依赖、TypeScript、Tailwind、Vite 或 Playwright 升级时，必须同时验证 `npm run lint`、`npm run test`、`npm run build` 和 `npm run test:e2e` 的影响。
 
 ## CI 约束
 
@@ -52,6 +54,7 @@
 - `docker-compose.yml` 变更必须考虑已有用户的 volume、环境变量和升级兼容。
 - 发布 workflow 变更必须同步核对 release notes、tag 命名和产物命名。
 - 裸机发布包若内置 `jlink` runtime，Windows/Linux 必须分别在对应平台 runner 上打包，再聚合到 GitHub Release。
+- 若发布产物包含 WebUI 静态资源，必须确认 `src/main/resources/webui/react/index.html` 和 `assets/app.js`、`assets/app.css` 来自当前前端构建，而不是手工编辑或旧产物残留。
 
 ## 查询 checklist
 

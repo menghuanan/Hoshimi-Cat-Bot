@@ -35,3 +35,9 @@
 ## 执行说明
 
 如果以上规则与临时实现习惯冲突，以本文件要求为准；除非用户在当前对话中明确要求例外处理。
+
+## 项目文档体系现状
+
+当前仓库的长期维护文档以 `docs/AGENTS.md` 为项目级索引，覆盖 Kotlin/JVM 主程序、OneBot11/NapCat/LlBot/QQ 官方平台适配、Skia/Skiko 绘图、Tasker 生命周期、WebUI 服务端、React WebUI 前端、构建发布和运维监控等子系统。
+
+维护或补齐文档时，必须以当前源码入口为依据：后端源码位于 `src/main/kotlin/top/bilibili`，前端源码位于 `webui-frontend/src`，运行资源位于 `src/main/resources`，测试入口位于 `src/test/kotlin` 与 `webui-frontend` 的 Vitest/Playwright 测试。`docs/plans`、`docs/release`、`docs/规则` 和 `docs/过期文档` 只能按 `docs/AGENTS.md` 的分区边界使用，不得覆盖当前维护文档。

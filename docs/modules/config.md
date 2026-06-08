@@ -29,6 +29,18 @@ Config 模块负责配置文件、业务数据、平台配置和迁移。当前�
 | `config/BiliData.yml` | `BiliConfigManager` | 订阅、分组、模板策略等业务数据 |
 | `config/bot.yml` | `ConfigManager` / `BotConfigFileStore` | 平台接入配置、WebUI 启动参数、targets、admins、first_run_flag |
 
+## 当前配置模型重点
+
+| 模型 | 代码入口 | 当前职责 |
+| --- | --- | --- |
+| `BiliConfig` | `BiliConfig.kt` | 主业务开关、账号 cookie、检查间隔、推送模板、图片质量、主题色、缓存、链接解析等 |
+| `BiliData` | `BiliData.kt` | 动态订阅、分组、番剧、过滤器、模板策略、@全体、链接解析黑名单、版本号 |
+| `BiliDataWrapper` | `BiliDataWrapper.kt` | 当前与 legacy 数据 wrapper 的序列化/反序列化和迁移桥接 |
+| `BotConfig` | `config/NapCatConfig.kt` | 平台选择、OneBot11/NapCat/LlBot/QQ 官方配置、targets、admins、WebUI 参数 |
+| `WebUiConfig` | `webui/config/WebUiConfig.kt` | `bot.yml.webui` 运行参数标准化，包括 enabled、host、port、凭据文件、token TTL 和外部静态目录 |
+
+`BotConfig.selectedAdapterKind()` 和 `BotConfig.validateSelectedPlatform()` 是平台配置能否启动的关键入口；新增平台字段不能只更新 YAML 模型，还必须更新默认值、校验、标准化写回和平台文档。
+
 ## 迁移规则
 
 `BiliConfigManager`：
@@ -46,6 +58,7 @@ Config 模块负责配置文件、业务数据、平台配置和迁移。当前�
 - 兼容 legacy 顶层 `napcat` 块。
 - 写回时只保留标准 `platform` 结构。
 - 写回时同时保留 `webui` 运行参数，避免 WebUI 启动配置丢失。
+- 标准化写回时应保留 `targets`、`admins`、`first_run_flag` 和 `webui`，避免平台迁移覆盖运行面配置。
 
 ## 关键流程
 
