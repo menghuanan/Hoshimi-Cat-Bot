@@ -45,10 +45,13 @@ class TransApi(private val appid: String, private val securityKey: String) {
 var jp =
     "[ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろゎわゐゑをんゔゕゖ゚゛゜ゝゞゟ゠ァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴヵヶヷヸヹヺ・ーヽヾヿ㍿]".toRegex()
 
-private val api = TransApi(
-    BiliConfigManager.config.translateConfig.baidu.APP_ID,
-    BiliConfigManager.config.translateConfig.baidu.SECURITY_KEY
-)
+/**
+ * 每次翻译前按当前运行态配置创建百度客户端，避免热重载后继续使用旧签名密钥。
+ */
+private fun currentBaiduTranslateApi(): TransApi {
+    val baidu = BiliConfigManager.config.translateConfig.baidu
+    return TransApi(baidu.APP_ID, baidu.SECURITY_KEY)
+}
 
 //文本翻译
 /**
@@ -64,6 +67,7 @@ fun trans(text: String): String? {
             }
             if (msg.contains(jp) || !msg.contains("[\u4e00-\u9fa5]".toRegex())) {
                 try {
+                    val api = currentBaiduTranslateApi()
                     val resMsg = api.getTransResult(msg, "auto", "zh")
                     if (resMsg == null) {
                         logger.error("翻译数据获取失败")

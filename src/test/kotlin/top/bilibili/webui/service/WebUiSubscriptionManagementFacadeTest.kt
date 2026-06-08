@@ -13,6 +13,8 @@ import top.bilibili.RegularFilter
 import top.bilibili.SubData
 import top.bilibili.TemplatePolicy
 import top.bilibili.TypeFilter
+import top.bilibili.BiliConfigManager
+import top.bilibili.core.deepCopyForRuntimeSnapshot
 import top.bilibili.webui.model.WebUiSubscriptionCreateRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionFilterSaveRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionTemplateSaveRequestDto
@@ -37,6 +39,7 @@ class WebUiSubscriptionManagementFacadeTest {
     private val originalSubscriptionCardUpdatedAt = BiliData.subscriptionCardUpdatedAt.toMutableMap()
     private val originalGroup = BiliData.group.toMutableMap()
     private val originalBangumi = BiliData.bangumi.toMutableMap()
+    private val originalConfig = runCatching { BiliConfigManager.config.deepCopyForRuntimeSnapshot() }.getOrNull()
 
     @AfterTest
     fun restoreBiliDataState() {
@@ -51,6 +54,7 @@ class WebUiSubscriptionManagementFacadeTest {
         BiliData.subscriptionCardUpdatedAt = originalSubscriptionCardUpdatedAt.toMutableMap()
         BiliData.group = originalGroup.toMutableMap()
         BiliData.bangumi = originalBangumi.toMutableMap()
+        originalConfig?.let { BiliConfigManager.installConfigRuntimeSnapshot(it) }
     }
 
     /**
@@ -387,6 +391,49 @@ class WebUiSubscriptionManagementFacadeTest {
     }
 
     /**
+     * 持久化失败时必须恢复旧运行态过滤器，避免前端失败但后续推送读取到半提交内存。
+     */
+    @Test
+    fun `filter save failure should roll back runtime data`() = runBlocking {
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            filter = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(
+                    123L to DynamicFilter(
+                        regularSelect = RegularFilter(FilterMode.BLACK_LIST, mutableListOf("旧规则")),
+                    ),
+                ),
+            )
+            subscriptionCardUpdatedAt = mutableMapOf("dynamic:123" to 1000L)
+        }
+        val facade = WebUiSubscriptionManagementFacade(saveDataAction = { false })
+
+        val failed = facade.saveSubscriptionFilter(
+            "dynamic:123",
+            WebUiSubscriptionFilterSaveRequestDto(
+                key = "",
+                kind = "regex",
+                mode = "black",
+                content = "新规则",
+                targetGroups = listOf("onebot11:group:10001"),
+            ),
+        )
+
+        assertFalse(failed.success)
+        assertEquals(
+            listOf("旧规则"),
+            BiliData.filter.getValue("onebot11:group:10001").getValue(123L).regularSelect.list,
+        )
+        assertEquals(1000L, BiliData.subscriptionCardUpdatedAt["dynamic:123"])
+    }
+
+    /**
      * 分组卡片的过滤器数量按 UID 绑定全量统计，编辑页也要列出同一批底层过滤器避免卡片和弹窗数量不一致。
      */
     @Test
@@ -614,6 +661,54 @@ class WebUiSubscriptionManagementFacadeTest {
         assertEquals("{name}", runtimeConfig.templateConfig.dynamicPush["WebDy"])
         assertEquals(listOf("WebDy"), BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).templates)
         assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey("onebot11:group:10002"))
+    }
+
+    /**
+     * 模板保存同时改主配置和策略表，任一持久化失败都必须恢复两边内存态。
+     */
+    @Test
+    fun `template save failure should roll back config and runtime data`() {
+        val runtimeConfig = BiliConfig()
+        BiliConfigManager.installConfigRuntimeSnapshot(runtimeConfig)
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            dynamicTemplatePolicyByScope = mutableMapOf(
+                "onebot11:group:10001" to mutableMapOf(
+                    123L to TemplatePolicy(templates = mutableListOf("OldTpl")),
+                ),
+            )
+            subscriptionCardUpdatedAt = mutableMapOf("dynamic:123" to 2000L)
+        }
+        val facade = WebUiSubscriptionManagementFacade(
+            configProvider = { BiliConfigManager.config },
+            saveConfigAction = { true },
+            saveDataAction = { false },
+        )
+
+        val failed = facade.saveSubscriptionTemplate(
+            "dynamic:123",
+            WebUiSubscriptionTemplateSaveRequestDto(
+                key = "",
+                type = "dynamic",
+                name = "WebDy",
+                content = "{name}",
+                targetGroups = listOf("onebot11:group:10001"),
+            ),
+        )
+
+        assertFalse(failed.success)
+        assertFalse(BiliConfigManager.config.templateConfig.dynamicPush.containsKey("WebDy"))
+        assertEquals(
+            listOf("OldTpl"),
+            BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).templates,
+        )
+        assertEquals(2000L, BiliData.subscriptionCardUpdatedAt["dynamic:123"])
     }
 
     /**

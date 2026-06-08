@@ -138,6 +138,7 @@ object BiliBiliBot : CoroutineScope {
         config = ConfigManager.botConfig
         top.bilibili.data.BiliImageTheme.reload()
         top.bilibili.data.BiliImageQuality.reload()
+        top.bilibili.draw.FontManager.reloadRuntimeConfig()
     }
 
     /**

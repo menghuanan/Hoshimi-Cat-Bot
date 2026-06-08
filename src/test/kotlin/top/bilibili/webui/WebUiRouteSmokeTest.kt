@@ -869,6 +869,7 @@ class WebUiRouteSmokeTest {
                 ),
             )
         }
+        // 单文件兼容路由逐个等待终态，避免生产 debounce 窗口让 smoke test 读到后续 job 的排队态。
         val staleSnapshot = createWebUiClient().post("/api/config/bili-config") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -885,6 +886,7 @@ class WebUiRouteSmokeTest {
                 ),
             )
         }
+        val staleJob = pollConfigSaveJob(staleSnapshot.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
         val dataSaved = createWebUiClient().post("/api/config/bili-data") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -897,6 +899,7 @@ class WebUiRouteSmokeTest {
                 ),
             )
         }
+        val dataJob = pollConfigSaveJob(dataSaved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
         val botStaleSnapshot = createWebUiClient().post("/api/config/bot") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -913,6 +916,7 @@ class WebUiRouteSmokeTest {
                 ),
             )
         }
+        val botStaleJob = pollConfigSaveJob(botStaleSnapshot.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
         val botSaved = createWebUiClient().post("/api/config/bot") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -929,6 +933,7 @@ class WebUiRouteSmokeTest {
                 ),
             )
         }
+        val botJob = pollConfigSaveJob(botSaved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
         val saved = createWebUiClient().post("/api/config/bili-config") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -945,11 +950,6 @@ class WebUiRouteSmokeTest {
                 ),
             )
         }
-
-        val staleJob = pollConfigSaveJob(staleSnapshot.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
-        val dataJob = pollConfigSaveJob(dataSaved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
-        val botStaleJob = pollConfigSaveJob(botStaleSnapshot.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
-        val botJob = pollConfigSaveJob(botSaved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
         val savedJob = pollConfigSaveJob(saved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
 
         assertEquals(HttpStatusCode.Forbidden, missingConfirmation.status)

@@ -10,6 +10,7 @@ import top.bilibili.connector.PlatformConnectorReloadResult
 import top.bilibili.connector.PreparedPlatformConnector
 import top.bilibili.data.BiliImageQuality
 import top.bilibili.data.BiliImageTheme
+import top.bilibili.draw.FontManager
 import top.bilibili.service.closeServiceClient
 import top.bilibili.tasker.BiliCheckTasker
 import top.bilibili.utils.closeUtilsClient
@@ -33,6 +34,7 @@ class RuntimeConfigApplier(
     private val reloadImageRuntime: () -> Unit = {
         BiliImageTheme.reload()
         BiliImageQuality.reload()
+        FontManager.reloadRuntimeConfig()
     },
     private val closeBiliClients: () -> Unit = {
         closeUtilsClient()

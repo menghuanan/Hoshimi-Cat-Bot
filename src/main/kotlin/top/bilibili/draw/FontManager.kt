@@ -5,8 +5,10 @@ import org.jetbrains.skia.Typeface
 import org.jetbrains.skia.FontStyle
 import org.jetbrains.skia.Data
 import top.bilibili.BiliConfigManager
+import top.bilibili.skia.DrawingQueueManager
 import top.bilibili.utils.FontUtils
 import top.bilibili.utils.loadResourceBytes
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -168,12 +170,40 @@ object FontManager : AutoCloseable {
     }
 
     /**
+     * 图片质量或字体配置热重载后释放尺寸相关 Font，下一次绘图会按最新配置重建。
+     */
+    fun reloadRuntimeConfig() {
+        if (closed.get()) return
+        // 热重载关闭全局 Managed 字体和样式前暂停新绘图，避免旧对象被 close 后继续参与绘制。
+        runBlocking {
+            DrawingQueueManager.runExclusiveCleanup {
+                DynamicDrawRuntimeStyles.reloadRuntimeConfig()
+                synchronized(this@FontManager) {
+                    _font?.close()
+                    _font = null
+
+                    _emojiFont?.close()
+                    _emojiFont = null
+
+                    _fansCardFont?.close()
+                    _fansCardFont = null
+
+                    _mainTypeface = null
+                    _emojiTypeface = null
+                }
+            }
+        }
+    }
+
+    /**
      * 关闭字体管理器并释放 Font 资源。
      */
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             synchronized(this) {
                 logger.info("FontManager 正在关闭，释放所有字体资源...")
+
+                DynamicDrawRuntimeStyles.close()
 
                 _font?.close()
                 _font = null

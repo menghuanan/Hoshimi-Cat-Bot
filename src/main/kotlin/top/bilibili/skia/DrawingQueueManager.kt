@@ -70,12 +70,20 @@ object DrawingQueueManager {
      * 等待所有活动任务完成
      */
     suspend fun awaitAllCompleted() {
+        runExclusiveCleanup { }
+    }
+
+    /**
+     * 清理全局 Skia/字体资源时暂停新绘图并等待活动绘图完成，调用方的 close 块在暂停窗口内执行。
+     */
+    suspend fun runExclusiveCleanup(block: () -> Unit) {
         isCleaning.set(true)
         try {
             // 等待所有活动任务完成
             while (activeCount.get() > 0) {
                 delay(100)
             }
+            block()
         } finally {
             isCleaning.set(false)
         }

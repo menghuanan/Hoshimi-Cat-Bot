@@ -4,11 +4,13 @@ import top.bilibili.AtAllType
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
+import top.bilibili.BiliDataWrapper
 import top.bilibili.DynamicFilter
 import top.bilibili.DynamicFilterType
 import top.bilibili.FilterMode
 import top.bilibili.Group
 import top.bilibili.TemplatePolicy
+import top.bilibili.core.deepCopyForRuntimeSnapshot
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformType
@@ -95,18 +97,21 @@ class WebUiSubscriptionManagementFacade(
      * 按页面选择的类型分发新增订阅请求，并保持各类型的校验口径和页面文案一致。
      */
     suspend fun createSubscription(request: WebUiSubscriptionCreateRequestDto): WebUiSubscriptionMutationResultDto {
-        return when (request.type.trim().lowercase()) {
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
+        val result = when (request.type.trim().lowercase()) {
             "dynamic", "subscription" -> createDynamicSubscription(request)
             "group" -> createGroupSubscription(request)
             "bangumi" -> createBangumiSubscription(request)
             else -> validationFailure("添加类型无效")
         }
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, result)
     }
 
     /**
      * 按卡片 ID 删除订阅聚合对象，并同步清理该对象下的附属过滤、模板、@全体和主题色。
      */
     suspend fun deleteSubscription(itemId: String): WebUiSubscriptionMutationResultDto {
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val parts = itemId.split(":", limit = 2)
         if (parts.size != 2 || parts[1].isBlank()) {
             return validationFailure("订阅标识无效")
@@ -120,7 +125,7 @@ class WebUiSubscriptionManagementFacade(
         if (!result.success) {
             return result
         }
-        return persistMutation(result)
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(result))
     }
 
     /**
@@ -152,6 +157,7 @@ class WebUiSubscriptionManagementFacade(
     ): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持推送群聊")
         val subject = normalizePositiveGroupTarget(request.targetGroup) ?: return validationFailure("推送群聊必须是正整数")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val result = when (context.kind) {
             "dynamic" -> saveDynamicTarget(context, subject)
             "group" -> saveGroupTarget(context, subject)
@@ -160,7 +166,7 @@ class WebUiSubscriptionManagementFacade(
         }
         if (!result.success) return result
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(result)
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(result))
     }
 
     /**
@@ -169,6 +175,7 @@ class WebUiSubscriptionManagementFacade(
     suspend fun deleteSubscriptionTarget(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持推送群聊")
         val subject = normalizeGroupTarget(key) ?: return validationFailure("推送群聊标识无效")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val result = when (context.kind) {
             "dynamic" -> deleteDynamicTarget(context, subject)
             "group" -> deleteGroupTarget(context, subject)
@@ -177,7 +184,7 @@ class WebUiSubscriptionManagementFacade(
         }
         if (!result.success) return result
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(result)
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(result))
     }
 
     /**
@@ -224,6 +231,7 @@ class WebUiSubscriptionManagementFacade(
         val identifier = parseGroupSubscriptionIdentifier(request.uid)
             ?: return validationFailure("订阅ID必须是 UID 正整数，或 ss/md/ep 前缀番剧ID")
         if (context.contactScopes.isEmpty()) return validationFailure("当前分组没有可推送群聊")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val groupName = context.groupName()
         val message = when (identifier) {
             is GroupSubscriptionIdentifier.Uid -> addGroupDynamicAction(identifier.uid, groupName)
@@ -234,7 +242,7 @@ class WebUiSubscriptionManagementFacade(
         if (identifier is GroupSubscriptionIdentifier.Pgc) {
             markPgcGroupCardUpdates(identifier.id)
         }
-        return persistMutation(success(itemId, message))
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, message)))
     }
 
     /**
@@ -245,6 +253,7 @@ class WebUiSubscriptionManagementFacade(
         if (context.kind != "group") return validationFailure("仅分组支持编辑订阅ID")
         if (context.contactScopes.isEmpty()) return validationFailure("当前分组没有可推送群聊")
         val identifier = parseGroupSubscriptionIdentifier(key) ?: return validationFailure("订阅ID标识无效")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val message = when (identifier) {
             is GroupSubscriptionIdentifier.Uid -> {
                 if (identifier.uid !in context.uids) return validationFailure("订阅ID不存在")
@@ -265,7 +274,7 @@ class WebUiSubscriptionManagementFacade(
         if (identifier is GroupSubscriptionIdentifier.Pgc) {
             markPgcGroupCardUpdates(identifier.id)
         }
-        return persistMutation(success(itemId, message))
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, message)))
     }
 
     /**
@@ -316,6 +325,7 @@ class WebUiSubscriptionManagementFacade(
         request: WebUiSubscriptionFilterSaveRequestDto,
     ): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持过滤器")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val kind = normalizeFilterKind(request.kind) ?: return validationFailure("过滤方式无效")
         val mode = parseFilterMode(request.mode) ?: return validationFailure("黑白名单类型无效")
         val content = request.content.trim()
@@ -346,7 +356,7 @@ class WebUiSubscriptionManagementFacade(
             }
         }
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(success(itemId, "过滤器已保存"))
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "过滤器已保存")))
     }
 
     /**
@@ -354,6 +364,7 @@ class WebUiSubscriptionManagementFacade(
      */
     fun deleteSubscriptionFilter(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持过滤器")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val parsedKey = parseFilterKey(key) ?: return validationFailure("过滤器标识无效")
         if (!context.ownsFilterKey(parsedKey)) return validationFailure("过滤器不存在")
         val filter = BiliData.filter[parsedKey.scope]?.get(parsedKey.uid) ?: return validationFailure("过滤器不存在")
@@ -364,7 +375,10 @@ class WebUiSubscriptionManagementFacade(
         } ?: return validationFailure("过滤器不存在")
         cleanupEmptyFilter(parsedKey.scope, parsedKey.uid)
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(success(itemId, "已删除 ${if (removed is DynamicFilterType) removed.value else removed}"))
+        return rollbackDataIfPersistenceFailed(
+            dataRollbackSnapshot,
+            persistMutation(success(itemId, "已删除 ${if (removed is DynamicFilterType) removed.value else removed}")),
+        )
     }
 
     /**
@@ -405,6 +419,8 @@ class WebUiSubscriptionManagementFacade(
         request: WebUiSubscriptionTemplateSaveRequestDto,
     ): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持模板")
+        val configRollbackSnapshot = captureConfigRollbackSnapshot()
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val spec = templateSpec(request.type) ?: return validationFailure("模板类型无效")
         val name = request.name.trim()
         if (name.isBlank()) {
@@ -439,7 +455,11 @@ class WebUiSubscriptionManagementFacade(
         }
 
         markSubscriptionCardUpdated(itemId)
-        return persistConfigAndData(success(itemId, "模板已保存"))
+        return rollbackConfigAndDataIfPersistenceFailed(
+            configRollbackSnapshot,
+            dataRollbackSnapshot,
+            persistConfigAndData(success(itemId, "模板已保存")),
+        )
     }
 
     /**
@@ -447,6 +467,7 @@ class WebUiSubscriptionManagementFacade(
      */
     fun deleteSubscriptionTemplate(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持模板")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val parsedKey = parseTemplateKey(key) ?: return validationFailure("模板标识无效")
         if (!context.ownsTemplateKey(parsedKey)) return validationFailure("模板不存在")
         val result = TemplateRuntimeCoordinator.removeTemplate(parsedKey.type, parsedKey.scope, parsedKey.uid, parsedKey.name)
@@ -454,7 +475,7 @@ class WebUiSubscriptionManagementFacade(
             return validationFailure("模板不存在")
         }
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(success(itemId, "模板已删除"))
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "模板已删除")))
     }
 
     /**
@@ -462,6 +483,7 @@ class WebUiSubscriptionManagementFacade(
      */
     fun setSubscriptionTemplateRandom(itemId: String, enabled: Boolean): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持模板")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         var changed = false
         templateTypeSpecs.forEach { spec ->
             context.templateScopes.forEach { scope ->
@@ -476,7 +498,10 @@ class WebUiSubscriptionManagementFacade(
             return validationFailure("当前订阅未配置模板策略")
         }
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(success(itemId, if (enabled) "随机模板已开启" else "随机模板已关闭"))
+        return rollbackDataIfPersistenceFailed(
+            dataRollbackSnapshot,
+            persistMutation(success(itemId, if (enabled) "随机模板已开启" else "随机模板已关闭")),
+        )
     }
 
     /**
@@ -508,6 +533,7 @@ class WebUiSubscriptionManagementFacade(
      */
     fun saveSubscriptionAtAll(itemId: String, type: String, targetGroups: List<String> = emptyList()): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持 @全体")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val atAllType = parseAtAllType(type) ?: return validationFailure("@全体类型无效")
         if (targetGroups.isEmpty()) {
             return validationFailure("目标群聊必须至少选择一个")
@@ -533,7 +559,7 @@ class WebUiSubscriptionManagementFacade(
             }
         }
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(success(itemId, "@全体已保存"))
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "@全体已保存")))
     }
 
     /**
@@ -541,6 +567,7 @@ class WebUiSubscriptionManagementFacade(
      */
     fun deleteSubscriptionAtAll(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持 @全体")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val atAllType = parseAtAllType(key) ?: return validationFailure("@全体类型无效")
         var changed = false
         resolveAtAllScopes(context).forEach { scope ->
@@ -554,7 +581,7 @@ class WebUiSubscriptionManagementFacade(
             return validationFailure("@全体配置不存在")
         }
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(success(itemId, "@全体已删除"))
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "@全体已删除")))
     }
 
     /**
@@ -590,6 +617,7 @@ class WebUiSubscriptionManagementFacade(
         targetGroups: List<String> = emptyList(),
     ): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持主题色")
+        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val normalizedColor = color.trim()
         // 空主题色沿用前端“恢复默认”语义；单 UP 只清除所选群聊，分组清除全部绑定群聊。
         if (normalizedColor.isBlank()) {
@@ -614,7 +642,7 @@ class WebUiSubscriptionManagementFacade(
                 }
             }
             markSubscriptionCardUpdated(itemId)
-            return persistMutation(success(itemId, "主题色已恢复默认"))
+            return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "主题色已恢复默认")))
         }
         if (!hexColorRegex.matches(normalizedColor)) {
             return validationFailure("HEX颜色格式错误")
@@ -634,7 +662,7 @@ class WebUiSubscriptionManagementFacade(
             }
         }
         markSubscriptionCardUpdated(itemId)
-        return persistMutation(success(itemId, "主题色已保存"))
+        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "主题色已保存")))
     }
 
     /**
@@ -1350,6 +1378,97 @@ class WebUiSubscriptionManagementFacade(
     private fun shortGroupId(scope: String): String {
         return scope.substringAfterLast(":")
     }
+
+    /**
+     * 捕获当前主配置对象和深拷贝快照，供模板保存失败时恢复运行态。
+     */
+    private fun captureConfigRollbackSnapshot(): ConfigRollbackSnapshot {
+        val config = configProvider()
+        return ConfigRollbackSnapshot(config, config.deepCopyForRuntimeSnapshot())
+    }
+
+    /**
+     * 捕获当前业务数据深拷贝快照，供持久化失败时恢复运行态和模板协调缓存。
+     */
+    private fun captureDataRollbackSnapshot(): BiliDataWrapper {
+        return BiliDataWrapper.deepCopyFrom(BiliData)
+    }
+
+    /**
+     * 数据持久化失败时恢复旧运行态；普通校验失败不回滚，避免覆盖无关并发变更。
+     */
+    private fun rollbackDataIfPersistenceFailed(
+        snapshot: BiliDataWrapper,
+        result: WebUiSubscriptionMutationResultDto,
+    ): WebUiSubscriptionMutationResultDto {
+        if (isDataPersistenceFailure(result)) {
+            BiliConfigManager.installDataRuntimeSnapshot(snapshot)
+        }
+        return result
+    }
+
+    /**
+     * 模板保存失败时同时恢复配置对象和业务数据，避免运行态只回滚一侧。
+     */
+    private fun rollbackConfigAndDataIfPersistenceFailed(
+        configSnapshot: ConfigRollbackSnapshot,
+        dataSnapshot: BiliDataWrapper,
+        result: WebUiSubscriptionMutationResultDto,
+    ): WebUiSubscriptionMutationResultDto {
+        if (isConfigOrDataPersistenceFailure(result)) {
+            restoreConfigRollbackSnapshot(configSnapshot)
+            BiliConfigManager.installDataRuntimeSnapshot(dataSnapshot)
+        }
+        return result
+    }
+
+    /**
+     * 只识别 facade 自己生成的持久化失败标记，避免把校验失败误判成需要回滚。
+     */
+    private fun isDataPersistenceFailure(result: WebUiSubscriptionMutationResultDto): Boolean {
+        return !result.success && result.validationErrors.any { error ->
+            error == "BiliData save failed" || error == "BiliConfig or BiliData save failed"
+        }
+    }
+
+    /**
+     * 模板保存同时触碰配置和数据，任一 owner 保存失败都要按同一事务回滚运行态。
+     */
+    private fun isConfigOrDataPersistenceFailure(result: WebUiSubscriptionMutationResultDto): Boolean {
+        return !result.success && result.validationErrors.any { error ->
+            error == "BiliConfig or BiliData save failed"
+        }
+    }
+
+    /**
+     * 默认运行态通过 manager 替换；测试注入的配置对象则原地恢复模板字段。
+     */
+    private fun restoreConfigRollbackSnapshot(snapshot: ConfigRollbackSnapshot) {
+        if (runCatching { snapshot.liveConfig === BiliConfigManager.config }.getOrDefault(false)) {
+            BiliConfigManager.installConfigRuntimeSnapshot(snapshot.snapshot)
+            return
+        }
+        val liveTemplate = snapshot.liveConfig.templateConfig
+        val oldTemplate = snapshot.snapshot.templateConfig
+        liveTemplate.defaultDynamicPush = oldTemplate.defaultDynamicPush
+        liveTemplate.defaultLivePush = oldTemplate.defaultLivePush
+        liveTemplate.defaultLiveClose = oldTemplate.defaultLiveClose
+        liveTemplate.dynamicPush.clear()
+        liveTemplate.dynamicPush.putAll(oldTemplate.dynamicPush)
+        liveTemplate.livePush.clear()
+        liveTemplate.livePush.putAll(oldTemplate.livePush)
+        liveTemplate.liveClose.clear()
+        liveTemplate.liveClose.putAll(oldTemplate.liveClose)
+        liveTemplate.footer = oldTemplate.footer
+    }
+
+    /**
+     * 配置回滚快照保留被 mutation 直接修改的 live 对象引用。
+     */
+    private data class ConfigRollbackSnapshot(
+        val liveConfig: BiliConfig,
+        val snapshot: BiliConfig,
+    )
 
     /**
      * 模板保存同时涉及主配置和业务数据，两个文件都保存成功才向前端报告完成。

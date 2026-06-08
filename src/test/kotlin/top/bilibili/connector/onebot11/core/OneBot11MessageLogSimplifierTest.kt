@@ -1,14 +1,13 @@
-package top.bilibili.service
+package top.bilibili.connector.onebot11.core
 
-import top.bilibili.connector.onebot11.vendors.napcat.MessageSegment
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class MessageLogSimplifierTest {
+class OneBot11MessageLogSimplifierTest {
     @Test
     fun `raw cq placeholders should cover extended napcat types`() {
-        val simplified = MessageLogSimplifier.simplifyIncomingRaw(
+        val simplified = OneBot11MessageLogSimplifier.simplifyIncomingRaw(
             "[CQ:image,file=a.png][CQ:poke,qq=1][CQ:dice][CQ:markdown,data=hi][CQ:unknownx]"
         ) { error("should not truncate in this test") }
 
@@ -20,13 +19,13 @@ class MessageLogSimplifierTest {
 
     @Test
     fun `segment placeholders should cover outgoing message types`() {
-        val simplified = MessageLogSimplifier.simplifySegments(
+        val simplified = OneBot11MessageLogSimplifier.simplifySegments(
             listOf(
-                MessageSegment.text("hello"),
-                MessageSegment.image("file:///a.png"),
-                MessageSegment("at", mapOf("qq" to "all")),
-                MessageSegment("lightapp", mapOf("data" to "{}")),
-                MessageSegment("contact", mapOf("type" to "group"))
+                MessageLogSegment("text", mapOf("text" to "hello")),
+                MessageLogSegment("image", mapOf("file" to "file:///a.png")),
+                MessageLogSegment("at", mapOf("qq" to "all")),
+                MessageLogSegment("lightapp", mapOf("data" to "{}")),
+                MessageLogSegment("contact", mapOf("type" to "group"))
             )
         )
 
@@ -42,7 +41,7 @@ class MessageLogSimplifierTest {
         val onTooLong: (Int) -> Unit = { warnedLength = it }
         val payload = "[CQ:share,url=https://example.com]" + "a".repeat(20_000)
 
-        val simplified = MessageLogSimplifier.simplifyIncomingRaw(payload, onTooLong)
+        val simplified = OneBot11MessageLogSimplifier.simplifyIncomingRaw(payload, onTooLong)
 
         assertEquals(20_034, warnedLength)
         assertTrue(simplified.endsWith("..."))

@@ -27,6 +27,7 @@ class ConnectorBoundaryRegressionTest {
             "NapCatAdapter",
             "GenericOneBot11Adapter",
             "QQOfficialAdapter",
+            "connector.onebot11.vendors.",
         )
 
         kotlinSourcesUnder("src/main/kotlin/top/bilibili/service")

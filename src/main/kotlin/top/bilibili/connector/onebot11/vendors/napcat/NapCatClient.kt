@@ -22,7 +22,8 @@ import org.slf4j.LoggerFactory
 import top.bilibili.connector.ConnectionBackoffPolicy
 import top.bilibili.connector.PlatformHttpClientSnapshot
 import top.bilibili.connector.PlatformObservabilitySnapshot
-import top.bilibili.service.MessageLogSimplifier
+import top.bilibili.connector.onebot11.core.MessageLogSegment
+import top.bilibili.connector.onebot11.core.OneBot11MessageLogSimplifier
 import top.bilibili.config.NapCatConfig
 import java.io.File
 import java.net.URI
@@ -361,7 +362,7 @@ class NapCatClient(
     /** 简化消息内容用于日志显示 */
     /** Incoming message simplification for logs. */
     internal fun simplifyIncomingMessageForLog(rawMessage: String): String {
-        return MessageLogSimplifier.simplifyIncomingRaw(rawMessage) { length ->
+        return OneBot11MessageLogSimplifier.simplifyIncomingRaw(rawMessage) { length ->
             logger.warn("消息过长 ($length 字符)，截断处理")
         }
     }
@@ -502,7 +503,10 @@ class NapCatClient(
     }
 
     internal fun buildOutgoingLogPreview(segments: List<MessageSegment>): String {
-        return MessageLogSimplifier.simplifySegments(segments)
+        // vendor DTO 只在 connector 内部转换为日志段，service 公开接口保持平台中立。
+        return OneBot11MessageLogSimplifier.simplifySegments(
+            segments.map { segment -> MessageLogSegment(segment.type, segment.data) },
+        )
     }
 
     internal fun simplifyOutgoingMessageForLog(rawJson: String): String {

@@ -29,9 +29,10 @@ const val BASE_SPACE = "https://space.bilibili.com"
 const val BASE_SHORT = "https://b23.tv"
 
 /**
- * 是否优先生成短链接。
+ * 是否优先生成短链接，运行期每次读取最新配置以支持 WebUI 热重载。
  */
-val toShortLink: Boolean by lazy { BiliConfigManager.config.pushConfig.toShortLink }
+val toShortLink: Boolean
+    get() = BiliConfigManager.config.pushConfig.toShortLink
 
 /**
  * 生成动态链接，必要时优先使用短链。

@@ -14,52 +14,68 @@ import top.bilibili.tasker.DynamicMessageTasker.isUnlocked
 import top.bilibili.service.DrawCacheKeyService
 import top.bilibili.utils.*
 import top.bilibili.skia.DrawingSession
+import top.bilibili.skia.DrawingQueueManager
 import top.bilibili.skia.SkiaManager
 
 
 val logger by BiliBiliBot::logger
 
-val quality: Quality by lazy {
+/**
+ * 解析当前图片质量配置；返回副本是为了避免 badge 开关污染内置质量档位。
+ */
+private fun resolveImageQuality(): Quality {
     val imageConfig = BiliConfigManager.config.imageConfig
-    var quality: Quality?
-    if (BiliImageQuality.customOverload) {
-        quality = BiliImageQuality.customQuality
+    val resolvedQuality = if (BiliImageQuality.customOverload) {
         logger.warn("图片分辨率配置已重载")
+        BiliImageQuality.customQuality
     } else {
-        quality = BiliImageQuality.quality[imageConfig.quality]
-        if (quality == null) {
+        var configuredQuality = BiliImageQuality.quality[imageConfig.quality]
+        if (configuredQuality == null) {
             logger.error("未找到 ${imageConfig.quality} 的图片分辨率配置")
-            quality = BiliImageQuality.quality.firstNotNullOf { it.value }
+            configuredQuality = BiliImageQuality.quality.firstNotNullOf { it.value }
         }
+        configuredQuality
     }
-    quality.apply {
-        badgeHeight = if (imageConfig.badgeEnable.enable) badgeHeight else 0
-    }
+    return resolvedQuality.copy(
+        badgeHeight = if (imageConfig.badgeEnable.enable) resolvedQuality.badgeHeight else 0,
+    )
 }
 
-val theme: Theme by lazy {
+/**
+ * 当前绘图质量必须跟随运行态配置读取，避免热重载后继续使用旧 lazy 值。
+ */
+val quality: Quality
+    get() = resolveImageQuality()
+
+/**
+ * 解析当前图片主题配置，允许 WebUI 热重载或自定义主题 reload 后立即生效。
+ */
+private fun resolveImageTheme(): Theme {
     val imageConfig = BiliConfigManager.config.imageConfig
-    var theme: Theme?
-    if (BiliImageTheme.customOverload) {
-        theme = BiliImageTheme.customTheme
+    return if (BiliImageTheme.customOverload) {
         logger.warn("图片主题配置已重载")
+        BiliImageTheme.customTheme
     } else {
-        theme = BiliImageTheme.theme[imageConfig.theme]
-        if (theme == null) {
+        var configuredTheme = BiliImageTheme.theme[imageConfig.theme]
+        if (configuredTheme == null) {
             logger.error("未找到 ${imageConfig.theme} 的图片主题配置")
-            theme = BiliImageTheme.theme.firstNotNullOf { it.value }
+            configuredTheme = BiliImageTheme.theme.firstNotNullOf { it.value }
         }
+        configuredTheme
     }
-    theme
 }
 
-val cardRect: Rect by lazy {
-    Rect.makeLTRB(quality.cardMargin.toFloat(), 0f, quality.imageWidth - quality.cardMargin.toFloat(), 0f)
-}
+/**
+ * 当前绘图主题必须跟随运行态配置读取，避免热重载后继续使用旧 lazy 值。
+ */
+val theme: Theme
+    get() = resolveImageTheme()
 
-val cardContentRect: Rect by lazy {
-    cardRect.inflate(-1f * quality.cardPadding)
-}
+val cardRect: Rect
+    get() = Rect.makeLTRB(quality.cardMargin.toFloat(), 0f, quality.imageWidth - quality.cardMargin.toFloat(), 0f)
+
+val cardContentRect: Rect
+    get() = cardRect.inflate(-1f * quality.cardPadding)
 
 val mainTypeface: Typeface
     get() = FontManager.mainTypeface
@@ -76,67 +92,151 @@ val emojiFont: Font
 val fansCardFont: Font?
     get() = FontManager.fansCardFont
 
-val titleTextStyle by lazy {
-    TextStyle().apply {
-        fontSize = quality.titleFontSize
-        color = theme.titleColor
-        fontFamilies = arrayOf(mainTypeface.familyName)
-    }
-}
+val titleTextStyle: TextStyle
+    get() = DynamicDrawRuntimeStyles.current.titleTextStyle
 
-val bigTitleTextStyle by lazy {
-    TextStyle().apply {
-        fontSize = quality.titleFontSize + 3
-        color = theme.titleColor
-        fontStyle = FontStyle.BOLD
-        fontFamilies = arrayOf(mainTypeface.familyName)
-    }
-}
+val bigTitleTextStyle: TextStyle
+    get() = DynamicDrawRuntimeStyles.current.bigTitleTextStyle
 
-val descTextStyle by lazy {
-    TextStyle().apply {
-        fontSize = quality.descFontSize
-        color = theme.descColor
-        fontFamilies = arrayOf(mainTypeface.familyName)
-    }
-}
+val descTextStyle: TextStyle
+    get() = DynamicDrawRuntimeStyles.current.descTextStyle
 
-val contentTextStyle by lazy {
-    TextStyle().apply {
-        fontSize = quality.contentFontSize
-        color = theme.contentColor
-        fontFamilies = arrayOf(mainTypeface.familyName)
-    }
-}
+val contentTextStyle: TextStyle
+    get() = DynamicDrawRuntimeStyles.current.contentTextStyle
 
-val footerTextStyle by lazy {
-    TextStyle().apply {
-        fontSize = quality.footerFontSize
-        color = theme.footerColor
-        fontFamilies = arrayOf(mainTypeface.familyName)
-    }
-}
+val footerTextStyle: TextStyle
+    get() = DynamicDrawRuntimeStyles.current.footerTextStyle
 
-val footerParagraphStyle by lazy {
-    ParagraphStyle().apply {
-        maxLinesCount = 2
-        ellipsis = "..."
-        alignment = when (BiliConfigManager.config.templateConfig.footer.footerAlign.uppercase()) {
-            "LEFT" -> Alignment.LEFT
-            "CENTER" -> Alignment.CENTER
-            "RIGHT" -> Alignment.RIGHT
-            else -> Alignment.LEFT
+val footerParagraphStyle: ParagraphStyle
+    get() = DynamicDrawRuntimeStyles.current.footerParagraphStyle
+
+/**
+ * DynamicDraw 的全局排版样式是 Skiko Managed 对象，必须可刷新并在热重载或停机时统一关闭。
+ */
+internal object DynamicDrawRuntimeStyles : AutoCloseable {
+    private val lock = Any()
+    private var cached: RuntimeStyles? = null
+
+    val current: RuntimeStyles
+        get() = synchronized(lock) {
+            cached ?: RuntimeStyles.create().also { cached = it }
+    }
+
+    /**
+     * 图片质量、主题或页脚模板热重载后丢弃旧样式；调用方必须在绘图暂停窗口内执行。
+     */
+    fun reloadRuntimeConfig() {
+        synchronized(lock) {
+            cached?.close()
+            cached = null
         }
-        textStyle = footerTextStyle
+    }
+
+    /**
+     * SkiaManager 停机时释放全局样式缓存，避免 TextStyle/ParagraphStyle native 资源泄漏。
+     */
+    override fun close() {
+        synchronized(lock) {
+            cached?.close()
+            cached = null
+        }
     }
 }
 
-val cardBadgeArc: FloatArray by lazy {
-    val imageConfig = BiliConfigManager.config.imageConfig
-    val left = if (imageConfig.badgeEnable.left) 0f else quality.cardArc
-    val right = if (imageConfig.badgeEnable.right) 0f else quality.cardArc
-    floatArrayOf(left, right, quality.cardArc, quality.cardArc)
+/**
+ * 一组运行态样式绑定同一轮质量、主题和页脚对齐配置，供绘图热路径复用。
+ */
+internal data class RuntimeStyles(
+    val titleTextStyle: TextStyle,
+    val bigTitleTextStyle: TextStyle,
+    val descTextStyle: TextStyle,
+    val contentTextStyle: TextStyle,
+    val footerTextStyle: TextStyle,
+    val footerParagraphStyle: ParagraphStyle,
+) : AutoCloseable {
+    companion object {
+        /**
+         * 创建样式快照时读取一次当前配置，保证同一组 paragraph/text 样式内部尺寸和颜色一致。
+         */
+        fun create(): RuntimeStyles {
+            val runtimeQuality = quality
+            val runtimeTheme = theme
+            val familyName = mainTypeface.familyName
+            val footerStyle = TextStyle().apply {
+                fontSize = runtimeQuality.footerFontSize
+                color = runtimeTheme.footerColor
+                fontFamilies = arrayOf(familyName)
+            }
+            return RuntimeStyles(
+                titleTextStyle = TextStyle().apply {
+                    fontSize = runtimeQuality.titleFontSize
+                    color = runtimeTheme.titleColor
+                    fontFamilies = arrayOf(familyName)
+                },
+                bigTitleTextStyle = TextStyle().apply {
+                    fontSize = runtimeQuality.titleFontSize + 3
+                    color = runtimeTheme.titleColor
+                    fontStyle = FontStyle.BOLD
+                    fontFamilies = arrayOf(familyName)
+                },
+                descTextStyle = TextStyle().apply {
+                    fontSize = runtimeQuality.descFontSize
+                    color = runtimeTheme.descColor
+                    fontFamilies = arrayOf(familyName)
+                },
+                contentTextStyle = TextStyle().apply {
+                    fontSize = runtimeQuality.contentFontSize
+                    color = runtimeTheme.contentColor
+                    fontFamilies = arrayOf(familyName)
+                },
+                footerTextStyle = footerStyle,
+                footerParagraphStyle = ParagraphStyle().apply {
+                    maxLinesCount = 2
+                    ellipsis = "..."
+                    alignment = footerAlignment()
+                    textStyle = footerStyle
+                },
+            )
+        }
+    }
+
+    /**
+     * ParagraphStyle 持有 footer TextStyle 引用，关闭时先关 paragraph 再释放各个 text style。
+     */
+    override fun close() {
+        footerParagraphStyle.close()
+        titleTextStyle.close()
+        bigTitleTextStyle.close()
+        descTextStyle.close()
+        contentTextStyle.close()
+        footerTextStyle.close()
+    }
 }
+
+/**
+ * 页脚对齐是绘图派生样式，必须基于最新运行态配置即时解析。
+ */
+private fun footerAlignment(): Alignment {
+    return when (BiliConfigManager.config.templateConfig.footer.footerAlign.uppercase()) {
+        "LEFT" -> Alignment.LEFT
+        "CENTER" -> Alignment.CENTER
+        "RIGHT" -> Alignment.RIGHT
+        else -> Alignment.LEFT
+    }
+}
+
+/**
+ * 测试与调试入口只暴露当前页脚对齐名称，不让调用方持有 ParagraphStyle 实例。
+ */
+internal fun footerAlignmentName(): String = footerAlignment().name
+
+val cardBadgeArc: FloatArray
+    get() {
+        val imageConfig = BiliConfigManager.config.imageConfig
+        val left = if (imageConfig.badgeEnable.left) 0f else quality.cardArc
+        val right = if (imageConfig.badgeEnable.right) 0f else quality.cardArc
+        return floatArrayOf(left, right, quality.cardArc, quality.cardArc)
+    }
 
 
 /**
