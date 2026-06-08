@@ -120,6 +120,11 @@ export function buildSettingsSavePayload(input: BuildSettingsSavePayloadInput): 
       payload.proxyUpdateMode = input.proxyUpdateMode || (proxies.length > 0 ? 'replace' : 'preserve')
       return
     }
+    if (input.file === 'biliData' && key === 'linkParseBlacklistContacts') {
+      // BiliData 的链接解析黑名单使用逐行联系人 subject，提交前归一成数组交给后端校验。
+      payload.linkParseBlacklistContacts = readLines(value)
+      return
+    }
     if (key === 'imageConfig.badgeEnable.choice') {
       Object.assign(payload, badgeBooleansFromChoice(value))
       return

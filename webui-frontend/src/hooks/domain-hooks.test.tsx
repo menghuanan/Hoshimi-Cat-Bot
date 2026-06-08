@@ -210,6 +210,71 @@ describe('webui domain hooks', () => {
     })
   })
 
+  /**
+   * 设置页一次保存通过批量 job 契约提交，hook 负责等待后端热重载完成后再返回。
+   */
+  it('useSettingsFiles should save changed files through one hot reload batch job', async () => {
+    const calls: string[] = []
+    const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.includes('/api/config/bili-config') && (!init || init.method === 'GET')) {
+        return Promise.resolve(createJsonResponse(200, {snapshotToken: 'bili-snapshot', fields: []}))
+      }
+      if (url.includes('/api/config/bili-data') && (!init || init.method === 'GET')) {
+        return Promise.resolve(createJsonResponse(200, {snapshotToken: 'data-snapshot', fields: []}))
+      }
+      if (url.includes('/api/config/bot') && (!init || init.method === 'GET')) {
+        return Promise.resolve(createJsonResponse(200, {snapshotToken: 'bot-snapshot', fields: []}))
+      }
+      if (url.includes('/api/config/save-batch')) {
+        return Promise.resolve(createJsonResponse(202, {
+          jobId: 'job-1',
+          phase: 'QUEUED',
+          files: ['BILI_CONFIG', 'BILI_DATA', 'BOT_CONFIG'],
+        }))
+      }
+      if (url.includes('/api/config/save-jobs/job-1')) {
+        return Promise.resolve(createJsonResponse(200, {
+          jobId: 'job-1',
+          phase: 'APPLIED',
+          files: ['BILI_CONFIG', 'BILI_DATA', 'BOT_CONFIG'],
+        }))
+      }
+      return Promise.resolve(createJsonResponse(200, {}))
+    })
+
+    const user = userEvent.setup()
+    const {result} = renderWithConfirmationProvider(() => useSettingsFiles({fetchImpl})) as {
+      result: {current: ReturnType<typeof useSettingsFiles>}
+    }
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/config/bili-data', expect.any(Object)))
+    const savePromise = result.current.saveBatch({
+      biliConfig: {snapshotToken: 'bili-snapshot'},
+      biliData: {snapshotToken: 'data-snapshot', linkParseBlacklistContacts: ['onebot11:group:1001']},
+      botConfig: {snapshotToken: 'bot-snapshot'},
+    })
+
+    await user.type(await screen.findByLabelText('确认密码'), 'batch-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    const job = await savePromise
+
+    expect(job?.phase).toBe('APPLIED')
+    expect(calls.filter((url) => url.includes('/api/config/save-batch'))).toHaveLength(1)
+    const batchCall = fetchImpl.mock.calls.find(([url]) => String(url).includes('/api/config/save-batch'))
+    expect(JSON.parse(String(batchCall?.[1]?.body))).toMatchObject({
+      biliConfig: {snapshotToken: 'bili-snapshot', confirmationPassword: 'batch-password'},
+      biliData: {
+        snapshotToken: 'data-snapshot',
+        confirmationPassword: 'batch-password',
+        linkParseBlacklistContacts: ['onebot11:group:1001'],
+      },
+      botConfig: {snapshotToken: 'bot-snapshot', confirmationPassword: 'batch-password'},
+    })
+  })
+
   it('useSubscriptions should include confirmationPassword when creating a subscription', async () => {
     const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)

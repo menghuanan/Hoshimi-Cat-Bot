@@ -45,6 +45,7 @@ class WebUiSubscriptionManagementFacade(
     private val configProvider: () -> BiliConfig = { runCatching { BiliConfigManager.config }.getOrDefault(BiliConfig()) },
     private val saveConfigAction: () -> Boolean = { BiliConfigManager.saveConfig() },
     private val saveDataAction: () -> Boolean = { BiliConfigManager.saveData() },
+    private val submitPersistedDataReload: () -> Unit = {},
     private val currentTimeMillisProvider: () -> Long = { System.currentTimeMillis() },
     private val addDynamicAction: suspend (Long, String) -> String = { uid, subject ->
         DynamicService.addDirectSubscribe(uid, subject, isSelf = false)
@@ -1357,6 +1358,8 @@ class WebUiSubscriptionManagementFacade(
         val configSaved = runCatching { saveConfigAction() }.getOrDefault(false)
         val dataSaved = runCatching { saveDataAction() }.getOrDefault(false)
         return if (configSaved && dataSaved) {
+            // 模板写入已完成 BiliData 持久化，后续只需要通过热重载队列刷新运行态缓存。
+            submitPersistedDataReload()
             result
         } else {
             WebUiSubscriptionMutationResultDto(
@@ -1374,6 +1377,8 @@ class WebUiSubscriptionManagementFacade(
     private fun persistMutation(result: WebUiSubscriptionMutationResultDto): WebUiSubscriptionMutationResultDto {
         val saved = runCatching { saveDataAction() }.getOrDefault(false)
         return if (saved) {
+            // 订阅 mutation 已经落盘，发出内部信号让协调器串行刷新 BiliData 运行态。
+            submitPersistedDataReload()
             result
         } else {
             WebUiSubscriptionMutationResultDto(

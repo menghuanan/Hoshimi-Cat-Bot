@@ -1,8 +1,11 @@
 package top.bilibili
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
 import top.bilibili.service.TemplatePolicySnapshotBundle
 import top.bilibili.service.TemplateRuntimeCoordinator
+import top.bilibili.utils.json
 
 /**
  * BiliData 包装类，用于序列化
@@ -53,6 +56,13 @@ data class BiliDataWrapper(
         }
 
         /**
+         * 从当前 BiliData 捕获可回滚快照；返回对象不得共享 live mutable map/list。
+         */
+        fun deepCopyFrom(source: BiliData): BiliDataWrapper {
+            return from(source).deepCopy()
+        }
+
+        /**
          * 将包装对象中的数据回填到 [BiliData] 单例。
          */
         fun applyTo(wrapper: BiliDataWrapper, biliData: BiliData) {
@@ -82,6 +92,23 @@ data class BiliDataWrapper(
             biliData.linkParseBlacklistContacts = wrapper.linkParseBlacklistContacts
         }
     }
+}
+
+/**
+ * 复制持久化 wrapper 的所有嵌套集合，供热重载旧代际和候选代际隔离使用。
+ */
+fun BiliDataWrapper.deepCopy(): BiliDataWrapper {
+    return biliDataWrapperCopyJson.decodeFromString(
+        BiliDataWrapper.serializer(),
+        biliDataWrapperCopyJson.encodeToString(BiliDataWrapper.serializer(), this),
+    )
+}
+
+/**
+ * BiliData wrapper 深拷贝使用结构化序列化 round-trip，避免手写 nested map/list 拷贝遗漏字段。
+ */
+private val biliDataWrapperCopyJson = Json(json) {
+    encodeDefaults = true
 }
 
 /**

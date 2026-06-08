@@ -16,8 +16,11 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformConnectorManager
+import top.bilibili.connector.PlatformConnectorPrepareResult
+import top.bilibili.connector.PlatformConnectorReloadResult
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformType
+import top.bilibili.connector.PreparedPlatformConnector
 import top.bilibili.config.ConfigManager
 import top.bilibili.core.resource.LambdaResourcePartition
 import top.bilibili.core.resource.ResourceStopReport
@@ -43,7 +46,12 @@ import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.ImageCache
 import top.bilibili.utils.actionNotify
 import top.bilibili.utils.closeUtilsClient
+import top.bilibili.webui.config.WebUiConfig
+import top.bilibili.webui.config.WebUiSettings
 import top.bilibili.webui.server.WebUiManager
+import top.bilibili.webui.server.WebUiReloadPlan
+import top.bilibili.webui.service.WebUiConfigHotReloadApplyService
+import top.bilibili.webui.service.WebUiConfigHotReloadCoordinator
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
@@ -90,6 +98,8 @@ object BiliBiliBot : CoroutineScope {
     private var connectorManager: PlatformConnectorManager? = null
     // Bot 启动层只保留 WebUI 生命周期接线权，不在 core 内承载任何路由或页面逻辑。
     private var webUiManager: WebUiManager? = null
+    private var webUiReloadJob: Job? = null
+    private var webUiConfigHotReloadCoordinator: WebUiConfigHotReloadCoordinator? = null
 
     lateinit var config: top.bilibili.config.BotConfig
         private set
@@ -131,6 +141,13 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /**
+     * 热重载安装已验证的 bot.yml 快照，保持 core 缓存与 ConfigManager 同步。
+     */
+    fun installRuntimeConfig(configSnapshot: top.bilibili.config.BotConfig) {
+        config = configSnapshot.normalizedBotConfig()
+    }
+
+    /**
      * 返回已初始化的运行期配置，不存在时抛出异常。
      */
     fun requireConfig(): top.bilibili.config.BotConfig {
@@ -154,6 +171,110 @@ object BiliBiliBot : CoroutineScope {
      */
     fun requireConnectorManager(): PlatformConnectorManager {
         return connectorManager ?: error("平台连接管理器尚未初始化，请先完成启动。")
+    }
+
+    /**
+     * 准备已验证 bot.yml 候选平台连接；失败时 connector manager 保持旧代际。
+     */
+    fun preparePlatformConnector(candidateConfig: top.bilibili.config.BotConfig): PlatformConnectorPrepareResult {
+        return requireConnectorManager().prepareReload(candidateConfig)
+    }
+
+    /**
+     * 提交已准备的平台连接代际；失败时调用方必须关闭未提交候选并恢复旧运行态。
+     */
+    fun commitPlatformConnector(prepared: PreparedPlatformConnector): PlatformConnectorReloadResult {
+        return requireConnectorManager().commitReload(prepared)
+    }
+
+    /**
+     * WebUI 配置热重载协调器绑定 Bot 根生命周期，WebUI server 重启时不能丢失正在处理的保存任务。
+     */
+    fun requireWebUiConfigHotReloadCoordinator(): WebUiConfigHotReloadCoordinator {
+        return webUiConfigHotReloadCoordinator ?: WebUiConfigHotReloadApplyService().let { applyService ->
+            WebUiConfigHotReloadCoordinator(
+                scope = this,
+                applyAction = applyService::apply,
+                applyPersistedBiliDataAction = applyService::applyAlreadyPersistedBiliData,
+            )
+        }.also { coordinator ->
+            webUiConfigHotReloadCoordinator = coordinator
+        }
+    }
+
+    /**
+     * WebUI 运行面变更只生成响应后调度计划，不在配置 apply 阶段直接关闭当前 HTTP 请求。
+     */
+    fun planWebUiReload(current: WebUiConfig, next: WebUiConfig): WebUiReloadPlan {
+        val currentConfig = current.normalized()
+        val nextConfig = next.normalized()
+        if (!currentConfig.enabled && !nextConfig.enabled) {
+            return WebUiReloadPlan(restartRequired = false, message = "webui disabled")
+        }
+
+        val nextSettings = nextConfig.toSettings()
+        val currentSettings = currentConfig.toSettings()
+        val restartRequired = when {
+            currentConfig.enabled != nextConfig.enabled -> true
+            !nextConfig.enabled -> false
+            webUiManager == null -> true
+            else -> currentSettings != nextSettings
+        }
+        if (!restartRequired) {
+            return WebUiReloadPlan(restartRequired = false, message = "webui unchanged")
+        }
+
+        val redirect = if (nextConfig.enabled && (!currentConfig.enabled || currentSettings.host != nextSettings.host || currentSettings.port != nextSettings.port)) {
+            "http://${nextSettings.host}:${nextSettings.port}/"
+        } else {
+            null
+        }
+        return WebUiReloadPlan(
+            restartRequired = true,
+            webUiRedirectUrl = redirect,
+            message = "webui restart scheduled",
+            nextSettings = nextSettings,
+        )
+    }
+
+    /**
+     * WebUI 重启由 Bot 根作用域延迟执行，确保保存响应和 job 状态能先返回给前端。
+     */
+    fun scheduleWebUiReload(plan: WebUiReloadPlan) {
+        if (!plan.restartRequired) {
+            return
+        }
+        val nextSettings = plan.nextSettings ?: return
+        webUiReloadJob?.cancel()
+        webUiReloadJob = launch {
+            // 轻微延迟把监听器切换放到当前 HTTP 响应之后，避免请求被自己的 stop() 截断。
+            delay(300)
+            if (isStopping()) {
+                logger.info("Bot 正在停机，取消 WebUI 热重载计划")
+                return@launch
+            }
+            applyScheduledWebUiReload(nextSettings)
+        }
+    }
+
+    /**
+     * 执行已提交配置对应的 WebUI start/stop；调用方保证该逻辑只在 apply 成功后调度。
+     */
+    private fun applyScheduledWebUiReload(nextSettings: WebUiSettings) {
+        if (!nextSettings.enabled) {
+            webUiManager?.stop()
+            webUiManager = null
+            logger.info("WebUI 已按热重载配置禁用")
+            return
+        }
+        webUiManager?.stop()
+        webUiManager = WebUiManager(
+            nextSettings,
+            logWindowStartEpochMillis = startTime,
+        ).also { manager ->
+            manager.start()
+        }
+        logger.info("WebUI 已按热重载配置重新启动: http://${nextSettings.host}:${nextSettings.port}/")
     }
 
     /**
@@ -615,8 +736,24 @@ object BiliBiliBot : CoroutineScope {
                 shutdownPhase = ShutdownPhase.INGRESS,
                 stopAction = {
                     // WebUI 属于本地管理入口，停机时需要先停止接收新请求，再继续释放底层依赖。
+                    webUiReloadJob?.cancelAndJoin()
+                    webUiReloadJob = null
                     webUiManager?.stop()
                     webUiManager = null
+                },
+            ),
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "webui-config-hot-reload",
+                owns = listOf("WebUiConfigHotReloadCoordinator"),
+                strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                shutdownPhase = ShutdownPhase.INGRESS,
+                stopAction = {
+                    // 热重载协调器属于 Bot 级管理入口；停机时先拒收新保存并收敛 pending job。
+                    webUiConfigHotReloadCoordinator?.closeForShutdown(timeoutMs = 10_000)
+                    webUiConfigHotReloadCoordinator = null
                 },
             ),
         )
@@ -666,10 +803,20 @@ object BiliBiliBot : CoroutineScope {
 
         runCatching {
             // 兜底停机同样先关闭本地管理入口，避免停机期间继续接入新的 HTTP 请求。
+            webUiReloadJob?.cancelAndJoin()
+            webUiReloadJob = null
             webUiManager?.stop()
             webUiManager = null
         }.onFailure {
             logger.warn("兜底停止 WebUI 失败: ${it.message}", it)
+        }
+
+        runCatching {
+            // 协调器即使不随 WebUI manager 生命周期重建，也必须在兜底路径中显式关闭。
+            webUiConfigHotReloadCoordinator?.closeForShutdown(timeoutMs = 10_000)
+            webUiConfigHotReloadCoordinator = null
+        }.onFailure {
+            logger.warn("兜底停止 WebUI 配置热重载协调器失败: ${it.message}", it)
         }
 
         runCatching {

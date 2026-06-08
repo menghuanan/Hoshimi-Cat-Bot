@@ -1,4 +1,4 @@
-export type SettingsFileId = 'biliConfig' | 'botConfig'
+export type SettingsFileId = 'biliConfig' | 'biliData' | 'botConfig'
 
 export type SettingsCategoryId =
   | 'integration'
@@ -172,6 +172,7 @@ export const settingsCategories: SettingsCategoryDefinition[] = [
       ]},
       {key: 'linkResolveConfig.drawEnable', label: '链接解析绘图', file: 'biliConfig', payloadKey: 'linkResolveDrawEnable', type: 'boolean'},
       {key: 'linkResolveConfig.returnLink', label: '返回链接', file: 'biliConfig', payloadKey: 'linkResolveReturnLink', type: 'boolean'},
+      {key: 'linkParseBlacklistContacts', label: '链接解析黑名单', file: 'biliData', payloadKey: 'linkParseBlacklistContacts', type: 'textarea'},
     ],
   },
   {

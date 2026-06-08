@@ -47,7 +47,10 @@ import top.bilibili.webui.model.WebUiAuthResponseDto
 import top.bilibili.webui.model.WebUiBiliAccountStatusDto
 import top.bilibili.webui.model.WebUiHostRuntimeStatusDto
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
+import top.bilibili.webui.model.WebUiConfigBatchSaveRequestDto
 import top.bilibili.webui.model.WebUiConfigFileDto
+import top.bilibili.webui.model.WebUiConfigHotReloadJobDto
+import top.bilibili.webui.model.WebUiConfigHotReloadPhase
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
 import top.bilibili.webui.model.WebUiLogSourceListDto
 import top.bilibili.webui.model.WebUiLogWindowDto
@@ -943,17 +946,97 @@ class WebUiRouteSmokeTest {
             )
         }
 
+        val staleJob = pollConfigSaveJob(staleSnapshot.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
+        val dataJob = pollConfigSaveJob(dataSaved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
+        val botStaleJob = pollConfigSaveJob(botStaleSnapshot.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
+        val botJob = pollConfigSaveJob(botSaved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
+        val savedJob = pollConfigSaveJob(saved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
+
         assertEquals(HttpStatusCode.Forbidden, missingConfirmation.status)
-        assertEquals(HttpStatusCode.Conflict, staleSnapshot.status)
-        assertEquals(HttpStatusCode.OK, dataSaved.status)
-        assertEquals(HttpStatusCode.Conflict, botStaleSnapshot.status)
-        assertEquals(HttpStatusCode.OK, botSaved.status)
-        assertEquals(HttpStatusCode.OK, saved.status)
+        assertEquals(HttpStatusCode.Accepted, staleSnapshot.status)
+        assertEquals(WebUiConfigHotReloadPhase.FAILED, staleJob.phase)
+        assertTrue(staleJob.outcomes.any { outcome -> !outcome.result.success })
+        assertEquals(HttpStatusCode.Accepted, dataSaved.status)
+        assertEquals(HttpStatusCode.Accepted, botStaleSnapshot.status)
+        assertEquals(WebUiConfigHotReloadPhase.FAILED, botStaleJob.phase)
+        assertTrue(botStaleJob.outcomes.any { outcome -> !outcome.result.success })
+        assertEquals(HttpStatusCode.Accepted, botSaved.status)
+        assertEquals(HttpStatusCode.Accepted, saved.status)
+        assertEquals(WebUiConfigHotReloadPhase.APPLIED, dataJob.phase)
+        assertEquals(WebUiConfigHotReloadPhase.APPLIED, botJob.phase)
+        assertEquals(WebUiConfigHotReloadPhase.APPLIED, savedJob.phase)
         assertEquals("onebot11:private:2", savedConfig?.adminContact)
         assertEquals("raw-cookie", savedConfig?.accountConfig?.cookie)
         assertEquals(setOf("onebot11:private:2", "onebot11:group:3"), savedBlacklist)
         assertEquals("10.0.0.2", savedBotConfig?.selectedOneBot11Config()?.host)
-        assertTrue(saved.body<WebUiConfigSaveResultDto>().persisted)
+        assertTrue(savedJob.outcomes.any { outcome -> outcome.result.persisted })
+    }
+
+    @Test
+    fun `config batch save route should enqueue hot reload job and expose job polling`() = testApplication {
+        val authService = buildAuthService()
+        val bootstrapPassword = authService.bootstrapCredentials().initialPassword!!
+        var currentConfig = BiliConfig(adminContact = "onebot11:private:1")
+        val records = mutableListOf<WebUiAuditRecord>()
+        val configFacade = WebUiConfigFacade(
+            biliConfigProvider = { currentConfig },
+            botConfigProvider = { BotConfig() },
+        )
+        val configWriteFacade = WebUiConfigWriteFacade(
+            configFacade = configFacade,
+            biliConfigProvider = { currentConfig },
+            saveBiliConfigAction = { updated ->
+                currentConfig = updated
+                true
+            },
+        )
+
+        application {
+            installWebUiModule(
+                settings = WebUiConfig(enabled = true).toSettings(tempRoot.toFile()),
+                authService = authService,
+                runtimeFacade = buildRuntimeFacade(),
+                configFacade = configFacade,
+                configWriteFacade = configWriteFacade,
+                logFacade = buildLogFacade(),
+                actionFacade = buildActionFacade(),
+                auditService = WebUiAuditService(sink = { record -> records += record }),
+            )
+        }
+
+        val auth = reloginForPhase3(authService, bootstrapPassword)
+        val currentSnapshot = createWebUiClient().get("/api/config/bili-config") {
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+        }.body<WebUiConfigFileDto>()
+        val accepted = createWebUiClient().post("/api/config/save-batch") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Cookie, auth.cookieHeader())
+            header("X-CSRF-Token", auth.csrfToken)
+            setBody(
+                WebUiConfigBatchSaveRequestDto(
+                    biliConfig = WebUiBiliConfigWriteRequestDto(
+                        snapshotToken = currentSnapshot.snapshotToken,
+                        adminContact = "onebot11:private:2",
+                        confirmationPassword = "Better123!@",
+                    ),
+                ),
+            )
+        }
+        val job = accepted.body<WebUiConfigHotReloadJobDto>()
+        val polledJob = pollConfigSaveJob(job.jobId, auth.cookieHeader())
+
+        assertEquals(HttpStatusCode.Accepted, accepted.status)
+        assertTrue(job.phase in setOf(WebUiConfigHotReloadPhase.QUEUED, WebUiConfigHotReloadPhase.APPLIED))
+        assertEquals(job.jobId, polledJob.jobId)
+        assertTrue(
+            records.any { record ->
+                record.eventType == "config-save" &&
+                    record.target == "BiliConfig.yml" &&
+                    record.success
+            },
+            "records=$records polledJob=$polledJob",
+        )
+        assertFalse(records.any { record -> record.detailSummary.contains("Better123!@") })
     }
 
     @Test
@@ -1205,6 +1288,27 @@ class WebUiRouteSmokeTest {
         install(ContentNegotiation) {
             json(top.bilibili.utils.json)
         }
+    }
+
+    /**
+     * 热重载 job 由后台 worker 完成，路由测试短轮询终态以避免和 worker 调度竞速。
+     */
+    private suspend fun io.ktor.server.testing.ApplicationTestBuilder.pollConfigSaveJob(
+        jobId: String,
+        cookieHeader: String,
+    ): WebUiConfigHotReloadJobDto {
+        repeat(20) {
+            val job = createWebUiClient().get("/api/config/save-jobs/$jobId") {
+                header(HttpHeaders.Cookie, cookieHeader)
+            }.body<WebUiConfigHotReloadJobDto>()
+            if (job.phase == WebUiConfigHotReloadPhase.APPLIED || job.phase == WebUiConfigHotReloadPhase.FAILED) {
+                return job
+            }
+            kotlinx.coroutines.delay(25)
+        }
+        return createWebUiClient().get("/api/config/save-jobs/$jobId") {
+            header(HttpHeaders.Cookie, cookieHeader)
+        }.body()
     }
 
     /**

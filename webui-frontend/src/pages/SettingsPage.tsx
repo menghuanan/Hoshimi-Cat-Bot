@@ -5,8 +5,9 @@ import { SettingsTabs } from '../components/settings/SettingsTabs'
 import { useHighRiskConfirmation } from '../hooks/useHighRiskConfirmation'
 import { useSettingsFiles } from '../hooks/useSettingsFiles'
 import { formatSaveResultMessage } from '../settings/settingsSaveResult'
+import { buildBiliConfigSavePayload, buildBiliDataSavePayload, buildBotConfigSavePayload } from '../api/settings'
 import { settingsCategories, validateSettingsValues, type SettingsCategoryDefinition, type SettingsCategoryId, type SettingsFieldDefinition } from '../settings/settingsSchema'
-import type { WebUiSettingsSaveResult } from '../types/settings'
+import type { WebUiConfigFileKind, WebUiConfigHotReloadJob } from '../types/settings'
 import { formatPasswordErrorMessage } from '../utils/errorMessages'
 
 type SettingsFieldSnapshot = {
@@ -30,7 +31,7 @@ type AdminDraftPair = {
  * 设置页按元数据渲染八个分区，敏感字段只允许空输入触发保留语义。
  */
 export function SettingsPage() {
-  const {loading, biliConfig, botConfig, saveBili, saveBot, patchBiliConfig, patchBotConfig} = useSettingsFiles()
+  const {loading, biliConfig, biliData, botConfig, saveBatch, patchBiliConfig, patchBiliData, patchBotConfig} = useSettingsFiles()
   const {requestHighRiskConfirmation} = useHighRiskConfirmation()
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
   const [editedValues, setEditedValues] = useState<SettingsFormValues>({})
@@ -41,8 +42,9 @@ export function SettingsPage() {
 
   const fieldValues = useMemo(() => ({
     biliConfig: readFieldValues(biliConfig),
+    biliData: readFieldValues(biliData),
     botConfig: readFieldValues(botConfig),
-  }), [biliConfig, botConfig])
+  }), [biliConfig, biliData, botConfig])
 
   const initialValues = useMemo<SettingsFormValues>(() => {
     // 初始值来自快照，写入专用字段保持空值不回显。
@@ -94,66 +96,75 @@ export function SettingsPage() {
     setSaveStatus({tone: 'neutral', message: ''})
     try {
       const biliValues = pickValuesForFile(visibleSettingsFields, values, 'biliConfig')
+      const biliDataValues = pickValuesForFile(visibleSettingsFields, values, 'biliData')
       const botValues = pickValuesForFile(visibleSettingsFields, values, 'botConfig')
-      const validationErrors = validateSettingsValues({...biliValues, ...botValues})
+      const validationErrors = validateSettingsValues({...biliValues, ...biliDataValues, ...botValues})
       if (validationErrors.length > 0) {
         setSaveStatus({tone: 'error', message: validationErrors.join('；')})
         return
       }
 
       const completeBiliValues = pickValuesForFile(allSettingsFields, completeValues, 'biliConfig')
+      const completeBiliDataValues = pickValuesForFile(allSettingsFields, completeValues, 'biliData')
       const completeBotValues = pickValuesForFile(allSettingsFields, completeValues, 'botConfig')
       const biliToken = String(biliConfig?.snapshotToken || '')
+      const biliDataToken = String(biliData?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
       const confirmationMessage = buildSettingsConfirmationMessage(completeValues)
       const shouldSaveBili = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'biliConfig')
+      const shouldSaveBiliData = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'biliData')
       const shouldSaveBot = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'botConfig')
       // 没有任何待写文件时仍然走统一密码确认，避免保存入口在空状态下直接静默返回。
-      if (!shouldSaveBili && !shouldSaveBot) {
+      if (!shouldSaveBili && !shouldSaveBiliData && !shouldSaveBot) {
         const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
         if (!confirmationPassword) {
           return
         }
         return
       }
-      const saveResults: Array<WebUiSettingsSaveResult | null> = []
-      let biliSaveResult: WebUiSettingsSaveResult | null = null
-      let botSaveResult: WebUiSettingsSaveResult | null = null
-
+      const batchPayload: Record<string, Record<string, unknown>> = {}
       if (biliToken && shouldSaveBili) {
-        biliSaveResult = await saveBili({
+        batchPayload.biliConfig = buildBiliConfigSavePayload({
           snapshotToken: biliToken,
+          confirmationPassword: '',
           proxyText: String(completeBiliValues['proxyConfig.proxy'] || ''),
           fields: omitKey(completeBiliValues, 'proxyConfig.proxy'),
-        }, confirmationMessage)
-        saveResults.push(biliSaveResult)
+        })
+      }
+      if (biliDataToken && shouldSaveBiliData) {
+        batchPayload.biliData = buildBiliDataSavePayload({
+          snapshotToken: biliDataToken,
+          confirmationPassword: '',
+          fields: completeBiliDataValues,
+        })
       }
       if (botToken && shouldSaveBot) {
         const botFields = shouldSubmitAdminProjection(visibleSettingsFields, editedValues)
           ? omitKey(completeBotValues, 'platform.onebot11.token')
           : omitKeys(completeBotValues, ['platform.onebot11.token', 'adminsText'])
-        botSaveResult = await saveBot({
+        batchPayload.botConfig = buildBotConfigSavePayload({
           snapshotToken: botToken,
+          confirmationPassword: '',
           token: String(completeBotValues['platform.onebot11.token'] || ''),
           fields: botFields,
-        }, confirmationMessage)
-        saveResults.push(botSaveResult)
+        })
       }
 
-      const resultMessage = formatSaveResultMessage(saveResults)
-      if (saveResults.some((result) => result === null)) {
-        setSaveStatus({tone: 'neutral', message: resultMessage})
+      const job = await saveBatch(batchPayload, confirmationMessage)
+      if (!job) {
+        setSaveStatus({tone: 'neutral', message: formatSaveResultMessage([])})
         return
       }
-      if (saveResults.some((result) => result?.success === false)) {
-        setSaveStatus({tone: 'error', message: resultMessage})
+      if (job.phase === 'FAILED') {
+        setSaveStatus({tone: 'error', message: formatHotReloadJobMessage(job)})
         return
       }
 
-      patchBiliConfig(completeBiliValues, biliSaveResult?.snapshotToken)
-      patchBotConfig(completeBotValues, botSaveResult?.snapshotToken)
+      patchBiliConfig(completeBiliValues, outcomeToken(job, 'BILI_CONFIG'))
+      patchBiliData(completeBiliDataValues, outcomeToken(job, 'BILI_DATA'))
+      patchBotConfig(completeBotValues, outcomeToken(job, 'BOT_CONFIG'))
       setEditedValues({})
-      setSaveStatus({tone: 'success', message: resultMessage})
+      setSaveStatus({tone: 'success', message: formatHotReloadJobMessage(job)})
     } catch (error) {
       setSaveStatus({tone: 'error', message: formatPasswordErrorMessage(error, '保存失败')})
     } finally {
@@ -165,8 +176,7 @@ export function SettingsPage() {
     <div data-page="settings" className="space-y-6">
       <PageSection
         title="系统配置"
-        description="本页面所有配置项都需重启程序生效"
-        descriptionTone="danger"
+        description="保存后自动热重载生效"
         actions={(
           <>
             {/* 顶部只保留保存操作和保存结果，标题由 PageSection 承载。 */}
@@ -176,7 +186,7 @@ export function SettingsPage() {
               disabled={saving || loading}
               onClick={saveActiveCategory}
             >
-              {saving ? '保存中' : '保存'}
+              {saving ? '热重载中' : '保存'}
             </button>
             {saveStatus.message ? (
               <span className={`text-sm font-medium ${saveStatus.tone === 'success' ? 'text-emerald-600' : saveStatus.tone === 'error' ? 'text-rose-600' : 'text-slate-600'}`}>
@@ -380,6 +390,21 @@ function buildSettingsConfirmationMessage(values: SettingsFormValues): string {
 }
 
 /**
+ * 后端 job message 是热重载最终状态来源；没有 message 时按 phase 给出稳定兜底文案。
+ */
+function formatHotReloadJobMessage(job: WebUiConfigHotReloadJob): string {
+  const baseMessage = job.message || (job.phase === 'APPLIED' ? '保存成功，配置已热重载' : '保存失败，请检查后重试')
+  return job.webUiRedirectUrl ? `${baseMessage}，新地址：${job.webUiRedirectUrl}` : baseMessage
+}
+
+/**
+ * 每个文件的新 snapshotToken 来自对应 outcome；缺失时让本地 patch 只更新字段值。
+ */
+function outcomeToken(job: WebUiConfigHotReloadJob, file: WebUiConfigFileKind): string | undefined {
+  return job.outcomes?.find((outcome) => outcome.file === file)?.result?.snapshotToken
+}
+
+/**
  * 生成空白草稿行，方便用户直接继续添加下一组映射。
  */
 function createEmptyAdminPair(): AdminDraftPair {
@@ -435,10 +460,13 @@ function readFieldValues(config: Record<string, unknown> | null): Map<string, st
 /**
  * 初始化表单值时，写入专用字段不读取快照值，普通 boolean 字段转成 checkbox 状态。
  */
-function readInitialFieldValue(field: SettingsFieldDefinition, fieldValues: Record<'biliConfig' | 'botConfig', Map<string, string>>): string | boolean {
+function readInitialFieldValue(field: SettingsFieldDefinition, fieldValues: Record<'biliConfig' | 'biliData' | 'botConfig', Map<string, string>>): string | boolean {
   const rawValue = fieldValues[field.file].get(field.key) || defaultSettingsValue(field.key)
   if (field.writeOnly) {
     return ''
+  }
+  if (field.file === 'biliData') {
+    return rawValue
   }
   if (field.key === 'adminContactQQ') {
     return qqFromAdminContact(fieldValues.biliConfig.get('adminContact') || '', fieldValues.biliConfig.get('admin') || '')
@@ -516,6 +544,7 @@ function defaultSettingsValue(key: string): string {
     'linkResolveConfig.triggerMode': 'At',
     'linkResolveConfig.drawEnable': 'true',
     'linkResolveConfig.returnLink': 'false',
+    'linkParseBlacklistContacts': '',
     'translateConfig.cutLine': '\n\n〓〓〓 翻译 〓〓〓\n',
   }
   return defaults[key] || ''
@@ -524,7 +553,7 @@ function defaultSettingsValue(key: string): string {
 /**
  * 保存前按文件归属提取当前分区字段，避免跨文件 payload 混写。
  */
-function pickValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFormValues, file: 'biliConfig' | 'botConfig'): Record<string, unknown> {
+function pickValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFormValues, file: 'biliConfig' | 'biliData' | 'botConfig'): Record<string, unknown> {
   return Object.fromEntries(fields
     .filter((field) => field.file === file)
     .map((field) => [field.key, values[field.key] ?? '']))
@@ -533,7 +562,7 @@ function pickValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFo
 /**
  * 保存入口只提交本轮用户实际编辑过的文件，避免同页未改字段触发无关文件校验和密码确认。
  */
-function hasEditedValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFormValues, file: 'biliConfig' | 'botConfig'): boolean {
+function hasEditedValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFormValues, file: 'biliConfig' | 'biliData' | 'botConfig'): boolean {
   return fields.some((field) => (
     field.file === file && Object.prototype.hasOwnProperty.call(values, field.key)
   ))

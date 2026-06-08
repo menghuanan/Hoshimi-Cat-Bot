@@ -7,6 +7,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotSame
 import kotlin.test.assertTrue
 
 class BiliDataWrapperFeatureTest {
@@ -117,6 +118,29 @@ class BiliDataWrapperFeatureTest {
         BiliData.dynamicTemplatePolicyByScope.getValue(scope).getValue(uid).templates += "TwoMsg"
 
         assertEquals(listOf("OneMsg"), wrapper.dynamicTemplatePolicyByScope[scope]?.get(uid)?.templates?.toList())
+    }
+
+    /**
+     * deepCopyFrom 捕获的订阅集合不得共享 live mutable set，失败回滚才能恢复真正的旧代际。
+     */
+    @Test
+    fun `wrapper deep copy should isolate live BiliData mutations from captured snapshot`() {
+        BiliData.dynamic.clear()
+        BiliData.dynamic[1001L] = SubData(
+            name = "up",
+            contacts = mutableSetOf("onebot11:group:1"),
+            sourceRefs = mutableSetOf("direct:onebot11:group:1"),
+        )
+
+        val snapshot = BiliDataWrapper.deepCopyFrom(BiliData)
+        BiliData.dynamic[1001L]?.contacts?.add("onebot11:group:2")
+
+        assertEquals(setOf("onebot11:group:1"), snapshot.dynamic[1001L]?.contacts?.toSet())
+        assertNotSame(BiliData.dynamic[1001L]?.contacts, snapshot.dynamic[1001L]?.contacts)
+
+        snapshot.dynamic[1001L]?.contacts?.add("onebot11:group:3")
+
+        assertEquals(setOf("onebot11:group:1", "onebot11:group:2"), BiliData.dynamic[1001L]?.contacts?.toSet())
     }
 
     /**

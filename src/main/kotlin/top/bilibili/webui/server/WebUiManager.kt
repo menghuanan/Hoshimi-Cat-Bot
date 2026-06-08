@@ -24,6 +24,7 @@ import io.ktor.server.routing.routing
 import org.slf4j.LoggerFactory
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.json
 import top.bilibili.webui.auth.WebUiAuthService
 import top.bilibili.webui.auth.WebUiCredentialStore
@@ -37,6 +38,7 @@ import top.bilibili.webui.routes.registerWebUiStaticRoutes
 import top.bilibili.webui.service.WebUiActionFacade
 import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiConfigFacade
+import top.bilibili.webui.service.WebUiConfigHotReloadCoordinator
 import top.bilibili.webui.service.WebUiConfigWriteFacade
 import top.bilibili.webui.service.WebUiLogFacade
 import top.bilibili.webui.service.WebUiRuntimeFacade
@@ -79,16 +81,23 @@ class WebUiManager(
 
         // 服务器只安装最小 JSON 与路由能力，为后续管理接口保留清晰边界。
         val configFacade = WebUiConfigFacade()
+        val configWriteFacade = WebUiConfigWriteFacade(
+            configFacade = configFacade,
+        )
+        val configHotReloadCoordinator = BiliBiliBot.requireWebUiConfigHotReloadCoordinator()
         val startedServer = embeddedServer(CIO, host = settings.host, port = settings.port) {
             installWebUiModule(
                 settings = settings,
                 authService = authService,
                 runtimeFacade = WebUiRuntimeFacade(),
                 configFacade = configFacade,
-                configWriteFacade = WebUiConfigWriteFacade(
-                    configFacade = configFacade,
+                configWriteFacade = configWriteFacade,
+                configHotReloadCoordinator = configHotReloadCoordinator,
+                subscriptionManagementFacade = WebUiSubscriptionManagementFacade(
+                    submitPersistedDataReload = {
+                        configHotReloadCoordinator.submitPersistedBiliDataReload()
+                    },
                 ),
-                subscriptionManagementFacade = WebUiSubscriptionManagementFacade(),
                 // 日志面按 Bot 本次启动时间裁切窗口，避免把上一轮进程残留拼进管理页。
                 logFacade = WebUiLogFacade(startupEpochMillis = logWindowStartEpochMillis),
                 actionFacade = WebUiActionFacade(),
@@ -112,7 +121,38 @@ class WebUiManager(
             server = null
         }
     }
+
+    /**
+     * 仅比较会影响 WebUI 运行面的设置，并返回前端可能需要跳转的新地址。
+     */
+    fun planReload(nextSettings: WebUiSettings): WebUiReloadPlan {
+        if (settings == nextSettings) {
+            return WebUiReloadPlan(restartRequired = false, message = "webui unchanged")
+        }
+        val redirect = if (settings.host != nextSettings.host || settings.port != nextSettings.port) {
+            "http://${nextSettings.host}:${nextSettings.port}/"
+        } else {
+            null
+        }
+        return WebUiReloadPlan(
+            restartRequired = true,
+            webUiRedirectUrl = redirect,
+            message = "webui restart scheduled",
+        )
+    }
 }
+
+/**
+ * WebUI 热重载计划把“当前响应先返回”和“监听端口稍后切换”拆开，避免保存请求被自己关闭。
+ */
+data class WebUiReloadPlan(
+    val restartRequired: Boolean,
+    val webUiRedirectUrl: String? = null,
+    val message: String = "",
+    val scheduleToken: String? = null,
+    // 运行期设置只留给 Bot 延迟调度使用，不作为浏览器可见配置契约返回。
+    val nextSettings: WebUiSettings? = null,
+)
 
 /**
  * WebUI 应用模块只负责安装内容协商并把认证、静态页和只读 API 接到同一条受控路由树上；
@@ -124,6 +164,7 @@ fun Application.installWebUiModule(
     runtimeFacade: WebUiRuntimeFacade,
     configFacade: WebUiConfigFacade,
     configWriteFacade: WebUiConfigWriteFacade,
+    configHotReloadCoordinator: WebUiConfigHotReloadCoordinator = WebUiConfigHotReloadCoordinator.fromConfigWriteFacade(configWriteFacade),
     subscriptionManagementFacade: WebUiSubscriptionManagementFacade = WebUiSubscriptionManagementFacade(),
     logFacade: WebUiLogFacade,
     actionFacade: WebUiActionFacade,
@@ -144,6 +185,7 @@ fun Application.installWebUiModule(
             runtimeFacade,
             configFacade,
             configWriteFacade,
+            configHotReloadCoordinator,
             subscriptionManagementFacade,
             auditService,
         )

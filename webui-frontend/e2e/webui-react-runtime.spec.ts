@@ -102,6 +102,36 @@ test('centers settings cards within the page while keeping the tabs fixed', asyn
   expect(adapterBox?.y).toBeGreaterThan((platformTypeBox?.y || 0) + (platformTypeBox?.height || 0))
 })
 
+test('saves visible settings through one hot reload batch job', async ({page}) => {
+  const batchBodies: Array<Record<string, unknown>> = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/config/save-batch')) {
+      batchBodies.push(request.postDataJSON() as Record<string, unknown>)
+    }
+  })
+
+  await page.goto('/login')
+  await page.getByLabel('WebUI 密码').fill('secret-password')
+  await page.getByRole('button', {name: '登录'}).click()
+  await expect(page.getByRole('heading', {name: '运行概览'})).toBeVisible()
+
+  await page.goto('/settings')
+  await page.getByRole('button', {name: '消息配置'}).click()
+  await page.getByLabel('消息间隔').fill('250')
+  await page.getByLabel('链接解析黑名单').fill('onebot11:group:1001\n\nonebot11:private:2002')
+
+  await page.getByRole('button', {name: '保存'}).click()
+  await page.getByLabel('确认密码').fill('secret-password')
+  await page.getByRole('button', {name: '确认'}).click()
+
+  await expect(page.getByText(/保存成功/)).toBeVisible()
+  expect(batchBodies).toHaveLength(1)
+  expect(batchBodies[0]).toMatchObject({
+    biliConfig: expect.objectContaining({messageInterval: 250}),
+    biliData: expect.objectContaining({linkParseBlacklistContacts: ['onebot11:group:1001', 'onebot11:private:2002']}),
+  })
+})
+
 test('keeps API and static asset routes out of the React fallback', async ({page}) => {
   await page.goto('/login')
   const runtimeResponse = await page.evaluate(async () => {

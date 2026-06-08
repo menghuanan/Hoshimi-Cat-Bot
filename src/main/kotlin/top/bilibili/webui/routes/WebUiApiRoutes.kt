@@ -14,7 +14,10 @@ import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiBiliDataWriteRequestDto
 import top.bilibili.webui.model.WebUiBotConfigWriteRequestDto
 import top.bilibili.webui.model.WebUiActionConfirmationRequestDto
+import top.bilibili.webui.model.WebUiConfigBatchSaveRequestDto
+import top.bilibili.webui.model.WebUiConfigHotReloadJobDto
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
+import top.bilibili.webui.model.WebUiRecommendedAction
 import top.bilibili.webui.model.WebUiSaveEffectLevel
 import top.bilibili.webui.model.WebUiSubscriptionAtAllSaveRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionCreateRequestDto
@@ -26,6 +29,7 @@ import top.bilibili.webui.model.WebUiSubscriptionThemeSaveRequestDto
 import top.bilibili.webui.model.WebUiSubscriptionUidSaveRequestDto
 import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiConfigFacade
+import top.bilibili.webui.service.WebUiConfigHotReloadCoordinator
 import top.bilibili.webui.service.WebUiConfigWriteFacade
 import top.bilibili.webui.service.WebUiRuntimeFacade
 import top.bilibili.webui.service.WebUiSubscriptionManagementFacade
@@ -38,6 +42,7 @@ fun Route.registerWebUiApiRoutes(
     runtimeFacade: WebUiRuntimeFacade,
     configFacade: WebUiConfigFacade,
     configWriteFacade: WebUiConfigWriteFacade,
+    configHotReloadCoordinator: WebUiConfigHotReloadCoordinator,
     subscriptionManagementFacade: WebUiSubscriptionManagementFacade,
     auditService: WebUiAuditService,
 ) {
@@ -270,9 +275,15 @@ fun Route.registerWebUiApiRoutes(
         if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
             return@post
         }
-        val result = configWriteFacade.saveBiliConfig(request)
-        auditService.recordConfigSave("BiliConfig.yml", result, "webui save request")
-        call.respondSaveResult(result)
+        // 旧单文件 URL 仍可用，但写入必须进入热重载协调器，避免前端维护第二套保存状态机。
+        call.respondAcceptedHotReloadJob(
+            configHotReloadCoordinator.submitAuditedConfigSave(
+                request = WebUiConfigBatchSaveRequestDto(biliConfig = request),
+                auditService = auditService,
+                detailSummary = "path=/api/config/bili-config",
+            ),
+            configHotReloadCoordinator,
+        )
     }
 
     post("/api/config/bili-data") {
@@ -281,9 +292,15 @@ fun Route.registerWebUiApiRoutes(
         if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
             return@post
         }
-        val result = configWriteFacade.saveBiliData(request)
-        auditService.recordConfigSave("BiliData.yml", result, "webui save request")
-        call.respondSaveResult(result)
+        // 单文件 BiliData 保存也复用队列，保证链接解析黑名单和订阅刷新不会并发应用。
+        call.respondAcceptedHotReloadJob(
+            configHotReloadCoordinator.submitAuditedConfigSave(
+                request = WebUiConfigBatchSaveRequestDto(biliData = request),
+                auditService = auditService,
+                detailSummary = "path=/api/config/bili-data",
+            ),
+            configHotReloadCoordinator,
+        )
     }
 
     post("/api/config/bot") {
@@ -292,9 +309,98 @@ fun Route.registerWebUiApiRoutes(
         if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
             return@post
         }
-        val result = configWriteFacade.saveBotConfig(request)
-        auditService.recordConfigSave("bot.yml", result, "webui save request")
-        call.respondSaveResult(result)
+        // bot.yml 可能触发平台和 WebUI 运行面变更，因此兼容路由也只返回 job 快照。
+        call.respondAcceptedHotReloadJob(
+            configHotReloadCoordinator.submitAuditedConfigSave(
+                request = WebUiConfigBatchSaveRequestDto(botConfig = request),
+                auditService = auditService,
+                detailSummary = "path=/api/config/bot",
+            ),
+            configHotReloadCoordinator,
+        )
+    }
+
+    post("/api/config/save-batch") {
+        val session = call.requireWebUiSession(authService, auditService) ?: return@post
+        val request = call.receive<WebUiConfigBatchSaveRequestDto>()
+        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPasswordForBatch(), auditService)) {
+            return@post
+        }
+        val job = configHotReloadCoordinator.submitAuditedConfigSave(
+            request = request,
+            auditService = auditService,
+            detailSummary = "path=/api/config/save-batch",
+        )
+        call.respondAcceptedHotReloadJob(job, configHotReloadCoordinator)
+    }
+
+    get("/api/config/save-jobs/{jobId}") {
+        call.requireWebUiSession(authService, auditService) ?: return@get
+        val jobId = call.parameters["jobId"].orEmpty()
+        val job = configHotReloadCoordinator.readJob(jobId)
+        if (job == null) {
+            call.respond(HttpStatusCode.NotFound, mapOf("message" to "job not found"))
+        } else {
+            call.respond(job)
+        }
+    }
+}
+
+/**
+ * 配置保存路由提交热重载任务时注册完成审计，确保队列异步失败和成功都能留下 config-save 记录。
+ */
+private fun WebUiConfigHotReloadCoordinator.submitAuditedConfigSave(
+    request: WebUiConfigBatchSaveRequestDto,
+    auditService: WebUiAuditService,
+    detailSummary: String,
+): WebUiConfigHotReloadJobDto {
+    return submit(request) { job ->
+        auditConfigSaveJob(job, auditService, detailSummary)
+    }
+}
+
+/**
+ * 保存 job 的逐文件结果直接映射为审计记录；无 outcome 的异常路径按文件范围合成失败结果。
+ */
+private fun auditConfigSaveJob(
+    job: WebUiConfigHotReloadJobDto,
+    auditService: WebUiAuditService,
+    detailSummary: String,
+) {
+    val outcomes = job.outcomes.ifEmpty {
+        job.files.map { file ->
+            top.bilibili.webui.model.WebUiConfigFileSaveOutcomeDto(
+                file = file,
+                result = WebUiConfigSaveResultDto(
+                    success = false,
+                    persisted = false,
+                    conflictDetected = false,
+                    validationErrors = emptyList(),
+                    effectiveLevel = WebUiSaveEffectLevel.REJECTED_PERSISTENCE,
+                    recommendedAction = WebUiRecommendedAction.RETRY_SAVE,
+                    snapshotToken = "",
+                    message = job.message,
+                ),
+            )
+        }
+    }
+    outcomes.forEach { outcome ->
+        auditService.recordConfigSave(
+            sourceFile = outcome.file.auditSourceFileName(),
+            result = outcome.result,
+            detailSummary = "$detailSummary jobId=${job.jobId} phase=${job.phase} message=${job.message}",
+        )
+    }
+}
+
+/**
+ * 审计目标沿用真实配置文件名，避免把内部 enum 名称暴露到运维日志里。
+ */
+private fun top.bilibili.webui.model.WebUiConfigFileKind.auditSourceFileName(): String {
+    return when (this) {
+        top.bilibili.webui.model.WebUiConfigFileKind.BILI_CONFIG -> "BiliConfig.yml"
+        top.bilibili.webui.model.WebUiConfigFileKind.BILI_DATA -> "BiliData.yml"
+        top.bilibili.webui.model.WebUiConfigFileKind.BOT_CONFIG -> "bot.yml"
     }
 }
 
@@ -324,6 +430,16 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondSaveResult
 }
 
 /**
+ * 保存入口统一返回热重载 job DTO；worker 若已同步完成则优先返回最新快照。
+ */
+private suspend fun io.ktor.server.application.ApplicationCall.respondAcceptedHotReloadJob(
+    job: WebUiConfigHotReloadJobDto,
+    coordinator: WebUiConfigHotReloadCoordinator,
+) {
+    respond(HttpStatusCode.Accepted, coordinator.readJob(job.jobId) ?: job)
+}
+
+/**
  * 订阅管理写操作使用 BadRequest 表达输入或业务校验失败，成功删除和新增都返回 OK。
  */
 private suspend fun io.ktor.server.application.ApplicationCall.respondSubscriptionMutation(
@@ -331,6 +447,16 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondSubscripti
 ) {
     val status = if (result.success) HttpStatusCode.OK else HttpStatusCode.BadRequest
     respond(status, result)
+}
+
+/**
+ * 批量保存只允许一个确认密码；前端必须把同一次点击的密码同步写入全部子请求。
+ */
+private fun WebUiConfigBatchSaveRequestDto.confirmationPasswordForBatch(): String {
+    return biliConfig?.confirmationPassword
+        ?: biliData?.confirmationPassword
+        ?: botConfig?.confirmationPassword
+        ?: ""
 }
 
 /**

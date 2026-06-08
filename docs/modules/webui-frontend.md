@@ -38,7 +38,7 @@
 | --- | --- | --- | --- |
 | 登录与改密 | `pages/LoginPage.tsx`、`api/auth.ts`、`types/auth.ts` | `/api/auth/*` | 登录结果只依赖 cookie-backed session，不把 bearer token 存入浏览器状态 |
 | 仪表盘 | `pages/DashboardPage.tsx`、`hooks/useRuntimeSummary.ts`、`types/runtime.ts` | `/api/runtime/summary` | 展示生命周期、账号、平台连接、推送统计、宿主 CPU/内存/磁盘和最近推送记录 |
-| 设置 | `pages/SettingsPage.tsx`、`settings/*`、`api/settings.ts` | `/api/config/*` | schema 控制字段、分组、校验和 payload，保存需要确认密码 |
+| 设置 | `pages/SettingsPage.tsx`、`settings/*`、`api/settings.ts` | `/api/config/*`、`/api/config/save-batch`、`/api/config/save-jobs/{jobId}` | schema 控制字段、分组、校验和 payload，保存需要确认密码并轮询热重载 job |
 | 订阅 | `pages/SubscriptionsPage.tsx`、`components/subscriptions/*`、`hooks/useSubscriptions.ts`、`subscriptions/*` | `/api/subscriptions*` | 支持动态、分组和番剧卡片，以及 targets、uids、filters、templates、atall、theme 子编辑器 |
 | 日志 | `pages/LogsPage.tsx`、`hooks/useLogs.ts`、`api/logs.ts`、`types/logs.ts` | `/api/logs/*` | sourceId 来自后端白名单，清空日志需要确认密码，自动刷新状态保存在 cookie |
 | 页面壳与导航 | `components/Shell.tsx`、`router/webuiRouter.ts`、`contexts/WebUiNavigationContext.tsx` | Ktor 静态路由 | `/login` 是独立路径，其他页面可 hash 切换并支持直接刷新 |
@@ -48,6 +48,8 @@
 
 - 所有 JSON 请求必须经过 `src/api/http.ts` 的统一入口，unsafe 方法自动携带 CSRF 头。
 - `settings/settingsSchema.ts` 是设置页字段来源；`settings/settingsPayload.ts` 负责把表单值转换为后端 DTO。
+- 设置页一次保存必须把已变更的 `biliConfig`、`biliData` 和 `botConfig` 归并到同一个 batch payload；`BiliData.yml` 的链接解析黑名单按 textarea 非空行转换为 `linkParseBlacklistContacts` 数组。
+- `useSettingsFiles.saveBatch()` 只在 job 到达 `APPLIED` 后清理编辑态；`FAILED` 必须保留用户输入并展示后端 message，`webUiRedirectUrl` 需要作为新 WebUI 地址提示给用户。
 - `subscriptions/subscriptionPayloads.ts` 是订阅写操作 payload 来源；新增订阅子编辑器时必须同步 hook、payload、类型和后端 DTO。
 - `utils/errorMessages.ts` 负责把 HTTP、英文异常和密码策略错误归一成可见文案；页面不应直接展示原始 exception 对象。
 - `utils/storage.ts` 只读取前端所需 cookie，例如 CSRF token；不能尝试读取 HttpOnly session cookie。

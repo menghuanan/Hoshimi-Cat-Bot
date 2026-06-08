@@ -17,7 +17,10 @@ object CacheClearTasker : BiliTasker() {
     private val logger = LoggerFactory.getLogger(CacheClearTasker::class.java)
     override var interval: Int = 60 * 60 * 24
 
-    private val expires by BiliConfigManager.config.cacheConfig::expires
+    /**
+     * 缓存过期策略每次执行时读取当前配置，确保 WebUI 保存后无需重启任务。
+     */
+    private val expires get() = BiliConfigManager.config.cacheConfig.expires
 
     // ✅ P3修复: 连续失败计数器和告警阈值
     private var consecutiveFailures = 0

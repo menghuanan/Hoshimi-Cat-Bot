@@ -4,6 +4,7 @@ import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import org.slf4j.LoggerFactory
+import top.bilibili.core.deepCopyForRuntimeSnapshot
 import top.bilibili.service.TemplateRuntimeCoordinator
 import top.bilibili.utils.normalizeContactSubject
 import java.io.File
@@ -547,7 +548,7 @@ object BiliConfigManager {
      */
     fun saveConfig(configToSave: BiliConfig = config): Boolean {
         return try {
-            writeConfigFileAtomically(configFile, yaml.encodeToString(configToSave))
+            writeConfigSnapshotToDisk(configToSave)
             // WebUI 保存后会立即从运行态读取快照，写盘成功后必须同步内存态。
             config = configToSave
             logger.debug("配置已保存")
@@ -556,6 +557,50 @@ object BiliConfigManager {
             logger.error("保存配置文件失败", e)
             false
         }
+    }
+
+    /**
+     * 只把候选主配置写入磁盘，不安装到运行态；热重载提交阶段才允许切换内存态。
+     */
+    fun persistConfigSnapshot(configSnapshot: BiliConfig): Boolean {
+        return try {
+            writeConfigSnapshotToDisk(configSnapshot)
+            logger.debug("候选配置已持久化")
+            true
+        } catch (e: Exception) {
+            logger.error("保存候选配置文件失败", e)
+            false
+        }
+    }
+
+    /**
+     * 导出当前主配置和业务数据深度快照，供热重载失败时恢复旧运行态。
+     */
+    fun runtimeSnapshot(): Pair<BiliConfig, BiliDataWrapper> {
+        return config.deepCopyForRuntimeSnapshot() to BiliDataWrapper.deepCopyFrom(BiliData)
+    }
+
+    /**
+     * 安装已验证的运行期快照；该入口只给热重载/回滚使用，仍不允许业务层直接写 YAML。
+     */
+    fun installRuntimeSnapshot(configSnapshot: BiliConfig, dataSnapshot: BiliDataWrapper) {
+        installConfigRuntimeSnapshot(configSnapshot)
+        installDataRuntimeSnapshot(dataSnapshot)
+    }
+
+    /**
+     * 只安装 `BiliConfig.yml` 运行态切片，避免非数据保存重置 BiliData 及模板协调缓存。
+     */
+    fun installConfigRuntimeSnapshot(configSnapshot: BiliConfig) {
+        config = configSnapshot.deepCopyForRuntimeSnapshot()
+    }
+
+    /**
+     * 只安装 `BiliData.yml` 运行态切片，供数据热重载和失败回滚精确替换业务数据缓存。
+     */
+    fun installDataRuntimeSnapshot(dataSnapshot: BiliDataWrapper) {
+        BiliDataWrapper.applyTo(dataSnapshot.deepCopy(), BiliData)
+        data = BiliData
     }
 
     /**
@@ -588,6 +633,19 @@ object BiliConfigManager {
     }
 
     /**
+     * 将业务数据 wrapper 按 owner 路径写回磁盘，并可选择在写盘成功后同步安装到运行态。
+     */
+    fun saveDataSnapshot(dataSnapshot: BiliDataWrapper, installAfterSave: Boolean = false): Boolean {
+        val snapshot = dataSnapshot.deepCopy()
+        val saved = saveDataWrapper(snapshot)
+        if (saved && installAfterSave) {
+            BiliDataWrapper.applyTo(snapshot.deepCopy(), BiliData)
+            data = BiliData
+        }
+        return saved
+    }
+
+    /**
      * 同时保存配置与业务数据。
      */
     fun saveAll() {
@@ -615,6 +673,14 @@ object BiliConfigManager {
             logger.error("保存数据文件失败", e)
             false
         }
+    }
+
+    /**
+     * 主配置写盘 helper 只处理磁盘原子写，调用方决定是否安装运行态。
+     */
+    private fun writeConfigSnapshotToDisk(configSnapshot: BiliConfig) {
+        val configToSave = configSnapshot
+        writeConfigFileAtomically(configFile, yaml.encodeToString(configToSave))
     }
 
     /**

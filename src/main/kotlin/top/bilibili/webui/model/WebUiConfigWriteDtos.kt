@@ -75,6 +75,16 @@ data class WebUiBiliDataWriteRequestDto(
 )
 
 /**
+ * 设置页一次保存可能同时覆盖多个 owner 文件，批量 DTO 用于保证一次点击只触发一个热重载任务。
+ */
+@Serializable
+data class WebUiConfigBatchSaveRequestDto(
+    val biliConfig: WebUiBiliConfigWriteRequestDto? = null,
+    val biliData: WebUiBiliDataWriteRequestDto? = null,
+    val botConfig: WebUiBotConfigWriteRequestDto? = null,
+)
+
+/**
  * 单个预置推送目标的 WebUI 写入 DTO，避免前端直接依赖平台配置内部可变集合。
  */
 @Serializable

@@ -99,6 +99,8 @@ Tasker 拥有后台协程、轮询循环、channel 消费者、发送队列、�
 
 Tasker 可以读取轮询间隔、订阅数据、平台状态和缓存策略，但不直接写 YAML。需要持久化订阅、模板策略或链接解析状态时，必须通过 service/config 的既有入口；新增 tasker 配置必须说明默认值、热更新语义和停机时的读取行为。
 
+WebUI 热重载应用 `BiliConfig.yml` 后，读取启动期缓存的 Tasker 必须通过显式 refresh 方法同步运行时配置。当前至少覆盖 `BiliCheckTasker`、`LiveCheckTasker`、`LiveCloseCheckTasker` 和 `CacheClearTasker` 的轮询间隔、报告间隔、低频时段和缓存过期策略；新增 Tasker 若缓存配置值，也必须加入热重载刷新路径和回归测试。
+
 ## 测试与验证
 
 - 新增或修改 tasker 生命周期后，运行 `BiliTaskerRegressionTest`、`TaskLifecycleBoundaryRegressionTest` 和 `TaskSelfHealingTest`。

@@ -60,6 +60,8 @@ Connector 模块把平台 vendor 协议转换为项目平台中立模型，并�
 
 `initialize()` 只创建并缓存 adapter；`start()` 负责启动底层连接；`stop()` 停止 adapter 并清空引用。
 
+WebUI 保存 `bot.yml` 平台配置时，connector 热切换必须走 manager-owned prepare/commit/rollback 边界：`prepareReload()` 只创建并启动候选 adapter，失败时旧 adapter 和稳定 `eventFlow` 继续工作；`commitReload()` 在 manager 锁内切换 active adapter 与事件桥，成功后再关闭旧 adapter；`rollbackReload()` 或候选 `closeUncommitted()` 只关闭未提交候选。外层运行代际不得直接持有 vendor adapter 或另建第二套切换路径。
+
 ## 关键流程
 
 启动层调用 `PlatformConnectorManager.initialize()` 选择平台并创建 adapter，随后由 `start()` 建立底层连接；入站消息转换为 `PlatformInboundMessage` 后交给 service，出站消息由 gateway 和 capability service 转为 vendor 请求；停机时统一走 `stop()`，不得由业务层直接关闭 vendor client。

@@ -39,6 +39,95 @@ function createDeferred<T>() {
   return {promise, resolve, reject}
 }
 
+/**
+ * 设置页测试统一返回 BiliData 快照和热重载 job，避免每个用例都重复模拟批量保存契约。
+ */
+function createSettingsResponse(url: string, init?: RequestInit, options: {
+  batchOk?: boolean
+  batchStatus?: number
+  batchMessage?: string
+  botSnapshotToken?: string
+  onBatchBody?: (body: Record<string, Record<string, unknown>>) => void
+} = {}) {
+  if (url.includes('/api/config/bili-data') && (!init || init.method === 'GET')) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        sourceFile: 'BiliData.yml',
+        snapshotToken: 'data-token',
+        fields: [
+          {key: 'linkParseBlacklistContacts', label: '链接解析黑名单', value: '', capability: 'EDITABLE', editable: true},
+        ],
+      }),
+    }
+  }
+  if (url.includes('/api/config/save-batch') && init?.method === 'POST') {
+    const ok = options.batchOk !== false
+    const body = parseJsonBody(init.body)
+    options.onBatchBody?.(body)
+    const files = [
+      body.biliConfig ? 'BILI_CONFIG' : null,
+      body.biliData ? 'BILI_DATA' : null,
+      body.botConfig ? 'BOT_CONFIG' : null,
+    ].filter(Boolean)
+    return {
+      ok,
+      status: options.batchStatus ?? (ok ? 202 : 401),
+      json: async () => ok
+        ? {jobId: 'job-1', phase: 'QUEUED', files}
+        : {message: options.batchMessage || 'bad password'},
+    }
+  }
+  if (url.includes('/api/config/save-jobs/job-1')) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        jobId: 'job-1',
+        phase: 'APPLIED',
+        files: ['BILI_CONFIG', 'BILI_DATA', 'BOT_CONFIG'],
+        message: '保存成功，配置已热重载',
+        outcomes: [
+          {file: 'BILI_CONFIG', result: {success: true, snapshotToken: 'bili-token-2'}},
+          {file: 'BILI_DATA', result: {success: true, snapshotToken: 'data-token-2'}},
+          {file: 'BOT_CONFIG', result: {success: true, snapshotToken: options.botSnapshotToken || 'bot-token-2'}},
+        ],
+      }),
+    }
+  }
+  return null
+}
+
+/**
+ * 测试 helper 只解析本地 mock 的 JSON body，避免断言代码重复 try/catch。
+ */
+function parseJsonBody(body: BodyInit | null | undefined): Record<string, Record<string, unknown>> {
+  try {
+    return JSON.parse(String(body || '{}'))
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * 批量保存测试只关心 bot.yml 子 payload，统一取出嵌套对象避免继续断言旧单文件 POST。
+ */
+function collectBotBatchPayloads(): {
+  payloads: Array<Record<string, unknown>>
+  handleBatchBody: (body: Record<string, Record<string, unknown>>) => void
+} {
+  const payloads: Array<Record<string, unknown>> = []
+  return {
+    payloads,
+    handleBatchBody: (body) => {
+      if (body.botConfig) {
+        payloads.push(body.botConfig)
+      }
+    },
+  }
+}
+
 describe('webui shell routing', () => {
   it('renders the dashboard shell with the core navigation pages', () => {
     renderAtPath('/')
@@ -167,6 +256,10 @@ describe('webui shell routing', () => {
   it('keeps edited settings values visible after a successful save', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init)
+      if (settingsResponse) {
+        return settingsResponse
+      }
       if (url.includes('/api/config/bili-config') && (!init || init.method === 'GET')) {
         return {
           ok: true,
@@ -193,9 +286,6 @@ describe('webui shell routing', () => {
             ],
           }),
         }
-      }
-      if (url.includes('/api/config/bili-config') && init?.method === 'POST') {
-        return {ok: true, status: 200, json: async () => ({success: true, message: 'bili 已保存'})}
       }
       return {ok: true, status: 200, json: async () => ({success: true})}
     }))
@@ -213,7 +303,7 @@ describe('webui shell routing', () => {
     await user.click(screen.getByRole('button', {name: '确认'}))
 
     await waitFor(() => expect(screen.getByLabelText('关注分组')).toHaveValue('新分组'))
-    expect(screen.getByText(/保存成功/)).toBeInTheDocument()
+    expect(await screen.findByText(/保存成功/)).toBeInTheDocument()
   })
 
   /**
@@ -222,6 +312,14 @@ describe('webui shell routing', () => {
   it('shows a friendly password error when settings save is rejected', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {
+        batchOk: false,
+        batchStatus: 401,
+        batchMessage: 'bad password',
+      })
+      if (settingsResponse) {
+        return settingsResponse
+      }
       if (url.includes('/api/config/bili-config') && (!init || init.method === 'GET')) {
         return {
           ok: true,
@@ -248,9 +346,6 @@ describe('webui shell routing', () => {
             ],
           }),
         }
-      }
-      if (url.includes('/api/config/bili-config') && init?.method === 'POST') {
-        return {ok: false, status: 401, json: async () => ({message: 'bad password'})}
       }
       return {ok: true, status: 200, json: async () => ({success: true})}
     }))
@@ -499,8 +594,8 @@ describe('webui shell routing', () => {
     expect(screen.queryByLabelText('WebUI 主机')).not.toBeInTheDocument()
     expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('justify-start')
     expect(screen.getByRole('heading', {name: '系统配置'})).toBeInTheDocument()
-    expect(screen.getByText('本页面所有配置项都需重启程序生效')).toBeInTheDocument()
-    expect(screen.getByText('本页面所有配置项都需重启程序生效')).toHaveClass('text-rose-600')
+    expect(screen.getByText('保存后自动热重载生效')).toBeInTheDocument()
+    expect(screen.getByText('保存后自动热重载生效')).toHaveClass('text-slate-600')
     expect(screen.getByText('当前 QQ 官方机器人没有做适配，不推荐使用。')).toBeInTheDocument()
     expect(screen.getByText('默认关闭，按需开启独立 WebUI。')).toBeInTheDocument()
     expect(screen.queryByText('保存后需要重启')).not.toBeInTheDocument()
@@ -602,15 +697,15 @@ describe('webui shell routing', () => {
    * 已有群普通管理员直接以可编辑卡片呈现，删除卡片后保存应提交删除后的管理员列表。
    */
   it('saves deleted existing group admin cards without requiring the stage button', async () => {
-    const botPostBodies: Array<Record<string, unknown>> = []
+    const {payloads: botPostBodies, handleBatchBody} = collectBotBatchPayloads()
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {onBatchBody: handleBatchBody})
+      if (settingsResponse) {
+        return settingsResponse
+      }
       if (url.includes('/api/config/bili-config')) {
         return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: '', fields: []})}
-      }
-      if (url.includes('/api/config/bot') && init?.method === 'POST') {
-        botPostBodies.push(JSON.parse(String(init.body || '{}')))
-        return {ok: true, status: 200, json: async () => ({success: true, message: 'bot saved', snapshotToken: 'bot-token-2'})}
       }
       if (url.includes('/api/config/bot')) {
         return {
@@ -665,12 +760,14 @@ describe('webui shell routing', () => {
    * 群普通管理员卡片先暂存到页面态，只有右上角保存才会触发后端写入。
    */
   it('stages group admin pairs from the card save button before the page save writes them', async () => {
-    const postRequests: Array<{url: string, body: string}> = []
+    const batchBodies: Array<Record<string, Record<string, unknown>>> = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (init?.method === 'POST') {
-        postRequests.push({url, body: String(init.body || '')})
-        return {ok: true, status: 200, json: async () => ({success: true, message: 'bot saved'})}
+      const settingsResponse = createSettingsResponse(url, init, {
+        onBatchBody: (body) => batchBodies.push(body),
+      })
+      if (settingsResponse) {
+        return settingsResponse
       }
       if (url.includes('/api/config/bili-config')) {
         return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: 'bili-token', fields: []})}
@@ -711,42 +808,45 @@ describe('webui shell routing', () => {
     expect(screen.getAllByLabelText('个人QQ号')[0]).toHaveValue('654321')
     expect(screen.getAllByLabelText('群聊')[1]).toHaveValue('111111')
     expect(screen.getAllByLabelText('个人QQ号')[1]).toHaveValue('222222')
-    expect(postRequests).toHaveLength(0)
+    expect(batchBodies).toHaveLength(0)
 
     await user.click(screen.getByRole('button', {name: '保存'}))
     await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
-    await waitFor(() => expect(postRequests.length).toBeGreaterThan(0))
-    if (!postRequests.some((request) => request.url.includes('/api/config/bot'))) {
-      await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
-      await user.click(screen.getByRole('button', {name: '确认'}))
-    }
-
-    await waitFor(() => expect(postRequests.some((request) => request.url.includes('/api/config/bot'))).toBe(true))
-    const botPost = postRequests.find((request) => request.url.includes('/api/config/bot'))
-    expect(botPost?.body).toContain('123456')
-    expect(botPost?.body).toContain('654321')
-    expect(botPost?.body).toContain('111111')
-    expect(botPost?.body).toContain('222222')
+    await waitFor(() => expect(batchBodies).toHaveLength(1))
+    const botPost = batchBodies[0].botConfig
+    expect(botPost?.admins).toEqual([
+      {
+        groupId: 123456,
+        userIds: [654321],
+        groupContact: 'onebot11:group:123456',
+        userContacts: ['onebot11:private:654321'],
+      },
+      {
+        groupId: 111111,
+        userIds: [222222],
+        groupContact: 'onebot11:group:111111',
+        userContacts: ['onebot11:private:222222'],
+      },
+    ])
   })
 
   /**
    * 管理员页连续保存时必须沿用后端返回的新快照令牌，避免第二次保存被并发保护误判为旧快照。
    */
   it('uses the latest bot snapshot token when saving group admins repeatedly', async () => {
-    const botPostBodies: Array<Record<string, unknown>> = []
+    const {payloads: botPostBodies, handleBatchBody} = collectBotBatchPayloads()
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {
+        botSnapshotToken: `bot-token-${botPostBodies.length + 1}`,
+        onBatchBody: handleBatchBody,
+      })
+      if (settingsResponse) {
+        return settingsResponse
+      }
       if (url.includes('/api/config/bili-config')) {
         return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: '', fields: []})}
-      }
-      if (url.includes('/api/config/bot') && init?.method === 'POST') {
-        botPostBodies.push(JSON.parse(String(init.body || '{}')))
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({success: true, message: 'bot saved', snapshotToken: `bot-token-${botPostBodies.length + 1}`}),
-        }
       }
       if (url.includes('/api/config/bot')) {
         return {
@@ -775,7 +875,10 @@ describe('webui shell routing', () => {
     await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
     await waitFor(() => expect(botPostBodies).toHaveLength(1))
+    await waitFor(() => expect(screen.getByRole('button', {name: '保存'})).toBeEnabled())
 
+    await user.clear(await screen.findByLabelText('群聊'))
+    await user.clear(screen.getByLabelText('个人QQ号'))
     await user.type(await screen.findByLabelText('群聊'), '222222')
     await user.type(screen.getByLabelText('个人QQ号'), '333333')
     await user.click(screen.getByRole('button', {name: '暂存'}))
@@ -795,12 +898,16 @@ describe('webui shell routing', () => {
     let botPostBody: Record<string, unknown> | null = null
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {
+        onBatchBody: (body) => {
+          botPostBody = body.botConfig || null
+        },
+      })
+      if (settingsResponse) {
+        return settingsResponse
+      }
       if (url.includes('/api/config/bili-config')) {
         return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: 'bili-token', fields: []})}
-      }
-      if (url.includes('/api/config/bot') && init?.method === 'POST') {
-        botPostBody = JSON.parse(String(init.body || '{}'))
-        return {ok: true, status: 200, json: async () => ({success: true, message: 'bot saved', snapshotToken: 'bot-token-2'})}
       }
       if (url.includes('/api/config/bot')) {
         return {
@@ -852,14 +959,14 @@ describe('webui shell routing', () => {
    * 只修改群普通管理员时不应写入 BiliConfig，避免无关旧配置校验失败挡住 bot.yml 保存。
    */
   it('does not save BiliConfig when only group admins changed', async () => {
-    const postUrls: string[] = []
+    const batchBodies: Array<Record<string, Record<string, unknown>>> = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (init?.method === 'POST') {
-        postUrls.push(url)
-      }
-      if (url.includes('/api/config/bili-config') && init?.method === 'POST') {
-        return {ok: false, status: 400, json: async () => ({success: false, message: 'lowSpeedRange is invalid'})}
+      const settingsResponse = createSettingsResponse(url, init, {
+        onBatchBody: (body) => batchBodies.push(body),
+      })
+      if (settingsResponse) {
+        return settingsResponse
       }
       if (url.includes('/api/config/bili-config')) {
         return {
@@ -874,9 +981,6 @@ describe('webui shell routing', () => {
             ],
           }),
         }
-      }
-      if (url.includes('/api/config/bot') && init?.method === 'POST') {
-        return {ok: true, status: 200, json: async () => ({success: true, message: 'bot saved', snapshotToken: 'bot-token-2'})}
       }
       if (url.includes('/api/config/bot')) {
         return {
@@ -905,8 +1009,9 @@ describe('webui shell routing', () => {
     await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
     await user.click(screen.getByRole('button', {name: '确认'}))
 
-    await waitFor(() => expect(postUrls.some((url) => url.includes('/api/config/bot'))).toBe(true))
-    expect(postUrls.some((url) => url.includes('/api/config/bili-config'))).toBe(false)
+    await waitFor(() => expect(batchBodies).toHaveLength(1))
+    expect(batchBodies[0].botConfig).toBeDefined()
+    expect(batchBodies[0].biliConfig).toBeUndefined()
   })
 
   /**

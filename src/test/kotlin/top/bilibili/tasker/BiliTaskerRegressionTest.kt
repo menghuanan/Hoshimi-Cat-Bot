@@ -12,6 +12,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import top.bilibili.BiliConfig
+import top.bilibili.BiliConfigManager
+import top.bilibili.CheckConfig
+import top.bilibili.EnableConfig
 import top.bilibili.connector.ConnectionBackoffPolicy
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -24,6 +28,16 @@ class BiliTaskerRegressionTest {
     private class DummyTasker(name: String) : BiliTasker(name) {
         override var interval: Int = -1
         override suspend fun main() {}
+    }
+
+    private class RefreshableCheckTasker : BiliCheckTasker("refreshable-check") {
+        override var interval: Int = 60
+        override suspend fun main() {}
+
+        fun recalculateForTest() {
+            init()
+            after()
+        }
     }
 
     private class AwaitingTasker(name: String) : BiliTasker(name) {
@@ -187,5 +201,53 @@ class BiliTaskerRegressionTest {
             source.contains("isExpectedShutdownThrowable(e) && (BiliBiliBot.isStopping() || !isActive)"),
             "run-once cancellation should be treated as expected shutdown noise when task job is no longer active",
         )
+    }
+
+    /**
+     * 热重载刷新应重新解析轮询区间配置，而不是继续沿用构造时缓存的 normalRange。
+     */
+    @Test
+    fun `check tasker refresh should re-read runtime interval config without restarting task`() {
+        val originalConfig = currentRuntimeConfigOrNull()
+        try {
+            setRuntimeConfig(
+                BiliConfig(
+                    checkConfig = CheckConfig(normalRange = "30-30", checkReportInterval = 10),
+                    enableConfig = EnableConfig(lowSpeedEnable = false),
+                ),
+            )
+            val tasker = RefreshableCheckTasker()
+            tasker.recalculateForTest()
+            assertEquals(30, tasker.interval)
+
+            setRuntimeConfig(
+                BiliConfig(
+                    checkConfig = CheckConfig(normalRange = "45-45", checkReportInterval = 1),
+                    enableConfig = EnableConfig(lowSpeedEnable = false),
+                ),
+            )
+            tasker.refreshRuntimeConfig()
+            tasker.recalculateForTest()
+
+            assertEquals(45, tasker.interval)
+        } finally {
+            originalConfig?.let(::setRuntimeConfig)
+        }
+    }
+
+    /**
+     * 反射读取运行态配置用于测试恢复，兼容未初始化配置管理器的测试进程。
+     */
+    private fun currentRuntimeConfigOrNull(): BiliConfig? {
+        return runCatching { BiliConfigManager.config }.getOrNull()
+    }
+
+    /**
+     * 反射写入运行态配置只用于隔离 tasker 刷新回归测试，不绕过生产保存入口。
+     */
+    private fun setRuntimeConfig(config: BiliConfig) {
+        val field = BiliConfigManager::class.java.getDeclaredField("config")
+        field.isAccessible = true
+        field.set(BiliConfigManager, config)
     }
 }

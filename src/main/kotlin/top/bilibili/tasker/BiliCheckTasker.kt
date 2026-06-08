@@ -16,7 +16,7 @@ abstract class BiliCheckTasker(
     val taskerName: String? = null
 ) : BiliTasker(taskerName) {
 
-    private val intervalTime: Int by lazy { interval }
+    private var intervalTime: Int = interval
 
     protected open var lowSpeedEnable = BiliConfigManager.config.enableConfig.lowSpeedEnable
     private var lowSpeedTimeRange = listOf(0, 0)  // [startHour, endHour]
@@ -24,7 +24,7 @@ abstract class BiliCheckTasker(
     private var normalIntervalRange = listOf(30, 120)  // [minSeconds, maxSeconds]
 
     protected open var checkReportEnable = true
-    private val checkReportInterval: Int = BiliConfigManager.config.checkConfig.checkReportInterval
+    private var checkReportInterval: Int = BiliConfigManager.config.checkConfig.checkReportInterval
     private var lastCheck: Long = Instant.now().epochSecond - checkReportInterval * 60
     private var checkCount = 0
 
@@ -61,6 +61,15 @@ abstract class BiliCheckTasker(
             }
             runCatching { toClose?.close() }
                 .onFailure { logger.warn("关闭 BiliCheckTasker 共享 BiliClient 失败: ${it.message}", it) }
+        }
+
+        /**
+         * 热重载后刷新已启动的轮询任务，避免初始化阶段捕获的间隔配置继续生效。
+         */
+        fun refreshAllRuntimeConfig() {
+            taskers.filterIsInstance<BiliCheckTasker>().forEach { tasker ->
+                tasker.refreshRuntimeConfig()
+            }
         }
     }
 
@@ -125,6 +134,17 @@ abstract class BiliCheckTasker(
 
         // 初始化阶段先计算一次间隔，确保首轮执行后的休眠时间也遵循区间配置。
         interval = calcTime(intervalTime)
+    }
+
+    /**
+     * 所有轮询任务在热重载后重新解析间隔、低频配置和报告间隔，但不取消当前主协程。
+     */
+    open fun refreshRuntimeConfig() {
+        intervalTime = interval
+        lowSpeedEnable = BiliConfigManager.config.enableConfig.lowSpeedEnable
+        checkReportInterval = BiliConfigManager.config.checkConfig.checkReportInterval
+        lastCheck = Instant.now().epochSecond - checkReportInterval * 60
+        init()
     }
 
     override fun before() {

@@ -1,6 +1,7 @@
 package top.bilibili.config
 
 import org.slf4j.LoggerFactory
+import top.bilibili.core.deepCopyForRuntimeSnapshot
 import java.io.File
 
 /**
@@ -70,6 +71,34 @@ object ConfigManager {
             logger.error("保存配置失败: ${e.message}", e)
             false
         }
+    }
+
+    /**
+     * 只把候选 bot.yml 写入磁盘，不替换 ConfigManager.botConfig。
+     */
+    fun persistConfigSnapshot(configSnapshot: BotConfig): Boolean {
+        return try {
+            store.save(configSnapshot.normalizedBotConfig())
+            logger.info("候选平台配置已保存到: ${File(configDir, "bot.yml").absolutePath}")
+            true
+        } catch (e: Exception) {
+            logger.error("保存候选平台配置失败: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * 导出当前 bot.yml 运行态深度快照，供热重载代际构建和失败回滚使用。
+     */
+    fun runtimeSnapshot(): BotConfig {
+        return botConfig.deepCopyForRuntimeSnapshot()
+    }
+
+    /**
+     * 安装已验证的 bot.yml 运行态快照；磁盘写入仍只能通过 saveConfig 完成。
+     */
+    fun installRuntimeSnapshot(configSnapshot: BotConfig) {
+        botConfig = configSnapshot.normalizedBotConfig().deepCopyForRuntimeSnapshot()
     }
 
     /**

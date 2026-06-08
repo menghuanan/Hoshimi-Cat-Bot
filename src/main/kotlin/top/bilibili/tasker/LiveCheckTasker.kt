@@ -17,7 +17,7 @@ import java.time.Instant
 object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
     // 真实轮询间隔由 BiliCheckTasker 按 normalRange/lowSpeedRange 动态重算；这里仅保留初始化回退值。
     override var interval = 60
-    private val liveCloseEnable = BiliConfigManager.config.enableConfig.liveCloseNotifyEnable
+    private var liveCloseEnable = BiliConfigManager.config.enableConfig.liveCloseNotifyEnable
 
     private val liveChannel by BiliBiliBot::liveChannel
     private val dynamic by BiliData::dynamic
@@ -79,5 +79,13 @@ object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
                 logger.debug("已记录 ${lives.size} 个直播用于下播检测")
             }
         }
+    }
+
+    /**
+     * 直播下播通知开关热重载后需要重新读取，避免保存成功但仍按旧开关记录 liveUsers。
+     */
+    override fun refreshRuntimeConfig() {
+        liveCloseEnable = BiliConfigManager.config.enableConfig.liveCloseNotifyEnable
+        super.refreshRuntimeConfig()
     }
 }

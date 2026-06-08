@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { loadBiliConfig, loadBotConfig, saveBiliConfig, saveBotConfig, type WebUiBiliConfigSaveInput, type WebUiBotConfigSaveInput } from '../api/settings'
+import {
+  loadBiliConfig,
+  loadBiliData,
+  loadBotConfig,
+  loadSettingsSaveJob,
+  saveBiliConfig,
+  saveBotConfig,
+  saveSettingsBatch,
+  type WebUiBiliConfigSaveInput,
+  type WebUiBotConfigSaveInput,
+  type WebUiSettingsBatchSaveInput,
+} from '../api/settings'
 import type { WebUiJsonRequestOptions } from '../api/http'
 import { useHighRiskConfirmation } from './useHighRiskConfirmation'
+import type { WebUiConfigHotReloadJob } from '../types/settings'
 
 type UseSettingsFilesOptions = WebUiJsonRequestOptions
 
@@ -21,16 +33,19 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
   }), [fetchImpl, redirectToLogin])
   const {requestHighRiskConfirmation} = useHighRiskConfirmation()
   const [biliConfig, setBiliConfig] = useState<Record<string, unknown> | null>(null)
+  const [biliData, setBiliData] = useState<Record<string, unknown> | null>(null)
   const [botConfig, setBotConfig] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
     setLoading(true)
-    const [nextBiliConfig, nextBotConfig] = await Promise.all([
+    const [nextBiliConfig, nextBiliData, nextBotConfig] = await Promise.all([
       loadBiliConfig(requestOptions),
+      loadBiliData(requestOptions),
       loadBotConfig(requestOptions),
     ])
     setBiliConfig(nextBiliConfig)
+    setBiliData(nextBiliData)
     setBotConfig(nextBotConfig)
     setLoading(false)
   }, [requestOptions])
@@ -66,6 +81,18 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
   }, [requestHighRiskConfirmation, requestOptions])
 
   /**
+   * 批量保存会轮询热重载任务直到成功或失败，避免页面在仅入队时误报已生效。
+   */
+  const saveBatch = useCallback(async (input: WebUiSettingsBatchSaveInput, confirmationMessage = '请输入 WebUI 密码确认保存') => {
+    const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
+    if (!confirmationPassword) {
+      return null
+    }
+    const accepted = await saveSettingsBatch(attachConfirmationPassword(input, confirmationPassword), requestOptions)
+    return waitForSettingsSaveJob(accepted, requestOptions)
+  }, [requestHighRiskConfirmation, requestOptions])
+
+  /**
    * 保存成功后把最新字段值合并回本地快照，避免页面重新读取旧快照把输入刷回旧值。
    */
   const patchBiliConfig = useCallback((values: Record<string, unknown>, snapshotToken?: string) => {
@@ -79,7 +106,68 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
     setBotConfig((current) => patchSnapshotFields(current, values, snapshotToken))
   }, [])
 
-  return {biliConfig, botConfig, loading, reload, saveBili, saveBot, patchBiliConfig, patchBotConfig}
+  /**
+   * BiliData 乐观更新只处理设置页可编辑字段，不把订阅内部结构暴露给页面。
+   */
+  const patchBiliData = useCallback((values: Record<string, unknown>, snapshotToken?: string) => {
+    setBiliData((current) => patchSnapshotFields(current, values, snapshotToken))
+  }, [])
+
+  return {
+    biliConfig,
+    biliData,
+    botConfig,
+    loading,
+    reload,
+    saveBili,
+    saveBot,
+    saveBatch,
+    patchBiliConfig,
+    patchBiliData,
+    patchBotConfig,
+  }
+}
+
+/**
+ * 同一次确认密码复制到所有子 payload，保持后端 batch guard 只校验一个用户意图。
+ */
+function attachConfirmationPassword(
+  input: WebUiSettingsBatchSaveInput,
+  confirmationPassword: string,
+): WebUiSettingsBatchSaveInput {
+  return {
+    biliConfig: input.biliConfig ? {...input.biliConfig, confirmationPassword} : undefined,
+    biliData: input.biliData ? {...input.biliData, confirmationPassword} : undefined,
+    botConfig: input.botConfig ? {...input.botConfig, confirmationPassword} : undefined,
+  }
+}
+
+/**
+ * 轮询设置保存 job 使用 60 秒上限，避免后端异常时页面永久处于保存中。
+ */
+async function waitForSettingsSaveJob(
+  accepted: WebUiConfigHotReloadJob,
+  requestOptions: WebUiJsonRequestOptions,
+): Promise<WebUiConfigHotReloadJob> {
+  if (accepted.phase === 'APPLIED' || accepted.phase === 'FAILED') {
+    return accepted
+  }
+  const deadline = Date.now() + 60_000
+  while (Date.now() < deadline) {
+    await sleep(500)
+    const current = await loadSettingsSaveJob(accepted.jobId, requestOptions)
+    if (current.phase === 'APPLIED' || current.phase === 'FAILED') {
+      return current
+    }
+  }
+  throw new Error('保存任务超时，请稍后刷新状态')
+}
+
+/**
+ * 显式 sleep 让轮询节奏可读，测试可通过 mock fetch 快速进入终态。
+ */
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
 /**

@@ -27,6 +27,7 @@ function contentTypeForPath(pathname: string): string {
  */
 export async function installWebUiApiMock(page: Page) {
   let authenticated = false
+  const saveJobs = new Map<string, Record<string, unknown>>()
   const protectedShellPaths = new Set(['/', '/settings', '/subscriptions', '/logs'])
 
   await page.route('http://webui-react.test/**', async (route: Route) => {
@@ -92,8 +93,34 @@ export async function installWebUiApiMock(page: Page) {
       await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(configSnapshot('BiliConfig.yml', 'bili-token'))})
       return
     }
+    if (pathname === '/api/config/bili-data') {
+      await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(biliDataSnapshot())})
+      return
+    }
     if (pathname === '/api/config/bot') {
       await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(configSnapshot('bot.yml', 'bot-token'))})
+      return
+    }
+    if (pathname === '/api/config/save-batch') {
+      const files = filesFromBatchBody(body)
+      const job = {
+        jobId: 'job-1',
+        phase: 'APPLIED',
+        files,
+        message: '保存成功，配置已热重载',
+        outcomes: files.map((file) => ({file, result: {success: true, snapshotToken: `${String(file).toLowerCase()}-token-2`}})),
+      }
+      saveJobs.set('job-1', job)
+      await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify({...job, phase: 'QUEUED'})})
+      return
+    }
+    if (pathname.startsWith('/api/config/save-jobs/')) {
+      const jobId = pathname.split('/').pop() || ''
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(saveJobs.get(jobId) || {jobId, phase: 'FAILED', message: 'job not found'}),
+      })
       return
     }
     if (pathname === '/api/subscriptions') {
@@ -168,8 +195,34 @@ function configSnapshot(sourceFile: string, snapshotToken: string) {
       {key: 'platform.onebot11.host', label: 'OneBot11 主机', value: '127.0.0.1', capability: 'EDITABLE', editable: true},
       {key: 'platform.onebot11.token', label: 'OneBot11 Token', value: 'SECRET_TOKEN', capability: 'MASKED', editable: true},
       {key: 'proxyConfig.proxy', label: '代理地址', value: 'http://secret-proxy', capability: 'MASKED', editable: true},
+      {key: 'pushConfig.messageInterval', label: '消息间隔', value: '100', capability: 'EDITABLE', editable: true},
     ],
   }
+}
+
+/**
+ * BiliData 快照只暴露设置页当前可编辑字段，验证前端不会继续落回单文件保存路径。
+ */
+function biliDataSnapshot() {
+  return {
+    sourceFile: 'BiliData.yml',
+    snapshotToken: 'data-token',
+    fields: [
+      {key: 'linkParseBlacklistContacts', label: '链接解析黑名单', value: '', capability: 'EDITABLE', editable: true},
+    ],
+  }
+}
+
+/**
+ * 批量保存 mock 根据提交体推断文件枚举，保持 Playwright 断言贴近后端 job DTO。
+ */
+function filesFromBatchBody(body: unknown): string[] {
+  const payload = typeof body === 'object' && body ? body as Record<string, unknown> : {}
+  return [
+    payload.biliConfig ? 'BILI_CONFIG' : null,
+    payload.biliData ? 'BILI_DATA' : null,
+    payload.botConfig ? 'BOT_CONFIG' : null,
+  ].filter((file): file is string => Boolean(file))
 }
 
 /**

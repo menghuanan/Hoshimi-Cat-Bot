@@ -42,3 +42,51 @@ data class WebUiConfigSaveResultDto(
     val snapshotToken: String,
     val message: String = "",
 )
+
+/**
+ * 配置文件枚举固定 WebUI 可保存的三个 owner 边界，避免协调器接受任意文件名。
+ */
+@Serializable
+enum class WebUiConfigFileKind {
+    BILI_CONFIG,
+    BILI_DATA,
+    BOT_CONFIG,
+}
+
+/**
+ * 热重载任务阶段只描述后端处理进度，不向前端暴露 connector 或 tasker 内部对象。
+ */
+@Serializable
+enum class WebUiConfigHotReloadPhase {
+    QUEUED,
+    SAVING,
+    APPLYING,
+    APPLIED,
+    FAILED,
+}
+
+/**
+ * 单个文件在一次批量保存中的结果，用于前端逐文件展示冲突、校验和持久化错误。
+ */
+@Serializable
+data class WebUiConfigFileSaveOutcomeDto(
+    val file: WebUiConfigFileKind,
+    val result: WebUiConfigSaveResultDto,
+)
+
+/**
+ * WebUI 保存任务快照由协调器维护，前端轮询该 DTO 判断配置是否已经热生效。
+ */
+@Serializable
+data class WebUiConfigHotReloadJobDto(
+    val jobId: String,
+    val phase: WebUiConfigHotReloadPhase,
+    val files: List<WebUiConfigFileKind> = emptyList(),
+    val outcomes: List<WebUiConfigFileSaveOutcomeDto> = emptyList(),
+    val coalescedSignals: Int = 1,
+    val acceptedAtEpochMillis: Long = 0L,
+    val startedAtEpochMillis: Long = 0L,
+    val completedAtEpochMillis: Long = 0L,
+    val webUiRedirectUrl: String? = null,
+    val message: String = "",
+)

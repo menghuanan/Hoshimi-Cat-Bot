@@ -268,6 +268,41 @@ class BiliConfigManagerNamespaceMigrationTest {
         }
     }
 
+    /**
+     * 热重载候选持久化只能写磁盘，不能在候选资源准备前替换当前运行态配置。
+     */
+    @Test
+    fun `persistConfigSnapshot should write config without installing runtime state`() {
+        val originalFileBytes = if (Files.exists(configFile)) Files.readAllBytes(configFile) else null
+        val originalConfigDirExists = Files.exists(configFile.parent)
+        val originalRuntimeConfig = currentRuntimeConfigOrNull()
+        val oldConfig = BiliConfig(adminContact = "onebot11:private:20001")
+        val candidateConfig = BiliConfig(adminContact = "onebot11:private:20002")
+        try {
+            Files.createDirectories(configFile.parent)
+            setRuntimeConfig(oldConfig)
+
+            val saved = BiliConfigManager.persistConfigSnapshot(candidateConfig)
+
+            assertTrue(saved)
+            assertEquals("onebot11:private:20001", BiliConfigManager.config.adminContact)
+        } finally {
+            if (originalRuntimeConfig != null) {
+                setRuntimeConfig(originalRuntimeConfig)
+            }
+            if (originalFileBytes != null) {
+                Files.createDirectories(configFile.parent)
+                Files.write(configFile, originalFileBytes)
+            } else {
+                Files.deleteIfExists(configFile)
+            }
+            deleteConfigBackups()
+            if (!originalConfigDirExists) {
+                runCatching { Files.deleteIfExists(configFile.parent) }
+            }
+        }
+    }
+
     private fun migrateViaReflection(): Boolean {
         val method = BiliConfigManager::class.java.getDeclaredMethod("migrateDataIfNeeded", BiliData::class.java)
         method.isAccessible = true

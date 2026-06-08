@@ -5,6 +5,7 @@ import top.bilibili.CacheConfig
 import top.bilibili.CheckConfig
 import top.bilibili.BiliConfig
 import top.bilibili.BiliData
+import top.bilibili.BiliDataWrapper
 import top.bilibili.EnableConfig
 import top.bilibili.FooterConfig
 import top.bilibili.ImageConfig
@@ -52,6 +53,125 @@ class WebUiConfigWriteFacadeTest {
         BiliData.dynamic = originalDynamic.toMutableMap()
         BiliData.group = originalGroup.toMutableMap()
         BiliData.linkParseBlacklistContacts = originalBlacklist.toMutableSet()
+    }
+
+    /**
+     * BiliConfig dry-run 只构建候选配置和结果，不得调用 owner save 写盘。
+     */
+    @Test
+    fun `bili config prepare should build candidate without invoking owner save`() {
+        val currentConfig = BiliConfig(adminContact = "onebot11:private:1")
+        var saveCalls = 0
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { currentConfig },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { BotConfig() },
+            ),
+            saveBiliConfigAction = {
+                saveCalls += 1
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliConfigProvider = { currentConfig }).readBiliConfig().snapshotToken
+        val prepared = facade.prepareBiliConfig(
+            WebUiBiliConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                adminContact = "onebot11:private:2",
+            ),
+            currentConfig,
+        )
+
+        assertTrue(prepared.result.success)
+        assertFalse(prepared.result.persisted)
+        assertEquals("onebot11:private:2", prepared.config?.adminContact)
+        assertEquals(0, saveCalls)
+    }
+
+    /**
+     * BiliData dry-run 返回完整 wrapper 候选，不能提前污染全局 BiliData 单例。
+     */
+    @Test
+    fun `bili data prepare should build wrapper candidate without mutating global state`() {
+        val currentData = configuredBiliData(setOf("onebot11:private:1"))
+        val currentWrapper = BiliDataWrapper.from(currentData)
+        val beforePrepare = BiliData.linkParseBlacklistContacts.toSet()
+        var saveCalls = 0
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { currentData },
+                botConfigProvider = { BotConfig() },
+            ),
+            saveBiliDataAction = {
+                saveCalls += 1
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliDataProvider = { currentData }).readBiliData().snapshotToken
+        val prepared = facade.prepareBiliData(
+            WebUiBiliDataWriteRequestDto(
+                snapshotToken = snapshotToken,
+                linkParseBlacklistContacts = listOf("onebot11:private:2", "onebot11:group:3"),
+            ),
+            currentWrapper,
+        )
+
+        assertTrue(prepared.result.success)
+        assertFalse(prepared.result.persisted)
+        assertEquals(
+            setOf("onebot11:private:2", "onebot11:group:3"),
+            prepared.data?.linkParseBlacklistContacts?.toSet(),
+        )
+        assertEquals(beforePrepare, BiliData.linkParseBlacklistContacts)
+        assertEquals(0, saveCalls)
+    }
+
+    /**
+     * bot.yml dry-run 只规范化候选 BotConfig，不得在预校验阶段触碰 ConfigManager。
+     */
+    @Test
+    fun `bot config prepare should build candidate without invoking owner save`() {
+        val currentBotConfig = BotConfig(
+            platform = PlatformConfig(
+                type = PlatformType.ONEBOT11,
+                adapter = "onebot11",
+                onebot11 = NapCatConfig(host = "127.0.0.1", port = 3001, token = "raw-token"),
+            ),
+        )
+        var saveCalls = 0
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { BiliConfig() },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { currentBotConfig },
+            ),
+            saveBotConfigAction = {
+                saveCalls += 1
+                true
+            },
+        )
+
+        val snapshotToken = WebUiConfigFacade(botConfigProvider = { currentBotConfig }).readBotConfig().snapshotToken
+        val prepared = facade.prepareBotConfig(
+            WebUiBotConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                platformType = "ONEBOT11",
+                adapter = "onebot11",
+                oneBot11Host = "10.0.0.2",
+                oneBot11Port = 3100,
+                oneBot11Token = "",
+            ),
+            currentBotConfig,
+        )
+
+        assertTrue(prepared.result.success)
+        assertFalse(prepared.result.persisted)
+        assertEquals("10.0.0.2", prepared.config?.selectedOneBot11Config()?.host)
+        assertEquals("raw-token", prepared.config?.selectedOneBot11Config()?.token)
+        assertEquals(0, saveCalls)
     }
 
     @Test

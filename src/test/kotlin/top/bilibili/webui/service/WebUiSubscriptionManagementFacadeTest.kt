@@ -80,6 +80,35 @@ class WebUiSubscriptionManagementFacadeTest {
     }
 
     /**
+     * 订阅数据保存成功后必须通知热重载协调器刷新 BiliData 运行态缓存；持久化失败不能发出信号。
+     */
+    @Test
+    fun `successful subscription mutation should emit persisted data reload signal`() = runBlocking {
+        var reloadSignals = 0
+        val facade = WebUiSubscriptionManagementFacade(
+            addDynamicAction = { _, subject -> "为 $subject 订阅 Alice 成功!" },
+            saveDataAction = { true },
+            submitPersistedDataReload = { reloadSignals += 1 },
+        )
+        val failingFacade = WebUiSubscriptionManagementFacade(
+            addDynamicAction = { _, subject -> "为 $subject 订阅 Alice 成功!" },
+            saveDataAction = { false },
+            submitPersistedDataReload = { reloadSignals += 10 },
+        )
+
+        val created = facade.createSubscription(
+            WebUiSubscriptionCreateRequestDto(type = "dynamic", uid = "123", targetGroup = "10001"),
+        )
+        val failed = failingFacade.createSubscription(
+            WebUiSubscriptionCreateRequestDto(type = "dynamic", uid = "124", targetGroup = "10002"),
+        )
+
+        assertTrue(created.success)
+        assertFalse(failed.success)
+        assertEquals(1, reloadSignals)
+    }
+
+    /**
      * 番剧订阅接受 ss、md、ep 三类命令层标识，并要求番剧号和群组号同时填写后才调用追番链路。
      */
     @Test

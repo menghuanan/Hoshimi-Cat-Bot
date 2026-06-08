@@ -3,6 +3,7 @@ package top.bilibili.webui.service
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
+import top.bilibili.BiliDataWrapper
 import top.bilibili.CacheConfig
 import top.bilibili.CheckConfig
 import top.bilibili.EnableConfig
@@ -58,20 +59,28 @@ class WebUiConfigWriteFacade(
     }
 
     /**
-     * 保存 `BiliConfig.yml` 的受控字段；只要快照未冲突，就通过主配置 owner 路径持久化。
+     * 预校验 `BiliConfig.yml` 写请求，基于调用方捕获的当前配置构建候选对象且不触发写盘。
      */
-    fun saveBiliConfig(request: WebUiBiliConfigWriteRequestDto): WebUiConfigSaveResultDto {
-        val currentDto = configFacade.readBiliConfig()
-        if (currentDto.snapshotToken != request.snapshotToken) {
-            return conflictResult(currentDto.snapshotToken, "configuration changed, refresh and retry")
+    fun prepareBiliConfig(
+        request: WebUiBiliConfigWriteRequestDto,
+        current: BiliConfig,
+    ): PreparedBiliConfigWrite {
+        val currentToken = snapshotTokenForBiliConfig(current)
+        if (currentToken != request.snapshotToken) {
+            return PreparedBiliConfigWrite(
+                config = null,
+                result = conflictResult(currentToken, "configuration changed, refresh and retry"),
+            )
         }
 
         val validationErrors = validateBiliConfigRequest(request)
         if (validationErrors.isNotEmpty()) {
-            return validationResult(validationErrors, currentDto.snapshotToken)
+            return PreparedBiliConfigWrite(
+                config = null,
+                result = validationResult(validationErrors, currentToken),
+            )
         }
 
-        val current = biliConfigProvider()
         val updatedConfig = current.copy(
             admin = request.admin,
             adminContact = request.adminContact.trim(),
@@ -155,11 +164,33 @@ class WebUiConfigWriteFacade(
             ),
         )
 
+        return PreparedBiliConfigWrite(
+            config = updatedConfig,
+            result = preparedResult(
+                snapshotToken = snapshotTokenForBiliConfig(updatedConfig),
+                effectiveLevel = WebUiSaveEffectLevel.RELOAD_REQUIRED,
+                recommendedAction = WebUiRecommendedAction.RELOAD_CONFIG,
+                message = "BiliConfig prepared",
+            ),
+        )
+    }
+
+    /**
+     * 保存 `BiliConfig.yml` 的受控字段；只要快照未冲突，就通过主配置 owner 路径持久化。
+     */
+    fun saveBiliConfig(request: WebUiBiliConfigWriteRequestDto): WebUiConfigSaveResultDto {
+        val current = biliConfigProvider()
+        val prepared = prepareBiliConfig(request, current)
+        if (!prepared.result.success) {
+            return prepared.result
+        }
+        val updatedConfig = prepared.config ?: return prepared.result
+
         return runCatching {
             val saved = saveBiliConfigAction(updatedConfig)
             if (!saved) {
                 return@runCatching persistenceResult(
-                    snapshotToken = currentDto.snapshotToken,
+                    snapshotToken = snapshotTokenForBiliConfig(current),
                     message = "BiliConfig save failed",
                 )
             }
@@ -171,10 +202,54 @@ class WebUiConfigWriteFacade(
             )
         }.getOrElse { error ->
             persistenceResult(
-                snapshotToken = currentDto.snapshotToken,
+                snapshotToken = snapshotTokenForBiliConfig(current),
                 message = error.message ?: "BiliConfig save failed",
             )
         }
+    }
+
+    /**
+     * 预校验 `BiliData.yml` 写请求，返回完整 wrapper 候选以供批量保存统一持久化。
+     */
+    fun prepareBiliData(
+        request: WebUiBiliDataWriteRequestDto,
+        current: BiliDataWrapper,
+    ): PreparedBiliDataWrite {
+        return prepareBiliData(request, current, snapshotTokenForBiliData(current))
+    }
+
+    /**
+     * 单文件路由保存沿用 facade 当前 token，批量保存则可传入候选快照 token，二者共享候选构建逻辑。
+     */
+    private fun prepareBiliData(
+        request: WebUiBiliDataWriteRequestDto,
+        current: BiliDataWrapper,
+        currentToken: String,
+    ): PreparedBiliDataWrite {
+        if (currentToken != request.snapshotToken) {
+            return PreparedBiliDataWrite(
+                data = null,
+                result = conflictResult(currentToken, "configuration changed, refresh and retry"),
+            )
+        }
+        val normalizedContacts = request.linkParseBlacklistContacts
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .map { normalizeContactSubject(it) ?: it }
+            .toSet()
+
+        val updatedData = current.copy(
+            linkParseBlacklistContacts = normalizedContacts.toMutableSet(),
+        )
+        return PreparedBiliDataWrite(
+            data = updatedData,
+            result = preparedResult(
+                snapshotToken = snapshotTokenForBiliData(updatedData),
+                effectiveLevel = WebUiSaveEffectLevel.APPLIED_IMMEDIATELY,
+                recommendedAction = WebUiRecommendedAction.NONE,
+                message = "BiliData prepared",
+            ),
+        )
     }
 
     /**
@@ -182,31 +257,28 @@ class WebUiConfigWriteFacade(
      */
     fun saveBiliData(request: WebUiBiliDataWriteRequestDto): WebUiConfigSaveResultDto {
         val currentDto = configFacade.readBiliData()
-        if (currentDto.snapshotToken != request.snapshotToken) {
-            return conflictResult(currentDto.snapshotToken, "configuration changed, refresh and retry")
+        val currentWrapper = BiliDataWrapper.from(BiliData)
+        val prepared = prepareBiliData(request, currentWrapper, currentDto.snapshotToken)
+        if (!prepared.result.success) {
+            return prepared.result
         }
-
-        val normalizedContacts = request.linkParseBlacklistContacts
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .map { normalizeContactSubject(it) ?: it }
-            .toSet()
+        val normalizedContacts = prepared.data?.linkParseBlacklistContacts?.toSet().orEmpty()
         val persisted = runCatching {
             saveBiliDataAction(normalizedContacts)
         }.getOrElse { error ->
             return persistenceResult(
-                snapshotToken = currentDto.snapshotToken,
+                snapshotToken = snapshotTokenForBiliData(currentWrapper),
                 message = error.message ?: "BiliData save failed",
             )
         }
         if (!persisted) {
             return persistenceResult(
-                snapshotToken = currentDto.snapshotToken,
+                snapshotToken = snapshotTokenForBiliData(currentWrapper),
                 message = "BiliData save failed",
             )
         }
 
-        val nextToken = snapshotTokenForBiliData()
+        val nextToken = snapshotTokenForBiliData(prepared.data ?: currentWrapper)
         return successResult(
             snapshotToken = nextToken,
             effectiveLevel = WebUiSaveEffectLevel.APPLIED_IMMEDIATELY,
@@ -216,18 +288,25 @@ class WebUiConfigWriteFacade(
     }
 
     /**
-     * 保存 `bot.yml` 的受控平台参数；配置持久化后明确提示重启级别影响。
+     * 预校验 `bot.yml` 写请求，基于传入 BotConfig 构建候选平台配置且不触发 ConfigManager。
      */
-    fun saveBotConfig(request: WebUiBotConfigWriteRequestDto): WebUiConfigSaveResultDto {
-        val currentDto = configFacade.readBotConfig()
-        if (currentDto.snapshotToken != request.snapshotToken) {
-            return conflictResult(currentDto.snapshotToken, "configuration changed, refresh and retry")
+    fun prepareBotConfig(
+        request: WebUiBotConfigWriteRequestDto,
+        current: BotConfig,
+    ): PreparedBotConfigWrite {
+        val currentToken = snapshotTokenForBotConfig(current)
+        if (currentToken != request.snapshotToken) {
+            return PreparedBotConfigWrite(
+                config = null,
+                result = conflictResult(currentToken, "configuration changed, refresh and retry"),
+            )
         }
-
-        val current = botConfigProvider()
         val validationErrors = validateBotRequest(request, current)
         if (validationErrors.isNotEmpty()) {
-            return validationResult(validationErrors, currentDto.snapshotToken)
+            return PreparedBotConfigWrite(
+                config = null,
+                result = validationResult(validationErrors, currentToken),
+            )
         }
 
         val selectedOneBot11 = current.selectedOneBot11Config()
@@ -265,11 +344,33 @@ class WebUiConfigWriteFacade(
             admins = resolveAdmins(current.admins, request.admins),
         )
 
+        return PreparedBotConfigWrite(
+            config = updatedConfig,
+            result = preparedResult(
+                snapshotToken = snapshotTokenForBotConfig(updatedConfig),
+                effectiveLevel = WebUiSaveEffectLevel.RESTART_REQUIRED,
+                recommendedAction = WebUiRecommendedAction.REQUEST_RESTART,
+                message = botConfigSaveMessage(updatedConfig),
+            ),
+        )
+    }
+
+    /**
+     * 保存 `bot.yml` 的受控平台参数；配置持久化后明确提示重启级别影响。
+     */
+    fun saveBotConfig(request: WebUiBotConfigWriteRequestDto): WebUiConfigSaveResultDto {
+        val current = botConfigProvider()
+        val prepared = prepareBotConfig(request, current)
+        if (!prepared.result.success) {
+            return prepared.result
+        }
+        val updatedConfig = prepared.config ?: return prepared.result
+
         return runCatching {
             val saved = saveBotConfigAction(updatedConfig)
             if (!saved) {
                 return@runCatching persistenceResult(
-                    snapshotToken = currentDto.snapshotToken,
+                    snapshotToken = snapshotTokenForBotConfig(current),
                     message = "bot.yml save failed",
                 )
             }
@@ -281,7 +382,7 @@ class WebUiConfigWriteFacade(
             )
         }.getOrElse { error ->
             persistenceResult(
-                snapshotToken = currentDto.snapshotToken,
+                snapshotToken = snapshotTokenForBotConfig(current),
                 message = error.message ?: "bot.yml save failed",
             )
         }
@@ -652,6 +753,27 @@ class WebUiConfigWriteFacade(
     }
 
     /**
+     * prepare 阶段成功只代表候选对象已构建，persisted 必须保持 false 以免前端误判已写盘。
+     */
+    private fun preparedResult(
+        snapshotToken: String,
+        effectiveLevel: WebUiSaveEffectLevel,
+        recommendedAction: WebUiRecommendedAction,
+        message: String,
+    ): WebUiConfigSaveResultDto {
+        return WebUiConfigSaveResultDto(
+            success = true,
+            persisted = false,
+            conflictDetected = false,
+            validationErrors = emptyList(),
+            effectiveLevel = effectiveLevel,
+            recommendedAction = recommendedAction,
+            snapshotToken = snapshotToken,
+            message = message,
+        )
+    }
+
+    /**
      * 成功保存统一返回明确效果等级和下一步建议，避免 route 层再做状态拼装。
      */
     private fun successResult(
@@ -687,12 +809,18 @@ class WebUiConfigWriteFacade(
     /**
      * `BiliData.yml` 的 token 绑定当前持久化快照，确保业务数据、模板策略和黑名单变化都会推进版本号。
      */
-    private fun snapshotTokenForBiliData(): String {
-        val snapshot = buildBiliDataSnapshot(BiliData)
+    private fun snapshotTokenForBiliData(wrapper: BiliDataWrapper): String {
+        val rawSnapshot = linkedMapOf(
+            "dataVersion" to wrapper.dataVersion.toString(),
+            "dynamic.count" to wrapper.dynamic.size.toString(),
+            "group.count" to wrapper.group.size.toString(),
+            "bangumi.count" to wrapper.bangumi.size.toString(),
+            "linkParseBlacklistContacts" to wrapper.linkParseBlacklistContacts.sorted().joinToString("\n"),
+        )
         return computeWebUiSnapshotToken(
             sourceFile = "BiliData.yml",
             title = "BiliData",
-            rawSnapshot = snapshot.rawSnapshot,
+            rawSnapshot = rawSnapshot,
         )
     }
 

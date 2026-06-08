@@ -78,6 +78,7 @@ export const settingsFieldDescriptions: Record<string, string> = {
   'linkResolveConfig.triggerMode': '控制链接解析的触发方式。',
   'linkResolveConfig.drawEnable': '控制解析后的链接是否转成图片。',
   'linkResolveConfig.returnLink': '控制解析后是否保留链接文本。',
+  'linkParseBlacklistContacts': '逐行填写联系人 subject，被列入的群聊或用户不会触发链接解析。',
 
   // 管理员
   'adminContactQQ': '最高权限管理员 QQ，建议填写自己的号码。',

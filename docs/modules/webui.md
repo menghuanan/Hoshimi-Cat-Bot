@@ -33,7 +33,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 | 认证 | `/api/auth/session`、`/api/auth/login`、`/api/auth/change-password`、`/api/auth/logout` | login 无 session；改密和登出需要 session | session 只经 HttpOnly cookie，CSRF 经可读 cookie 和 `X-CSRF-Token` 双提交 |
 | 运行态 | `GET /api/runtime/summary` | 需要 session | 只读即时快照，文本会脱敏路径、内网地址和凭据键值 |
 | 配置读取 | `GET /api/config/bili-config`、`/api/config/bili-data`、`/api/config/bot` | 需要 session | facade 输出字段级快照和 snapshot token，不向前端暴露可变对象 |
-| 配置写入 | `POST /api/config/bili-config`、`/api/config/bili-data`、`/api/config/bot` | session、CSRF、高风险确认 | 按文件边界走 `WebUiConfigWriteFacade`，保存结果映射到 OK、BadRequest、Conflict 或 InternalServerError |
+| 配置写入 | `POST /api/config/save-batch`、`GET /api/config/save-jobs/{jobId}`、兼容单文件保存路由 | session、CSRF、高风险确认 | 设置页批量保存进入 `WebUiConfigHotReloadCoordinator`；单文件路由保留兼容但仍按受控 facade/协调器边界处理 |
 | 订阅概览 | `GET /api/subscriptions` | 需要 session | 由 `WebUiConfigFacade.readSubscriptions()` 汇总动态、分组和番剧卡片 |
 | 订阅编辑 | `/api/subscriptions/{id}/targets|uids|filters|templates|atall|theme` | 读需要 session；写需要 session、CSRF、高风险确认 | key 使用 path-safe 格式，写入后统一经 `BiliConfigManager.saveData()` 或配置/数据双保存 |
 | 日志 | `/api/logs/sources`、`/api/logs/{sourceId}`、`/api/logs/{sourceId}/export`、`/api/logs/{sourceId}/clear` | 读需要 session；清空需要高风险确认 | sourceId 必须命中白名单，导出文件名只由 sourceId 派生 |
@@ -64,12 +64,13 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 2. `WebUiManager.start()` 先 bootstrap 凭据，再创建 `WebUiAuthService`、各类 facade 和路由树。
 3. `installWebUiModule()` 安装 JSON 编解码、请求体边界和安全 hardening，再挂载静态页、认证、API、日志和动作路由。
 4. 浏览器登录后只拿到 session/csrf cookie；后续 unsafe 请求需要 CSRF 头和高风险确认口令。
-5. `WebUiConfigFacade`、`WebUiConfigWriteFacade`、`WebUiSubscriptionManagementFacade`、`WebUiRuntimeFacade` 和 `WebUiLogFacade` 分别负责快照读取、受控写入、运行态汇总和日志窗口。
+5. `WebUiConfigFacade`、`WebUiConfigWriteFacade`、`WebUiConfigHotReloadCoordinator`、`WebUiSubscriptionManagementFacade`、`WebUiRuntimeFacade` 和 `WebUiLogFacade` 分别负责快照读取、dry-run 写入、保存归并与热重载、订阅编辑、运行态汇总和日志窗口。
 6. 停止时 `WebUiManager` 只关闭嵌入式服务器，不接管 bot 主生命周期。
 
 ## 资源与生命周期
 
 - `WebUiManager` 只拥有嵌入式服务器生命周期，不持有 bot 主协程或平台 adapter。
+- WebUI 配置热重载协调器归 `BiliBiliBot` 根生命周期所有，不随单个 `WebUiManager` 重建；WebUI host、port、enabled、token TTL 或 static_dir 变化时只在保存响应返回后调度 stop/start/disable。
 - `WebUiCredentialStore` 负责 `webui-credentials.json` 的创建、读取、迁移和密码哈希。
 - 凭据文件默认落在 `config/webui-credentials.json`，路径由 `bot.yml` 的 `webui.credential_file` 决定。
 - `WebUiLogFacade` 只读固定日志源，并按本次启动时间裁切旧日志窗口。
@@ -82,7 +83,8 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - `webui-credentials.json` 保存密码哈希、salt、tokenVersion 和强制改密状态。
 - `BiliConfig.yml`、`BiliData.yml`、`bot.yml` 只允许通过各自 manager/facade 写回，不允许 WebUI 直接写文件。
 - `logs/bilibili-bot.log`、`logs/error.log`、`logs/daemon/Daemon_*.log` 是当前固定日志来源，对应的 `GET /api/logs/{sourceId}/export` 和 `POST /api/logs/{sourceId}/clear` 也只针对这些白名单 sourceId。
-- `WebUiConfigWriteFacade` 对 `BiliConfig.yml` 和 `bot.yml` 使用快照 token，对 `BiliData.yml` 使用受控即时保存，避免跨文件误写。
+- `WebUiConfigWriteFacade` 对三个配置文件使用快照 token 和 dry-run 构建候选 payload；设置页一次点击应通过 `POST /api/config/save-batch` 触发一个热重载 job，前端轮询 job 到 `APPLIED` 或 `FAILED`。
+- 订阅编辑成功写入 `BiliData.yml` 后必须向同一协调器提交已持久化数据刷新信号，确保模板策略和运行态缓存同步清理。
 
 ## 测试与验证
 

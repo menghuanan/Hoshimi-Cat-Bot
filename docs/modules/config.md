@@ -64,6 +64,8 @@ Config 模块负责配置文件、业务数据、平台配置和迁移。当前�
 
 启动阶段先由配置管理器创建目录和默认文件，再加载旧结构并按版本迁移，最后写回当前结构。运行期变更必须通过对应 manager 或协调器写入，不能让 service、tasker 或 connector 直接保存 YAML。
 
+WebUI 保存链路使用热重载协调器统一处理 `BiliConfig.yml`、`BiliData.yml` 和 `bot.yml`。设置页保存先基于旧运行快照 dry-run 校验全部 payload，全部通过后才按 owner 写盘；候选运行代际应用失败时先恢复旧内存态，再通过 `BiliConfigManager` 或 `ConfigManager` 尝试回滚已落盘文件。订阅页已完成 `BiliData.yml` 持久化的 mutation 只提交内部运行态刷新信号，不把后端内部信号暴露给浏览器 DTO。
+
 ## 资源与生命周期
 
 Config 模块拥有配置文件和业务数据文件的写入权，但不拥有长期协程、网络客户端或 native 资源。文件写入必须保持原子语义和编码一致，运行期缓存由调用方或协调器负责刷新。
