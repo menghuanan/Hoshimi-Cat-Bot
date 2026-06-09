@@ -183,6 +183,27 @@ class BiliConfigManagerNamespaceMigrationTest {
     }
 
     @Test
+    fun `migrate should rewrite bare contact template policy scopes into contact scopes`() {
+        val subject = "onebot11:group:10001"
+        val uid = 123456L
+        BiliData.dataVersion = 4
+        BiliData.dynamic[uid] = SubData(
+            name = "测试UP",
+            contacts = mutableSetOf(subject),
+            sourceRefs = mutableSetOf("direct:$subject"),
+        )
+        BiliData.dynamicTemplatePolicyByScope[subject] = mutableMapOf(
+            uid to TemplatePolicy(templates = mutableListOf("WebDy")),
+        )
+
+        val changed = migrateViaReflection()
+
+        assertTrue(changed)
+        assertEquals(listOf("WebDy"), BiliData.dynamicTemplatePolicyByScope["contact:$subject"]?.get(uid)?.templates?.toList())
+        assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey(subject))
+    }
+
+    @Test
     fun `load data should clear runtime caches when applying current wrapper schema`() {
         BiliData.dynamicTemplatePolicyByScope["contact:onebot11:group:10001"] = mutableMapOf(
             123456L to TemplatePolicy(

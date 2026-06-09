@@ -536,7 +536,7 @@ class WebUiRouteSmokeTest {
                 ),
             )
             dynamicTemplatePolicyByScope = mutableMapOf(
-                "onebot11:group:10001" to mutableMapOf(123L to TemplatePolicy(templates = mutableListOf("OneMsg"))),
+                "contact:onebot11:group:10001" to mutableMapOf(123L to TemplatePolicy(templates = mutableListOf("OneMsg"))),
             )
             dynamicColorByUid = mutableMapOf()
             atAll = mutableMapOf()

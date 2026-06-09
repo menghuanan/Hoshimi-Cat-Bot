@@ -3,6 +3,7 @@ package top.bilibili.service
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 
 class DrawCacheKeyNormalizationTest {
     @Test
@@ -23,5 +24,13 @@ class DrawCacheKeyNormalizationTest {
         assertNotNull(once)
         assertNotNull(twice)
         assertEquals(once.normalizedColor, twice.normalizedColor)
+    }
+
+    @Test
+    fun `QQ official string subjects should not collapse to global cache scope`() {
+        val first = DrawCacheKeyService.dynamicPath(1L, "2", "qq_official:group:channel-a", "#ff0000")
+        val second = DrawCacheKeyService.dynamicPath(1L, "2", "qq_official:group:channel-b", "#ff0000")
+
+        assertNotEquals(first, second)
     }
 }

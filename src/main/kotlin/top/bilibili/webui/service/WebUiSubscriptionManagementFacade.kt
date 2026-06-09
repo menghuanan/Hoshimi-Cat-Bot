@@ -429,7 +429,7 @@ class WebUiSubscriptionManagementFacade(
         if (request.content.isBlank()) {
             return validationFailure("模板内容必须填写")
         }
-        val selectedScopes = resolveNestedTargetScopes(context, request.targetGroups)
+        val selectedScopes = resolveTemplateTargetScopes(context, request.targetGroups)
         if (context.kind == "dynamic" && selectedScopes == null) {
             return validationFailure("目标群聊必须至少选择一个")
         }
@@ -458,7 +458,7 @@ class WebUiSubscriptionManagementFacade(
         return rollbackConfigAndDataIfPersistenceFailed(
             configRollbackSnapshot,
             dataRollbackSnapshot,
-            persistConfigAndData(success(itemId, "模板已保存")),
+            persistConfigAndData(success(itemId, "模板已保存"), configRollbackSnapshot),
         )
     }
 
@@ -947,6 +947,10 @@ class WebUiSubscriptionManagementFacade(
         uidSet.forEach { uid ->
             BiliData.atAllCooldownUntil.keys.removeIf { key -> key.startsWith("$subject|$uid|") || key.startsWith("$subject.$uid.") }
         }
+        listOf("dynamic", "live", "liveClose").forEach { type ->
+            // 模板直连策略使用 contact:<subject>，目标删除时需要和裸 subject 桶一起回收。
+            TemplateRuntimeCoordinator.removeScope(type, contactTemplateScope(subject))
+        }
     }
 
     /**
@@ -1088,7 +1092,7 @@ class WebUiSubscriptionManagementFacade(
                     itemId = itemId,
                     uids = listOf(uid),
                     contactScopes = subscription.contacts.sorted(),
-                    templateScopes = (groupRefs.ifEmpty { subscription.contacts }).sorted(),
+                    templateScopes = (groupRefs.ifEmpty { subscription.contacts.map(::contactTemplateScope) }).sorted(),
                     filterScopes = resolveFilterScopes(uid),
                 )
             }
@@ -1351,6 +1355,29 @@ class WebUiSubscriptionManagementFacade(
     }
 
     /**
+     * 动态直连模板策略必须写入 contact:<subject> scope，保持 WebUI 保存结果和发送链路读取口径一致。
+     */
+    private fun resolveTemplateTargetScopes(
+        context: SubscriptionEditContext,
+        targetGroups: List<String>,
+    ): List<String>? {
+        if (context.kind != "dynamic") {
+            return null
+        }
+        val scopes = targetGroups.distinct()
+            .filter { it in context.contactScopes }
+            .map(::contactTemplateScope)
+        return scopes.ifEmpty { null }
+    }
+
+    /**
+     * 模板直连 scope 在持久化层显式带 contact: 前缀，区别于过滤器、颜色和 @全体的联系人 subject。
+     */
+    private fun contactTemplateScope(subject: String): String {
+        return if (subject.startsWith("contact:")) subject else "contact:$subject"
+    }
+
+    /**
      * 删除 @全体 后回收空 UID 桶和空 subject 桶，避免列表页误判仍有配置。
      */
     private fun cleanupEmptyAtAll(scope: String, uid: Long) {
@@ -1473,14 +1500,27 @@ class WebUiSubscriptionManagementFacade(
     /**
      * 模板保存同时涉及主配置和业务数据，两个文件都保存成功才向前端报告完成。
      */
-    private fun persistConfigAndData(result: WebUiSubscriptionMutationResultDto): WebUiSubscriptionMutationResultDto {
+    private fun persistConfigAndData(
+        result: WebUiSubscriptionMutationResultDto,
+        configSnapshot: ConfigRollbackSnapshot,
+    ): WebUiSubscriptionMutationResultDto {
         val configSaved = runCatching { saveConfigAction() }.getOrDefault(false)
-        val dataSaved = runCatching { saveDataAction() }.getOrDefault(false)
+        // BiliData 策略引用 BiliConfig 模板正文，主配置失败时不能继续写 data 扩大半提交面。
+        val dataSaved = if (configSaved) {
+            runCatching { saveDataAction() }.getOrDefault(false)
+        } else {
+            false
+        }
         return if (configSaved && dataSaved) {
             // 模板写入已完成 BiliData 持久化，后续只需要通过热重载队列刷新运行态缓存。
             submitPersistedDataReload()
             result
         } else {
+            if (configSaved) {
+                restoreConfigRollbackSnapshot(configSnapshot)
+                // 已落盘 BiliConfig 在 BiliData 失败时必须补偿回旧快照，避免重启后出现模板正文和策略半提交。
+                runCatching { saveConfigAction() }
+            }
             WebUiSubscriptionMutationResultDto(
                 success = false,
                 message = "模板已修改但持久化失败",

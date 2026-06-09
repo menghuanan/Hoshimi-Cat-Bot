@@ -6,6 +6,9 @@ import java.io.File
 
 /**
  * 简单 YAML 数据文件的通用读写基类。
+ *
+ * 遗留重复模块标记：当前主业务数据已经由 BiliConfigManager 管理 config/BiliData.yml。
+ * 本类仍指向旧 data 目录下的 YAML 路径，当前未发现生产子类入口；保留仅用于兼容历史引用，后续清理前不得重新接入生产写盘链路。
  */
 abstract class SimpleDataStorage(
     private val fileName: String,

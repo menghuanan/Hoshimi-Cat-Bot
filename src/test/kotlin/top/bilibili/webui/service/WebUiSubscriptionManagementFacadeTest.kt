@@ -512,7 +512,7 @@ class WebUiSubscriptionManagementFacadeTest {
                 ),
             )
             dynamicTemplatePolicyByScope = mutableMapOf(
-                "onebot11:group:10001" to mutableMapOf(123L to TemplatePolicy(templates = mutableListOf("OneMsg"))),
+                "contact:onebot11:group:10001" to mutableMapOf(123L to TemplatePolicy(templates = mutableListOf("OneMsg"))),
             )
         }
         var savedConfig = false
@@ -551,8 +551,12 @@ class WebUiSubscriptionManagementFacadeTest {
         assertTrue(saved.success)
         assertTrue(random.success)
         assertEquals("{name}\n{link}", runtimeConfig.templateConfig.dynamicPush["WebDy"])
-        assertEquals(listOf("OneMsg", "WebDy"), BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).templates)
-        assertTrue(BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).randomEnabled)
+        assertEquals(
+            listOf("OneMsg", "WebDy"),
+            BiliData.dynamicTemplatePolicyByScope.getValue("contact:onebot11:group:10001").getValue(123L).templates,
+        )
+        assertTrue(BiliData.dynamicTemplatePolicyByScope.getValue("contact:onebot11:group:10001").getValue(123L).randomEnabled)
+        assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey("onebot11:group:10001"))
         assertTrue(savedConfig)
         assertTrue(savedData)
         assertTrue(removedUids.isEmpty())
@@ -659,8 +663,12 @@ class WebUiSubscriptionManagementFacadeTest {
         assertFalse(missingTarget.success)
         assertTrue(saved.success)
         assertEquals("{name}", runtimeConfig.templateConfig.dynamicPush["WebDy"])
-        assertEquals(listOf("WebDy"), BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).templates)
-        assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey("onebot11:group:10002"))
+        assertEquals(
+            listOf("WebDy"),
+            BiliData.dynamicTemplatePolicyByScope.getValue("contact:onebot11:group:10001").getValue(123L).templates,
+        )
+        assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey("onebot11:group:10001"))
+        assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey("contact:onebot11:group:10002"))
     }
 
     /**
@@ -709,6 +717,53 @@ class WebUiSubscriptionManagementFacadeTest {
             BiliData.dynamicTemplatePolicyByScope.getValue("onebot11:group:10001").getValue(123L).templates,
         )
         assertEquals(2000L, BiliData.subscriptionCardUpdatedAt["dynamic:123"])
+    }
+
+    /**
+     * 模板保存跨两个 owner 时若第二个文件失败，已成功写盘的第一个文件也必须补偿回旧快照。
+     */
+    @Test
+    fun `template save failure should rollback previously persisted config file`() {
+        val runtimeConfig = BiliConfig()
+        BiliConfigManager.installConfigRuntimeSnapshot(runtimeConfig)
+        BiliData.apply {
+            dynamic = mutableMapOf(
+                123L to SubData(
+                    name = "Alice",
+                    contacts = mutableSetOf("onebot11:group:10001"),
+                    sourceRefs = mutableSetOf("direct:onebot11:group:10001"),
+                ),
+            )
+            dynamicTemplatePolicyByScope = mutableMapOf(
+                "contact:onebot11:group:10001" to mutableMapOf(
+                    123L to TemplatePolicy(templates = mutableListOf("OldTpl")),
+                ),
+            )
+        }
+        val persistedTemplates = mutableListOf<Map<String, String>>()
+        val facade = WebUiSubscriptionManagementFacade(
+            configProvider = { BiliConfigManager.config },
+            saveConfigAction = {
+                persistedTemplates += BiliConfigManager.config.templateConfig.dynamicPush.toMap()
+                true
+            },
+            saveDataAction = { false },
+        )
+
+        val failed = facade.saveSubscriptionTemplate(
+            "dynamic:123",
+            WebUiSubscriptionTemplateSaveRequestDto(
+                key = "",
+                type = "dynamic",
+                name = "WebDy",
+                content = "{name}",
+                targetGroups = listOf("onebot11:group:10001"),
+            ),
+        )
+
+        assertFalse(failed.success)
+        assertTrue(persistedTemplates.first().containsKey("WebDy"))
+        assertFalse(persistedTemplates.last().containsKey("WebDy"))
     }
 
     /**

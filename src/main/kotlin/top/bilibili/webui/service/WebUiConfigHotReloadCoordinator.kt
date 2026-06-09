@@ -303,7 +303,51 @@ class WebUiConfigHotReloadCoordinator(
         return when (submission) {
             is BatchSaveSubmission -> applyAction(jobId, submission.request)
             PersistedBiliDataReloadSubmission -> applyPersistedBiliDataAction(jobId)
+            is CompositeHotReloadSubmission -> runCompositeSubmission(jobId, submission)
         }
+    }
+
+    /**
+     * 同一 pending 窗口内既有设置页 batch 又有订阅页落盘刷新时，必须串行执行两段运行态 apply。
+     */
+    private suspend fun runCompositeSubmission(
+        jobId: String,
+        submission: CompositeHotReloadSubmission,
+    ): WebUiConfigHotReloadJobDto {
+        var result: WebUiConfigHotReloadJobDto? = null
+        for (part in submission.parts) {
+            val nextResult = runSubmission(jobId, part)
+            result = mergeCompositeResult(jobId, submission, result, nextResult)
+        }
+        return requireNotNull(result) {
+            "composite hot reload submission must contain at least one part"
+        }
+    }
+
+    /**
+     * 组合任务对前端只暴露一个 job，但内部会保留所有触碰到的文件和逐文件结果。
+     */
+    private fun mergeCompositeResult(
+        jobId: String,
+        submission: CompositeHotReloadSubmission,
+        previous: WebUiConfigHotReloadJobDto?,
+        current: WebUiConfigHotReloadJobDto,
+    ): WebUiConfigHotReloadJobDto {
+        val mergedFiles = ((previous?.files ?: emptyList()) + current.files + submission.fileKinds()).distinct()
+        val mergedPhase = if (previous?.phase == WebUiConfigHotReloadPhase.FAILED ||
+            current.phase == WebUiConfigHotReloadPhase.FAILED
+        ) {
+            WebUiConfigHotReloadPhase.FAILED
+        } else {
+            current.phase
+        }
+        return current.copy(
+            jobId = jobId,
+            phase = mergedPhase,
+            files = mergedFiles,
+            outcomes = (previous?.outcomes ?: emptyList()) + current.outcomes,
+            message = listOfNotNull(previous?.message, current.message).distinct().joinToString("; "),
+        )
     }
 
     /**
@@ -386,7 +430,16 @@ private data object PersistedBiliDataReloadSubmission : WebUiConfigHotReloadSubm
 }
 
 /**
- * 同一 pending 窗口内 SettingsPage 显式 BiliData payload 优先于已持久化订阅刷新信号。
+ * pending 窗口中不同来源信号需要保留为顺序执行的子任务，避免 batch payload 覆盖已落盘刷新。
+ */
+private data class CompositeHotReloadSubmission(
+    val parts: List<WebUiConfigHotReloadSubmission>,
+) : WebUiConfigHotReloadSubmission {
+    override fun fileKinds(): List<WebUiConfigFileKind> = parts.flatMap { it.fileKinds() }.distinct()
+}
+
+/**
+ * 同一 pending 窗口内保留浏览器 batch payload 和已持久化订阅刷新信号，避免不同来源互相覆盖。
  */
 private fun WebUiConfigHotReloadSubmission?.mergeWith(
     next: WebUiConfigHotReloadSubmission,
@@ -394,8 +447,55 @@ private fun WebUiConfigHotReloadSubmission?.mergeWith(
     return when {
         this == null -> next
         this is BatchSaveSubmission && next is BatchSaveSubmission -> BatchSaveSubmission(request.mergeWith(next.request))
-        this is BatchSaveSubmission -> this
-        next is BatchSaveSubmission -> next
+        this is CompositeHotReloadSubmission -> this.mergeCompositeWith(next)
+        next is CompositeHotReloadSubmission -> CompositeHotReloadSubmission(listOf(requireNotNull(this))).mergeCompositeWith(next)
+        this is BatchSaveSubmission && next == PersistedBiliDataReloadSubmission -> compositeFrom(this, hasPersistedReload = true)
+        this == PersistedBiliDataReloadSubmission && next is BatchSaveSubmission -> compositeFrom(next, hasPersistedReload = true)
         else -> PersistedBiliDataReloadSubmission
+    }
+}
+
+/**
+ * SettingsPage 显式 BiliData payload 已经会触发 BiliData apply，此时不再追加重复的已持久化刷新子任务。
+ */
+private fun compositeFrom(
+    batch: BatchSaveSubmission,
+    hasPersistedReload: Boolean,
+): CompositeHotReloadSubmission {
+    return CompositeHotReloadSubmission(
+        buildList {
+            add(batch)
+            if (hasPersistedReload && batch.request.biliData == null) {
+                add(PersistedBiliDataReloadSubmission)
+            }
+        },
+    )
+}
+
+/**
+ * 组合 pending 继续合并时保留 batch 后写优先，同时只需要一个已持久化 BiliData 刷新子任务。
+ */
+private fun CompositeHotReloadSubmission.mergeCompositeWith(
+    next: WebUiConfigHotReloadSubmission,
+): WebUiConfigHotReloadSubmission {
+    val existingBatch = parts.filterIsInstance<BatchSaveSubmission>().lastOrNull()
+    val nextBatch = when (next) {
+        is BatchSaveSubmission -> next
+        is CompositeHotReloadSubmission -> next.parts.filterIsInstance<BatchSaveSubmission>().lastOrNull()
+        else -> null
+    }
+    val mergedBatch = when {
+        existingBatch != null && nextBatch != null -> BatchSaveSubmission(existingBatch.request.mergeWith(nextBatch.request))
+        nextBatch != null -> nextBatch
+        else -> existingBatch
+    }
+    val hasPersistedReload = (parts.any { it == PersistedBiliDataReloadSubmission } ||
+        next == PersistedBiliDataReloadSubmission ||
+        (next is CompositeHotReloadSubmission && next.parts.any { it == PersistedBiliDataReloadSubmission })) &&
+        mergedBatch?.request?.biliData == null
+    return if (mergedBatch != null) {
+        compositeFrom(mergedBatch, hasPersistedReload)
+    } else {
+        CompositeHotReloadSubmission(listOf(PersistedBiliDataReloadSubmission))
     }
 }

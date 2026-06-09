@@ -9,6 +9,9 @@ import top.bilibili.utils.parseContactId
 
 /**
  * 维护旧分组模型的增删改查接口，供历史命令和测试继续复用。
+ *
+ * 遗留重复模块标记：当前 /bili group 分发入口走 GroupCommandService，本对象仍保留旧 Long 管理员和 parseContactId 群模型。
+ * 目前仅作为历史兼容与回归测试入口保留，后续清理前不得把新生产命令重新接回这里。
  */
 object GroupService {
     private val mutex = Mutex()

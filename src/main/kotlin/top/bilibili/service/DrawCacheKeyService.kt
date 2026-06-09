@@ -4,7 +4,7 @@ import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
-import top.bilibili.utils.parseContactId
+import top.bilibili.utils.normalizeContactSubject
 
 /**
  * 统一生成绘图缓存键，避免不同业务场景各自拼接路径导致失效粒度不一致。
@@ -52,8 +52,7 @@ object DrawCacheKeyService {
         val normalized = subject
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-            ?.let(::parseContactId)
-            ?.let { "${it.type}:${it.id}" }
+            ?.let { normalizeContactSubject(it) ?: it }
         return normalized ?: "global"
     }
 

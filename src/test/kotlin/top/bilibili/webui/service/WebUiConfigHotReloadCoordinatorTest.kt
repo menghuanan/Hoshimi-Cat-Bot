@@ -96,6 +96,121 @@ class WebUiConfigHotReloadCoordinatorTest {
     }
 
     /**
+     * 订阅页已落盘刷新信号和设置页 batch 进入同一 pending 窗口时，两段运行态 apply 都必须保留。
+     */
+    @Test
+    fun `pending batch save should preserve persisted BiliData reload signal`() {
+        val calls = mutableListOf<String>()
+        val coordinator = WebUiConfigHotReloadCoordinator(
+            nowMillis = { 100L },
+            delayMillis = {},
+            applyAction = { jobId, request ->
+                calls += "batch:${request.fileKinds().joinToString(",")}"
+                WebUiConfigHotReloadJobDto(
+                    jobId = jobId,
+                    phase = WebUiConfigHotReloadPhase.APPLIED,
+                    files = request.fileKinds(),
+                )
+            },
+            applyPersistedBiliDataAction = { jobId ->
+                calls += "persisted:${WebUiConfigFileKind.BILI_DATA}"
+                WebUiConfigHotReloadJobDto(
+                    jobId = jobId,
+                    phase = WebUiConfigHotReloadPhase.APPLIED,
+                    files = listOf(WebUiConfigFileKind.BILI_DATA),
+                )
+            },
+            autoStartWorker = false,
+        )
+
+        val dataJob = coordinator.submitPersistedBiliDataReload()
+        val configJob = coordinator.submit(batchWithBiliConfigToken("bili"))
+        coordinator.drainForTest()
+
+        assertEquals(listOf("batch:BILI_CONFIG", "persisted:BILI_DATA"), calls)
+        assertEquals(
+            setOf(WebUiConfigFileKind.BILI_CONFIG, WebUiConfigFileKind.BILI_DATA),
+            coordinator.readJob(dataJob.jobId)?.files?.toSet(),
+        )
+        assertEquals(
+            setOf(WebUiConfigFileKind.BILI_CONFIG, WebUiConfigFileKind.BILI_DATA),
+            coordinator.readJob(configJob.jobId)?.files?.toSet(),
+        )
+    }
+
+    /**
+     * 设置页本身保存 BiliData 时已经覆盖数据运行态 apply，不应再追加同窗口的订阅刷新子任务。
+     */
+    @Test
+    fun `pending batch with explicit BiliData should not duplicate persisted reload`() {
+        val calls = mutableListOf<String>()
+        val coordinator = WebUiConfigHotReloadCoordinator(
+            nowMillis = { 100L },
+            delayMillis = {},
+            applyAction = { jobId, request ->
+                calls += "batch:${request.fileKinds().joinToString(",")}"
+                WebUiConfigHotReloadJobDto(
+                    jobId = jobId,
+                    phase = WebUiConfigHotReloadPhase.APPLIED,
+                    files = request.fileKinds(),
+                )
+            },
+            applyPersistedBiliDataAction = { jobId ->
+                calls += "persisted:${WebUiConfigFileKind.BILI_DATA}"
+                WebUiConfigHotReloadJobDto(
+                    jobId = jobId,
+                    phase = WebUiConfigHotReloadPhase.APPLIED,
+                    files = listOf(WebUiConfigFileKind.BILI_DATA),
+                )
+            },
+            autoStartWorker = false,
+        )
+
+        coordinator.submitPersistedBiliDataReload()
+        coordinator.submit(batchWithBiliDataToken("data"))
+        coordinator.drainForTest()
+
+        assertEquals(listOf("batch:BILI_DATA"), calls)
+    }
+
+    /**
+     * batch 子任务失败也不能阻止已落盘的订阅数据刷新，否则订阅页保存仍会停留在旧运行态。
+     */
+    @Test
+    fun `persisted BiliData reload should still run when coalesced batch fails`() {
+        val calls = mutableListOf<String>()
+        val coordinator = WebUiConfigHotReloadCoordinator(
+            nowMillis = { 100L },
+            delayMillis = {},
+            applyAction = { jobId, request ->
+                calls += "batch:${request.fileKinds().joinToString(",")}"
+                WebUiConfigHotReloadJobDto(
+                    jobId = jobId,
+                    phase = WebUiConfigHotReloadPhase.FAILED,
+                    files = request.fileKinds(),
+                    message = "batch failed",
+                )
+            },
+            applyPersistedBiliDataAction = { jobId ->
+                calls += "persisted:${WebUiConfigFileKind.BILI_DATA}"
+                WebUiConfigHotReloadJobDto(
+                    jobId = jobId,
+                    phase = WebUiConfigHotReloadPhase.APPLIED,
+                    files = listOf(WebUiConfigFileKind.BILI_DATA),
+                )
+            },
+            autoStartWorker = false,
+        )
+
+        val dataJob = coordinator.submitPersistedBiliDataReload()
+        coordinator.submit(batchWithBiliConfigToken("bili"))
+        coordinator.drainForTest()
+
+        assertEquals(listOf("batch:BILI_CONFIG", "persisted:BILI_DATA"), calls)
+        assertEquals(WebUiConfigHotReloadPhase.FAILED, coordinator.readJob(dataJob.jobId)?.phase)
+    }
+
+    /**
      * 当前批次完成时只能更新它捕获的 jobId，运行期间新增的 queued job 必须留给下一批。
      */
     @Test
@@ -391,6 +506,18 @@ class WebUiConfigHotReloadCoordinatorTest {
     private fun batchWithBiliConfigToken(token: String): WebUiConfigBatchSaveRequestDto {
         return WebUiConfigBatchSaveRequestDto(
             biliConfig = WebUiBiliConfigWriteRequestDto(snapshotToken = token),
+        )
+    }
+
+    /**
+     * BiliData 测试 payload 只填快照 token，让队列测试聚焦在提交类型归并。
+     */
+    private fun batchWithBiliDataToken(token: String): WebUiConfigBatchSaveRequestDto {
+        return WebUiConfigBatchSaveRequestDto(
+            biliData = top.bilibili.webui.model.WebUiBiliDataWriteRequestDto(
+                snapshotToken = token,
+                linkParseBlacklistContacts = emptyList(),
+            ),
         )
     }
 

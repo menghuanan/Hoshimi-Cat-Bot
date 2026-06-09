@@ -164,6 +164,7 @@ object BiliConfigManager {
         var changed = false
 
         changed = migrateLegacyContactSubjects(data) || changed
+        changed = migrateTemplatePolicyScopes(data) || changed
         if (data.dataVersion < 4) {
             changed = migrateLegacyTemplatePolicies(data) || changed
             changed = clearLegacyTemplateBindings(data) || changed
@@ -198,6 +199,95 @@ object BiliConfigManager {
         data.liveCloseTemplateByUid = mutableMapOf()
 
         return hadLegacyData
+    }
+
+    /**
+     * 将模板策略 scope 归一到 contact:<subject> 或 groupRef:<name>，修复旧 WebUI 直写裸联系人造成的发送链路失配。
+     */
+    private fun migrateTemplatePolicyScopes(data: BiliData): Boolean {
+        var changed = false
+        migrateTemplatePolicyScopeMap(data.dynamicTemplatePolicyByScope).also {
+            data.dynamicTemplatePolicyByScope = it.value
+            changed = it.changed || changed
+        }
+        migrateTemplatePolicyScopeMap(data.liveTemplatePolicyByScope).also {
+            data.liveTemplatePolicyByScope = it.value
+            changed = it.changed || changed
+        }
+        migrateTemplatePolicyScopeMap(data.liveCloseTemplatePolicyByScope).also {
+            data.liveCloseTemplatePolicyByScope = it.value
+            changed = it.changed || changed
+        }
+        if (changed) {
+            // scope 迁移会替换策略表本体，必须同步清理模板选择缓存，避免运行态继续引用旧 scope。
+            TemplateRuntimeCoordinator.replaceAllPolicies(
+                dynamicPolicies = data.dynamicTemplatePolicyByScope,
+                livePolicies = data.liveTemplatePolicyByScope,
+                liveClosePolicies = data.liveCloseTemplatePolicyByScope,
+            )
+        }
+        return changed
+    }
+
+    /**
+     * 模板策略 map 的 key 是 scope，不是普通联系人 subject；联系人直绑必须补 contact: 前缀。
+     */
+    private fun migrateTemplatePolicyScopeMap(
+        source: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
+    ): MigrationResult<MutableMap<String, MutableMap<Long, TemplatePolicy>>> {
+        var changed = false
+        val result = linkedMapOf<String, MutableMap<Long, TemplatePolicy>>()
+        source.forEach { (scope, policiesByUid) ->
+            val migratedScope = normalizeTemplatePolicyScope(scope)
+            if (migratedScope != scope) {
+                changed = true
+            }
+            val targetPolicies = result.getOrPut(migratedScope) { mutableMapOf() }
+            mergeTemplatePoliciesByUid(targetPolicies, policiesByUid)
+        }
+        return MigrationResult(
+            value = if (changed || result.size != source.size) result.toMutableMap() else source,
+            changed = changed || result.size != source.size,
+        )
+    }
+
+    /**
+     * scope 归一化只接受 groupRef 和联系人两类；无法识别的历史自定义 key 保留原值避免误迁移。
+     */
+    private fun normalizeTemplatePolicyScope(scope: String): String {
+        return when {
+            scope.startsWith("groupRef:") -> scope
+            scope.startsWith("contact:") -> {
+                val subject = scope.removePrefix("contact:")
+                "contact:${normalizeContactSubject(subject) ?: subject}"
+            }
+            else -> normalizeContactSubject(scope)?.let { subject -> "contact:$subject" } ?: scope
+        }
+    }
+
+    /**
+     * scope 迁移发生碰撞时合并模板列表，避免裸 key 与 contact:key 同时存在时覆盖任一侧策略。
+     */
+    private fun mergeTemplatePoliciesByUid(
+        target: MutableMap<Long, TemplatePolicy>,
+        incoming: MutableMap<Long, TemplatePolicy>,
+    ) {
+        incoming.forEach { (uid, incomingPolicy) ->
+            val existing = target[uid]
+            if (existing == null) {
+                target[uid] = TemplatePolicy(
+                    templates = incomingPolicy.templates.toMutableList(),
+                    randomEnabled = incomingPolicy.randomEnabled,
+                )
+            } else {
+                incomingPolicy.templates.forEach { templateName ->
+                    if (templateName !in existing.templates) {
+                        existing.templates += templateName
+                    }
+                }
+                existing.randomEnabled = existing.randomEnabled || incomingPolicy.randomEnabled
+            }
+        }
     }
 
     /**
