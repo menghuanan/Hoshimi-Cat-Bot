@@ -1,6 +1,7 @@
 package top.bilibili.tasker
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -102,9 +103,10 @@ class BiliTaskerRegressionTest {
         val t2 = AwaitingTasker("await-2")
         val jobField = BiliTasker::class.java.getDeclaredField("job").apply { isAccessible = true }
 
+        // 使用 UNDISPATCHED 让测试 job 在取消前进入 awaitCancellation，避免 CI 调度直接取消未启动协程而跳过 finally 清理。
         jobField.set(
             t1,
-            launch(Dispatchers.Default) {
+            launch(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
                 try {
                     awaitCancellation()
                 } finally {
@@ -117,7 +119,7 @@ class BiliTaskerRegressionTest {
         )
         jobField.set(
             t2,
-            launch(Dispatchers.Default) {
+            launch(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
                 try {
                     awaitCancellation()
                 } finally {
