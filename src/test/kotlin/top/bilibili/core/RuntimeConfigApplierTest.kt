@@ -1,11 +1,14 @@
 package top.bilibili.core
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.LoggerContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliDataWrapper
+import top.bilibili.EnableConfig
 import top.bilibili.config.BotConfig
 import top.bilibili.config.NapCatConfig
 import top.bilibili.config.PlatformConfig
@@ -22,6 +25,7 @@ import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import top.bilibili.webui.config.WebUiConfig
 import top.bilibili.webui.model.WebUiConfigFileKind
 import top.bilibili.webui.server.WebUiReloadPlan
@@ -37,6 +41,7 @@ class RuntimeConfigApplierTest {
         var taskerRefreshes = 0
         val applier = RuntimeConfigApplier(
             reloadImageRuntime = { imageReloads += 1 },
+            syncDebugLoggingRuntime = ignoreDebugLoggingRuntime(),
             closeBiliClients = { clientCloses += 1 },
             refreshTaskers = { taskerRefreshes += 1 },
             installBiliConfigRuntimeSnapshot = { config ->
@@ -69,6 +74,75 @@ class RuntimeConfigApplierTest {
         assertEquals(1, imageReloads)
         assertEquals(1, clientCloses)
         assertEquals(1, taskerRefreshes)
+    }
+
+    /**
+     * BiliConfig 热重载必须同步 debugMode 对日志运行态的影响，否则保存成功和冷启动后的日志级别不等价。
+     */
+    @Test
+    fun `applier should sync debug logging when BiliConfig debugMode changes`() {
+        val debugModes = mutableListOf<Boolean>()
+        val applier = RuntimeConfigApplier(
+            reloadImageRuntime = {},
+            closeBiliClients = {},
+            refreshTaskers = {},
+            syncDebugLoggingRuntime = { config -> debugModes += config.enableConfig.debugMode },
+        )
+        val old = RuntimeConfigSnapshot(BiliConfig(), BiliDataWrapper(dataVersion = 4), BotConfig())
+        val candidate = old.copy(
+            biliConfig = BiliConfig(
+                enableConfig = EnableConfig(debugMode = true),
+            ),
+        )
+
+        applier.applyBaseConfig(
+            RuntimeConfigGeneration(
+                oldSnapshot = old,
+                candidateSnapshot = candidate,
+                changedFiles = setOf(WebUiConfigFileKind.BILI_CONFIG),
+            ),
+        )
+
+        assertEquals(listOf(true), debugModes)
+    }
+
+    /**
+     * 冷启动和热重载共用的 debugMode 同步点必须真实更新 Logback 已初始化 logger。
+     */
+    @Test
+    fun `debug logging runtime should update system property and logger levels`() {
+        val context = LoggerFactory.getILoggerFactory() as LoggerContext
+        val appLogger = context.getLogger("top.bilibili")
+        val rootLogger = context.getLogger("ROOT")
+        val previousProperty = System.getProperty("APP_LOG_LEVEL")
+        val previousAppLevel = appLogger.level
+        val previousRootLevel = rootLogger.level
+
+        try {
+            BiliBiliBot.applyDebugLoggingRuntime(
+                BiliConfig(enableConfig = EnableConfig(debugMode = true)),
+            )
+
+            assertEquals("DEBUG", System.getProperty("APP_LOG_LEVEL"))
+            assertEquals(Level.DEBUG, appLogger.level)
+            assertEquals(Level.DEBUG, rootLogger.level)
+
+            BiliBiliBot.applyDebugLoggingRuntime(
+                BiliConfig(enableConfig = EnableConfig(debugMode = false)),
+            )
+
+            assertEquals("INFO", System.getProperty("APP_LOG_LEVEL"))
+            assertEquals(Level.INFO, appLogger.level)
+            assertEquals(Level.INFO, rootLogger.level)
+        } finally {
+            if (previousProperty == null) {
+                System.clearProperty("APP_LOG_LEVEL")
+            } else {
+                System.setProperty("APP_LOG_LEVEL", previousProperty)
+            }
+            appLogger.level = previousAppLevel
+            rootLogger.level = previousRootLevel
+        }
     }
 
     /**
@@ -119,6 +193,7 @@ class RuntimeConfigApplierTest {
             installBiliDataRuntimeSnapshot = { calls += "install-data" },
             installBotRuntimeSnapshot = { calls += "install-bot" },
             reloadImageRuntime = { calls += "reload-image" },
+            syncDebugLoggingRuntime = ignoreDebugLoggingRuntime(),
             closeBiliClients = { calls += "close-client" },
             refreshTaskers = { calls += "refresh-taskers" },
             preparePlatformConnector = {
@@ -172,6 +247,7 @@ class RuntimeConfigApplierTest {
             installBiliDataRuntimeSnapshot = { calls += "install-data" },
             installBotRuntimeSnapshot = { calls += "install-bot" },
             reloadImageRuntime = { calls += "reload-image" },
+            syncDebugLoggingRuntime = ignoreDebugLoggingRuntime(),
             closeBiliClients = { calls += "close-client" },
             refreshTaskers = { calls += "refresh-taskers" },
             preparePlatformConnector = {
@@ -221,6 +297,7 @@ class RuntimeConfigApplierTest {
             installBiliDataRuntimeSnapshot = { calls += "install-data" },
             installBotRuntimeSnapshot = { calls += "install-bot" },
             reloadImageRuntime = { calls += "reload-image" },
+            syncDebugLoggingRuntime = ignoreDebugLoggingRuntime(),
             closeBiliClients = { calls += "close-client" },
             refreshTaskers = { calls += "refresh-taskers" },
             preparePlatformConnector = {
@@ -293,6 +370,7 @@ class RuntimeConfigApplierTest {
             installBiliDataRuntimeSnapshot = { data -> calls += "install-data:${data.dataVersion}" },
             installBotRuntimeSnapshot = { config -> calls += "install-bot:${config.firstRunFlag}" },
             reloadImageRuntime = { calls += "reload-image" },
+            syncDebugLoggingRuntime = ignoreDebugLoggingRuntime(),
             closeBiliClients = { calls += "close-client" },
             refreshTaskers = { calls += "refresh-taskers" },
             preparePlatformConnector = {
@@ -419,6 +497,7 @@ class RuntimeConfigApplierTest {
             installBiliDataRuntimeSnapshot = {},
             installBotRuntimeSnapshot = {},
             reloadImageRuntime = { error("image runtime failed") },
+            syncDebugLoggingRuntime = ignoreDebugLoggingRuntime(),
             closeBiliClients = {},
             refreshTaskers = {},
             preparePlatformConnector = { config ->
@@ -461,6 +540,11 @@ class RuntimeConfigApplierTest {
             onebot11 = NapCatConfig(host = host, port = 3001),
         )
     }
+
+    /**
+     * 非日志语义测试不触碰全局 Logback 状态，避免不同 applier 用例之间互相影响。
+     */
+    private fun ignoreDebugLoggingRuntime(): (BiliConfig) -> Unit = {}
 
     /**
      * 只记录 applier 触发的 connector 生命周期，避免 core 测试依赖 vendor transport。

@@ -6,12 +6,16 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import top.bilibili.BiliConfig
 import top.bilibili.BiliDataWrapper
 import top.bilibili.config.BotConfig
 import top.bilibili.core.RuntimeConfigGeneration
 import top.bilibili.core.RuntimeConfigSnapshot
 import top.bilibili.webui.server.WebUiReloadPlan
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import top.bilibili.webui.model.WebUiBiliConfigWriteRequestDto
@@ -237,6 +241,72 @@ class WebUiConfigHotReloadCoordinatorTest {
 
         assertEquals(WebUiConfigHotReloadPhase.APPLIED, completed[first.jobId])
         assertEquals(WebUiConfigHotReloadPhase.QUEUED, coordinator.readJob(second.jobId)?.phase)
+    }
+
+    /**
+     * 停机可能发生在下一批已离开 pending 但尚未进入 SAVING 的 debounce 窗口，此时也必须给前端留下终态。
+     */
+    @Test
+    fun `shutdown should fail queued batch already taken for debounce`() = runBlocking {
+        val firstApplyEntered = CompletableDeferred<Unit>()
+        val releaseFirstApply = CompletableDeferred<Unit>()
+        val debounceEntered = CompletableDeferred<Unit>()
+        val coordinator = WebUiConfigHotReloadCoordinator(
+            nowMillis = { 100L },
+            delayMillis = {
+                debounceEntered.complete(Unit)
+                CompletableDeferred<Unit>().await()
+            },
+            applyAction = { jobId, request ->
+                firstApplyEntered.complete(Unit)
+                releaseFirstApply.await()
+                WebUiConfigHotReloadJobDto(
+                    jobId = jobId,
+                    phase = WebUiConfigHotReloadPhase.APPLIED,
+                    files = request.fileKinds(),
+                )
+            },
+        )
+
+        coordinator.submit(batchWithBiliConfigToken("first"))
+        firstApplyEntered.await()
+        val second = coordinator.submit(batchWithBotToken("second"))
+        releaseFirstApply.complete(Unit)
+        debounceEntered.await()
+        val closeJob = launch { coordinator.closeForShutdown(timeoutMs = 100L) }
+        closeJob.join()
+
+        assertEquals(WebUiConfigHotReloadPhase.FAILED, coordinator.readJob(second.jobId)?.phase)
+    }
+
+    /**
+     * worker 取消超时后即使稍后返回成功，也不能覆盖停机已经写入的 FAILED 终态。
+     */
+    @Test
+    fun `shutdown failed terminal state should survive late worker completion`() = runBlocking {
+        val applyEntered = CountDownLatch(1)
+        val releaseApply = CountDownLatch(1)
+        val coordinator = WebUiConfigHotReloadCoordinator(
+            nowMillis = { 100L },
+            delayMillis = {},
+            applyAction = { jobId, request ->
+                applyEntered.countDown()
+                releaseApply.await()
+                WebUiConfigHotReloadJobDto(
+                    jobId = jobId,
+                    phase = WebUiConfigHotReloadPhase.APPLIED,
+                    files = request.fileKinds(),
+                )
+            },
+        )
+
+        val job = coordinator.submit(batchWithBiliConfigToken("late"))
+        assertTrue(applyEntered.await(1, TimeUnit.SECONDS))
+        coordinator.closeForShutdown(timeoutMs = 10L)
+        releaseApply.countDown()
+        coordinator.drainForTest()
+
+        assertEquals(WebUiConfigHotReloadPhase.FAILED, coordinator.readJob(job.jobId)?.phase)
     }
 
     /**

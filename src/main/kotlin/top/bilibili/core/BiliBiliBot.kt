@@ -1,5 +1,7 @@
 package top.bilibili.core
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.LoggerContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -12,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
+import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformChatType
@@ -162,6 +165,22 @@ object BiliBiliBot : CoroutineScope {
     var uid: Long = 0L
     var tagid: Int = 0
     private var commandLineDebugMode: Boolean? = null
+
+    /**
+     * 同步 debugMode 到系统属性和已初始化的 Logback logger，保证热重载与冷启动日志级别一致。
+     */
+    fun applyDebugLoggingRuntime(configSnapshot: BiliConfig): Boolean {
+        val debugMode = commandLineDebugMode ?: configSnapshot.enableConfig.debugMode
+        val level = if (debugMode) Level.DEBUG else Level.INFO
+        System.setProperty("APP_LOG_LEVEL", level.levelStr)
+        LoggerContext::class.java.cast(
+            LoggerFactory.getILoggerFactory(),
+        ).let { context ->
+            context.getLogger("top.bilibili").level = level
+            context.getLogger("ROOT").level = level
+        }
+        return debugMode
+    }
 
     val dynamicChannel = Channel<DynamicDetail>(20)
     val liveChannel = Channel<LiveDetail>(20)
@@ -383,16 +402,8 @@ object BiliBiliBot : CoroutineScope {
 
         try {
             BiliConfigManager.init()
-            val debugMode = commandLineDebugMode ?: BiliConfigManager.config.enableConfig.debugMode
+            val debugMode = applyDebugLoggingRuntime(BiliConfigManager.config)
             if (debugMode) {
-                System.setProperty("APP_LOG_LEVEL", "DEBUG")
-                // 这里直接提升 logger level，是为了让已初始化的日志上下文也能立即切到调试模式。
-                ch.qos.logback.classic.LoggerContext::class.java.cast(
-                    org.slf4j.LoggerFactory.getILoggerFactory(),
-                ).let { context ->
-                    context.getLogger("top.bilibili").level = ch.qos.logback.classic.Level.DEBUG
-                    context.getLogger("ROOT").level = ch.qos.logback.classic.Level.DEBUG
-                }
                 val source = if (commandLineDebugMode == true) "命令行" else "配置文件"
                 logger.debug("已从${source}启用调试模式")
             }

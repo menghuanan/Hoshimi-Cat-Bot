@@ -28,6 +28,8 @@ class WebUiConfigHotReloadCoordinator(
     private val onJobUpdatedForTest: (WebUiConfigHotReloadJobDto) -> Unit = {},
 ) {
     companion object {
+        private const val SHUTDOWN_CANCELLED_MESSAGE = "hot reload job cancelled during bot shutdown"
+
         /**
          * 兼容旧保存 facade 的协调器工厂，Task 9 会替换为完整 dry-run/persist/apply 链路。
          */
@@ -75,6 +77,7 @@ class WebUiConfigHotReloadCoordinator(
     private val completionCallbacksByJobId = mutableMapOf<String, (WebUiConfigHotReloadJobDto) -> Unit>()
     private var pendingSignalCount = 0
     private var pausedBatchForTest: RunningBatch? = null
+    private var runningBatch: RunningBatch? = null
     private var acceptingJobs = true
 
     /**
@@ -149,11 +152,13 @@ class WebUiConfigHotReloadCoordinator(
     }
 
     /**
-     * Bot 停机时停止接收新任务，等待当前 worker 收敛并把 pending job 标记为失败。
+     * Bot 停机时停止接收新任务，等待当前 worker 收敛并把所有未终态 job 标记为失败。
      */
     suspend fun closeForShutdown(timeoutMs: Long = 10_000L) {
+        val jobIdsToFail: List<String>
         val running = synchronized(lock) {
             acceptingJobs = false
+            jobIdsToFail = pendingJobIds + runningBatch.jobIdsOrEmpty() + pausedBatchForTest.jobIdsOrEmpty()
             workerJob
         }
         if (running != null) {
@@ -162,18 +167,14 @@ class WebUiConfigHotReloadCoordinator(
             }
         }
         synchronized(lock) {
-            pendingJobIds.forEach { jobId ->
-                jobs[jobId]?.let { job ->
-                    jobs[jobId] = job.copy(
-                        phase = WebUiConfigHotReloadPhase.FAILED,
-                        message = "hot reload job cancelled during bot shutdown",
-                    )
-                }
-                completionCallbacksByJobId.remove(jobId)
-            }
+            failJobsForShutdownLocked(
+                jobIdsToFail + pendingJobIds + runningBatch.jobIdsOrEmpty() + pausedBatchForTest.jobIdsOrEmpty(),
+            )
             pendingSubmission = null
             pendingJobIds.clear()
             pendingSignalCount = 0
+            runningBatch = null
+            pausedBatchForTest = null
         }
     }
 
@@ -184,6 +185,7 @@ class WebUiConfigHotReloadCoordinator(
         synchronized(lock) {
             if (pausedBatchForTest == null) {
                 pausedBatchForTest = takePendingBatchLocked(delayBeforeRun = false)
+                runningBatch = pausedBatchForTest
             }
             require(pausedBatchForTest?.jobIds?.contains(expectedJobId) == true) {
                 "expected job is not in the paused running batch"
@@ -206,12 +208,18 @@ class WebUiConfigHotReloadCoordinator(
      */
     internal fun completeCurrentBatchForTest() {
         val batch = synchronized(lock) {
-            pausedBatchForTest ?: takePendingBatchLocked(delayBeforeRun = false)
+            (pausedBatchForTest ?: takePendingBatchLocked(delayBeforeRun = false)).also { captured ->
+                runningBatch = captured
+            }
         } ?: return
         synchronized(lock) {
             pausedBatchForTest = null
         }
-        runBlocking { runOneTask(batch) }
+        try {
+            runBlocking { runOneTask(batch) }
+        } finally {
+            clearRunningBatch(batch)
+        }
     }
 
     /**
@@ -221,12 +229,18 @@ class WebUiConfigHotReloadCoordinator(
         var shouldDelay = false
         while (true) {
             val batch = synchronized(lock) {
-                takePendingBatchLocked(delayBeforeRun = shouldDelay)
+                takePendingBatchLocked(delayBeforeRun = shouldDelay).also { captured ->
+                    runningBatch = captured
+                }
             } ?: return
-            if (batch.delayBeforeRun) {
-                delayMillis(debounceMillis)
+            try {
+                if (batch.delayBeforeRun) {
+                    delayMillis(debounceMillis)
+                }
+                runOneTask(batch)
+            } finally {
+                clearRunningBatch(batch)
             }
-            runOneTask(batch)
             shouldDelay = true
         }
     }
@@ -280,6 +294,13 @@ class WebUiConfigHotReloadCoordinator(
         }
         val completedAt = nowMillis()
         batch.jobIds.forEach { jobId ->
+            // 停机可能已把该 job 推进到 FAILED，晚到的 worker 结果不得覆盖终态。
+            if (readJob(jobId)?.phase?.isTerminal() == true) {
+                synchronized(lock) {
+                    completionCallbacksByJobId.remove(jobId)
+                }
+                return@forEach
+            }
             val completedJob = result.copy(
                 jobId = jobId,
                 files = result.files.ifEmpty { batch.submission.fileKinds() },
@@ -371,6 +392,39 @@ class WebUiConfigHotReloadCoordinator(
     }
 
     /**
+     * 停机清扫覆盖 pending 与已取走的运行批次，只把仍在处理中的任务推进到 FAILED 终态。
+     */
+    private fun failJobsForShutdownLocked(jobIds: List<String>) {
+        jobIds.distinct().forEach { jobId ->
+            jobs[jobId]?.takeUnless { job -> job.phase.isTerminal() }?.let { job ->
+                jobs[jobId] = job.copy(
+                    phase = WebUiConfigHotReloadPhase.FAILED,
+                    message = SHUTDOWN_CANCELLED_MESSAGE,
+                )
+            }
+            completionCallbacksByJobId.remove(jobId)
+        }
+    }
+
+    /**
+     * worker 离开 debounce、保存或 apply 阶段时清除当前批次引用，避免后续停机重复处理已收敛批次。
+     */
+    private fun clearRunningBatch(batch: RunningBatch) {
+        synchronized(lock) {
+            if (runningBatch === batch) {
+                runningBatch = null
+            }
+        }
+    }
+
+    /**
+     * 批次缺失时返回空 jobId 列表，让停机清扫能用同一条路径处理 pending 和 running。
+     */
+    private fun RunningBatch?.jobIdsOrEmpty(): List<String> {
+        return this?.jobIds ?: emptyList()
+    }
+
+    /**
      * 运行批次明确记录捕获的 jobId 集合；后续 pending 不得被当前批次更新。
      */
     private data class RunningBatch(
@@ -379,6 +433,13 @@ class WebUiConfigHotReloadCoordinator(
         val signalCount: Int,
         val delayBeforeRun: Boolean,
     )
+}
+
+/**
+ * 热重载任务终态不应被停机清扫覆盖，避免前端看到已经成功的 job 又倒退为失败。
+ */
+private fun WebUiConfigHotReloadPhase.isTerminal(): Boolean {
+    return this == WebUiConfigHotReloadPhase.APPLIED || this == WebUiConfigHotReloadPhase.FAILED
 }
 
 /**

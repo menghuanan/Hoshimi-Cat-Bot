@@ -39,7 +39,7 @@ Core 模块承载 bot 运行期骨架、命令入口、数据存储协调和资�
 
 Core 是长期资源的协调层，不应隐藏拥有者。新增 channel、scope、worker、manager 或 registry 项时，必须明确：创建点、关闭点、所属分区、超时策略、监控暴露方式。
 
-WebUI 配置热重载协调器由 `BiliBiliBot` 根生命周期持有，并登记在 `webui-config-hot-reload` 入口分区；停机时必须先拒收新保存、等待或取消当前 worker，并把 pending job 标记失败。WebUI 自身 host/port/enabled 等运行面变化只由 Bot scope 在保存响应返回后延迟调度，避免当前 HTTP 请求被自己的 `stop()` 中断。
+WebUI 配置热重载协调器由 `BiliBiliBot` 根生命周期持有，并登记在 `webui-config-hot-reload` 入口分区；停机时必须先拒收新保存、等待或取消当前 worker，并把所有未终态 job 标记失败。WebUI 自身 host/port/enabled 等运行面变化只由 Bot scope 在保存响应返回后延迟调度，避免当前 HTTP 请求被自己的 `stop()` 中断。
 
 ## 配置与数据
 

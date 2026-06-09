@@ -36,6 +36,9 @@ class RuntimeConfigApplier(
         BiliImageQuality.reload()
         FontManager.reloadRuntimeConfig()
     },
+    private val syncDebugLoggingRuntime: (BiliConfig) -> Unit = { config ->
+        BiliBiliBot.applyDebugLoggingRuntime(config)
+    },
     private val closeBiliClients: () -> Unit = {
         closeUtilsClient()
         closeServiceClient()
@@ -104,6 +107,7 @@ class RuntimeConfigApplier(
             }
             if (biliConfigChanged) {
                 BiliBiliBot.cookie.parse(generation.candidateSnapshot.biliConfig.accountConfig.cookie)
+                syncDebugLoggingRuntime(generation.candidateSnapshot.biliConfig)
                 reloadImageRuntime()
                 closeBiliClients()
                 refreshTaskers()
@@ -158,6 +162,7 @@ class RuntimeConfigApplier(
         }
         if (WebUiConfigFileKind.BILI_CONFIG in changedFiles) {
             BiliBiliBot.cookie.parse(generation.oldSnapshot.biliConfig.accountConfig.cookie)
+            syncDebugLoggingRuntime(generation.oldSnapshot.biliConfig)
             reloadImageRuntime()
             closeBiliClients()
             refreshTaskers()
