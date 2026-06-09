@@ -9,9 +9,19 @@ import top.bilibili.BiliDataWrapper
 import top.bilibili.config.BotConfig
 import top.bilibili.config.NapCatConfig
 import top.bilibili.config.PlatformConfig
+import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformAdapter
+import top.bilibili.connector.PlatformCapability
+import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformConnectorManager
 import top.bilibili.connector.PlatformConnectorPrepareResult
 import top.bilibili.connector.PlatformConnectorReloadResult
+import top.bilibili.connector.PlatformContact
+import top.bilibili.connector.PlatformInboundMessage
+import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.runBlocking
 import top.bilibili.webui.config.WebUiConfig
 import top.bilibili.webui.model.WebUiConfigFileKind
 import top.bilibili.webui.server.WebUiReloadPlan
@@ -330,6 +340,117 @@ class RuntimeConfigApplierTest {
         )
     }
 
+    @Test
+    fun `applier should restore runtime caches when webui reload fails after candidate install`() {
+        val calls = mutableListOf<String>()
+        val old = RuntimeConfigSnapshot(
+            BiliConfig(admin = 1L),
+            BiliDataWrapper(dataVersion = 4),
+            BotConfig(webui = WebUiConfig(enabled = true, port = 18080), firstRunFlag = 1),
+        )
+        val candidate = RuntimeConfigSnapshot(
+            BiliConfig(admin = 2L),
+            BiliDataWrapper(dataVersion = 4),
+            BotConfig(webui = WebUiConfig(enabled = true, port = 18081), firstRunFlag = 2),
+        )
+        val applier = RuntimeConfigApplier(
+            installBiliConfigRuntimeSnapshot = { config -> calls += "install-bili:${config.admin}" },
+            installBiliDataRuntimeSnapshot = { data -> calls += "install-data:${data.dataVersion}" },
+            installBotRuntimeSnapshot = { config -> calls += "install-bot:${config.firstRunFlag}" },
+            reloadImageRuntime = { calls += "reload-image" },
+            closeBiliClients = { calls += "close-client" },
+            refreshTaskers = { calls += "refresh-taskers" },
+            preparePlatformConnector = {
+                calls += "prepare-platform"
+                PlatformConnectorPrepareResult(success = true, prepared = null)
+            },
+            commitPlatformConnector = {
+                calls += "commit-platform"
+                PlatformConnectorReloadResult(success = true)
+            },
+            planWebUiReload = { _, _ ->
+                calls += "plan-webui"
+                WebUiReloadPlan(restartRequired = true, webUiRedirectUrl = "http://127.0.0.1:18081/")
+            },
+            scheduleWebUiReload = {
+                calls += "reload-webui"
+                if (calls.count { call -> call == "reload-webui" } == 1) {
+                    error("webui restart failed")
+                }
+            },
+        )
+
+        // WebUI 重启失败必须反馈到保存 job，并恢复已经切换的 bot.yml 运行态。
+        assertFailsWith<IllegalStateException> {
+            applier.applyBaseConfig(
+                RuntimeConfigGeneration(
+                    oldSnapshot = old,
+                    candidateSnapshot = candidate,
+                    changedFiles = setOf(WebUiConfigFileKind.BOT_CONFIG),
+                ),
+            )
+        }
+
+        assertEquals(
+            listOf(
+                "plan-webui",
+                "install-bot:2",
+                "reload-webui",
+                "install-bot:1",
+                "plan-webui",
+                "reload-webui",
+            ),
+            calls,
+        )
+    }
+
+    @Test
+    fun `applier should close prepared connector when later runtime refresh fails`() = runBlocking {
+        val oldAdapter = PreparedRecordingAdapter(sendResult = true)
+        val candidateAdapter = PreparedRecordingAdapter(sendResult = true)
+        val manager = PlatformConnectorManager(
+            config = BotConfig(),
+            adapterFactory = { oldAdapter },
+        )
+        manager.initialize()
+        manager.start()
+        val applier = RuntimeConfigApplier(
+            installBiliConfigRuntimeSnapshot = {},
+            installBiliDataRuntimeSnapshot = {},
+            installBotRuntimeSnapshot = {},
+            reloadImageRuntime = { error("image runtime failed") },
+            closeBiliClients = {},
+            refreshTaskers = {},
+            preparePlatformConnector = { config ->
+                manager.prepareReload(config, adapterFactory = { candidateAdapter })
+            },
+            commitPlatformConnector = { prepared ->
+                manager.commitReload(requireNotNull(prepared))
+            },
+        )
+        val old = RuntimeConfigSnapshot(BiliConfig(admin = 1L), BiliDataWrapper(dataVersion = 4), BotConfig(firstRunFlag = 1))
+        val candidate = RuntimeConfigSnapshot(
+            BiliConfig(admin = 2L),
+            BiliDataWrapper(dataVersion = 4),
+            BotConfig(firstRunFlag = 2, platform = testPlatformConfig(host = "10.0.0.2")),
+        )
+
+        // 运行态刷新在 commit 前失败时，已启动候选必须由 applier 关闭，不能遗留给后台重连循环。
+        assertFailsWith<IllegalStateException> {
+            applier.applyBaseConfig(
+                RuntimeConfigGeneration(
+                    oldSnapshot = old,
+                    candidateSnapshot = candidate,
+                    changedFiles = setOf(WebUiConfigFileKind.BILI_CONFIG, WebUiConfigFileKind.BOT_CONFIG),
+                ),
+            )
+        }
+
+        assertEquals(1, candidateAdapter.startCount)
+        assertEquals(1, candidateAdapter.stopCount)
+        assertEquals(0, oldAdapter.stopCount)
+    }
+
     /**
      * 测试平台配置差异只改变连接参数，避免用 firstRunFlag 这类非平台字段误触发 connector reload。
      */
@@ -339,5 +460,42 @@ class RuntimeConfigApplierTest {
             adapter = "onebot11",
             onebot11 = NapCatConfig(host = host, port = 3001),
         )
+    }
+
+    /**
+     * 只记录 applier 触发的 connector 生命周期，避免 core 测试依赖 vendor transport。
+     */
+    private class PreparedRecordingAdapter(
+        private val sendResult: Boolean,
+    ) : PlatformAdapter {
+        var startCount: Int = 0
+            private set
+        var stopCount: Int = 0
+            private set
+        private var connected: Boolean = false
+
+        override val eventFlow = emptyFlow<PlatformInboundMessage>()
+
+        override fun start() {
+            startCount++
+            connected = true
+        }
+
+        override suspend fun stop() {
+            stopCount++
+            connected = false
+        }
+
+        override fun declaredCapabilities(): Set<PlatformCapability> = emptySet()
+
+        override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean = sendResult
+
+        override fun runtimeStatus(): PlatformRuntimeStatus {
+            return PlatformRuntimeStatus(connected = connected, reconnectAttempts = 0)
+        }
+
+        override suspend fun isContactReachable(contact: PlatformContact): Boolean = false
+
+        override suspend fun canAtAll(contact: PlatformContact): Boolean = false
     }
 }

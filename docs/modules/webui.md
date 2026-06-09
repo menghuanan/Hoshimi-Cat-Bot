@@ -70,7 +70,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 ## 资源与生命周期
 
 - `WebUiManager` 只拥有嵌入式服务器生命周期，不持有 bot 主协程或平台 adapter。
-- WebUI 配置热重载协调器归 `BiliBiliBot` 根生命周期所有，不随单个 `WebUiManager` 重建；WebUI host、port、enabled、token TTL 或 static_dir 变化时只在保存响应返回后调度 stop/start/disable。
+- WebUI 配置热重载协调器归 `BiliBiliBot` 根生命周期所有，不随单个 `WebUiManager` 重建；WebUI host、port、enabled、token TTL 或 static_dir 变化会参与运行态 apply 事务。新 host/port 会先启动新入口、再延迟停止旧入口，启动失败时保存 job 必须失败且旧入口继续服务；同 host/port 的运行参数重启需要先释放旧端口，失败时尝试恢复旧入口。
 - `WebUiCredentialStore` 负责 `webui-credentials.json` 的创建、读取、迁移和密码哈希。
 - 凭据文件默认落在 `config/webui-credentials.json`，路径由 `bot.yml` 的 `webui.credential_file` 决定。
 - `WebUiLogFacade` 只读固定日志源，并按本次启动时间裁切旧日志窗口。

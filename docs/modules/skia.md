@@ -108,18 +108,20 @@ Skia 读取 `SkiaConfig` 和绘图相关运行参数，不写业务数据。新�
 
 普通清理：
 
-1. 等待活动绘图完成，最长 30 秒。
-2. `FontUtils.resetParagraphCache()`。
-3. `Graphics.purgeResourceCache()`。
-4. `ImageCache.cleanCache()`。
-5. 执行 3 轮 GC/finalization。
+1. 先阻止新绘图进入 active 状态；已经排队等待并发许可的绘图在获得许可后还会二次检查清理闸门。
+2. 等待活动绘图完成，最长 30 秒。
+3. `FontUtils.resetParagraphCache()`。
+4. `Graphics.purgeResourceCache()`。
+5. `ImageCache.cleanCache()`。
+6. 执行 3 轮 GC/finalization。
 
 紧急清理：
 
 1. 冷却时间内跳过。
-2. 等待活动绘图完成，最长 15 秒。
-3. `Graphics.purgeAllCaches()`。
-4. 执行 5 轮 GC/finalization。
+2. 先阻止新绘图进入 active 状态，并让等待并发许可的绘图退回清理窗口外。
+3. 等待活动绘图完成，最长 15 秒。
+4. `Graphics.purgeAllCaches()`。
+5. 执行 5 轮 GC/finalization。
 
 ## 查询 checklist
 

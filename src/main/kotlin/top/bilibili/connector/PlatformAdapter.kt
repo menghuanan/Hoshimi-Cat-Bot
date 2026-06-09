@@ -1,6 +1,8 @@
 package top.bilibili.connector
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withTimeoutOrNull
 
 interface PlatformAdapter {
     val eventFlow: Flow<PlatformInboundMessage>
@@ -9,6 +11,19 @@ interface PlatformAdapter {
      * 启动底层平台连接与事件分发，供 manager 在完成初始化后显式接通适配器生命周期。
      */
     fun start()
+
+    /**
+     * 热切换候选必须在提交前证明真实可用，默认基于平台中立运行态等待连接完成。
+     */
+    suspend fun awaitReadyForReload(timeoutMillis: Long): Boolean {
+        val effectiveTimeout = timeoutMillis.coerceAtLeast(1L)
+        return withTimeoutOrNull(effectiveTimeout) {
+            while (!runtimeStatus().connected) {
+                delay(100L)
+            }
+            true
+        } == true
+    }
 
     /**
      * 统一提供可挂起的停机入口，确保传输层关闭可沿用已有 suspend 生命周期。

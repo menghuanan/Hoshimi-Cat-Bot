@@ -35,6 +35,7 @@ import kotlinx.coroutines.delay
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -190,6 +191,26 @@ class WebUiManagerTest {
         val result = manager.planReload(settings)
 
         assertFalse(result.restartRequired)
+    }
+
+    /**
+     * 端口绑定失败必须向上抛出，让热重载 job 能转为 FAILED 而不是提前报告 APPLIED。
+     */
+    @Test
+    fun `start should report port binding failure`() {
+        val port = ServerSocket(0).use { socket -> socket.localPort }
+        val first = WebUiManager(WebUiConfig(enabled = true, host = "127.0.0.1", port = port).toSettings(tempRoot.toFile()))
+        val second = WebUiManager(WebUiConfig(enabled = true, host = "127.0.0.1", port = port).toSettings(tempRoot.toFile()))
+
+        try {
+            first.start()
+            assertFailsWith<Throwable> {
+                second.start()
+            }
+        } finally {
+            first.stop()
+            second.stop()
+        }
     }
 
     /**

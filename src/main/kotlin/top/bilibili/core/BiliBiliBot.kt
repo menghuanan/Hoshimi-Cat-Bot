@@ -98,6 +98,7 @@ object BiliBiliBot : CoroutineScope {
     private var connectorManager: PlatformConnectorManager? = null
     // Bot 启动层只保留 WebUI 生命周期接线权，不在 core 内承载任何路由或页面逻辑。
     private var webUiManager: WebUiManager? = null
+    private var webUiManagerPendingStop: WebUiManager? = null
     private var webUiReloadJob: Job? = null
     private var webUiConfigHotReloadCoordinator: WebUiConfigHotReloadCoordinator? = null
 
@@ -239,7 +240,7 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /**
-     * WebUI 重启由 Bot 根作用域延迟执行，确保保存响应和 job 状态能先返回给前端。
+     * WebUI 重启先验证新监听器可启动，旧入口的停止再延迟执行以保护当前保存响应。
      */
     fun scheduleWebUiReload(plan: WebUiReloadPlan) {
         if (!plan.restartRequired) {
@@ -247,35 +248,94 @@ object BiliBiliBot : CoroutineScope {
         }
         val nextSettings = plan.nextSettings ?: return
         webUiReloadJob?.cancel()
-        webUiReloadJob = launch {
-            // 轻微延迟把监听器切换放到当前 HTTP 响应之后，避免请求被自己的 stop() 截断。
-            delay(300)
-            if (isStopping()) {
-                logger.info("Bot 正在停机，取消 WebUI 热重载计划")
-                return@launch
-            }
-            applyScheduledWebUiReload(nextSettings)
-        }
+        webUiReloadJob = null
+        applyScheduledWebUiReload(nextSettings)
     }
 
     /**
-     * 执行已提交配置对应的 WebUI start/stop；调用方保证该逻辑只在 apply 成功后调度。
+     * 执行已提交配置对应的 WebUI start/stop；新入口成功前不能关闭旧入口。
      */
     private fun applyScheduledWebUiReload(nextSettings: WebUiSettings) {
+        val previousManager = webUiManager
+        if (previousManager?.settings == nextSettings && webUiManagerPendingStop == null) {
+            // 回滚时旧入口可能从未离线，当前设置已经匹配时不做无意义重启。
+            logger.info("WebUI 已处于目标热重载配置，跳过重复切换")
+            return
+        }
         if (!nextSettings.enabled) {
-            webUiManager?.stop()
-            webUiManager = null
+            webUiReloadJob = launch {
+                // 禁用 WebUI 仍需等当前保存响应返回后再关闭本地管理入口。
+                delay(300)
+                if (isStopping()) {
+                    logger.info("Bot 正在停机，取消 WebUI 禁用计划")
+                    return@launch
+                }
+                previousManager?.stop()
+                if (webUiManager === previousManager) {
+                    webUiManager = null
+                }
+                webUiManagerPendingStop?.stop()
+                webUiManagerPendingStop = null
+            }
             logger.info("WebUI 已按热重载配置禁用")
             return
         }
-        webUiManager?.stop()
-        webUiManager = WebUiManager(
+
+        val pendingStopManager = webUiManagerPendingStop
+        if (pendingStopManager?.settings?.sameEndpointAs(nextSettings) == true) {
+            // 回滚到仍在延迟停止窗口内的旧入口时，直接恢复引用并关闭候选入口。
+            previousManager?.stop()
+            webUiManager = pendingStopManager
+            webUiManagerPendingStop = null
+            logger.info("WebUI 已恢复到热重载前入口: http://${nextSettings.host}:${nextSettings.port}/")
+            return
+        }
+
+        val nextManager = WebUiManager(
             nextSettings,
             logWindowStartEpochMillis = startTime,
-        ).also { manager ->
-            manager.start()
+        )
+        if (previousManager?.settings?.sameEndpointAs(nextSettings) == true) {
+            // 同一监听端点无法双开；先释放旧端口，失败时立即尝试恢复旧管理入口。
+            previousManager.stop()
+            try {
+                nextManager.start()
+            } catch (throwable: Throwable) {
+                runCatching { previousManager.start() }
+                    .onFailure { restartError ->
+                        logger.error("WebUI 热重载失败后恢复旧入口也失败: ${restartError.message}", restartError)
+                    }
+                throw throwable
+            }
+            webUiManager = nextManager
+            logger.info("WebUI 已按热重载配置重新启动: http://${nextSettings.host}:${nextSettings.port}/")
+            return
+        }
+
+        // 先绑定新监听器，若端口冲突或配置错误抛出，旧 WebUI 仍保持服务。
+        nextManager.start()
+        webUiManager = nextManager
+        webUiManagerPendingStop = previousManager
+        webUiReloadJob = launch {
+            // 轻微延迟把旧监听器关闭放到当前 HTTP 响应之后，避免请求被自己的 stop() 截断。
+            delay(300)
+            if (isStopping()) {
+                logger.info("Bot 正在停机，跳过旧 WebUI 关闭计划")
+                return@launch
+            }
+            if (webUiManagerPendingStop === previousManager) {
+                previousManager?.stop()
+                webUiManagerPendingStop = null
+            }
         }
         logger.info("WebUI 已按热重载配置重新启动: http://${nextSettings.host}:${nextSettings.port}/")
+    }
+
+    /**
+     * WebUI 同端点重启不能先启动新实例，否则旧 server 仍占用端口。
+     */
+    private fun WebUiSettings.sameEndpointAs(other: WebUiSettings): Boolean {
+        return host == other.host && port == other.port
     }
 
     /**
@@ -739,6 +799,8 @@ object BiliBiliBot : CoroutineScope {
                     // WebUI 属于本地管理入口，停机时需要先停止接收新请求，再继续释放底层依赖。
                     webUiReloadJob?.cancelAndJoin()
                     webUiReloadJob = null
+                    webUiManagerPendingStop?.stop()
+                    webUiManagerPendingStop = null
                     webUiManager?.stop()
                     webUiManager = null
                 },
@@ -806,6 +868,8 @@ object BiliBiliBot : CoroutineScope {
             // 兜底停机同样先关闭本地管理入口，避免停机期间继续接入新的 HTTP 请求。
             webUiReloadJob?.cancelAndJoin()
             webUiReloadJob = null
+            webUiManagerPendingStop?.stop()
+            webUiManagerPendingStop = null
             webUiManager?.stop()
             webUiManager = null
         }.onFailure {

@@ -14,6 +14,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.assertNotSame
 import top.bilibili.config.BotConfig
+import top.bilibili.config.NapCatConfig
+import top.bilibili.config.PlatformConfig
 
 class PlatformConnectorManagerTest {
     @Test
@@ -101,6 +103,30 @@ class PlatformConnectorManagerTest {
     }
 
     @Test
+    fun `reload should keep old adapter when candidate never becomes connected`() = runBlocking {
+        val oldAdapter = RecordingAdapter(sendResult = true)
+        val newAdapter = RecordingAdapter(connectedAfterStart = false)
+        val manager = PlatformConnectorManager(
+            config = BotConfig(),
+            adapterFactory = { oldAdapter },
+        )
+        manager.initialize()
+        manager.start()
+
+        // start() 返回并不代表后台 WebSocket 已连通；prepare 必须等候 runtimeStatus 进入 connected。
+        val result = manager.prepareReload(
+            BotConfig(platform = testPlatformConfig(connectTimeoutMillis = 20L)),
+            adapterFactory = { newAdapter },
+        )
+
+        assertFalse(result.success)
+        assertNull(result.prepared)
+        assertEquals(1, newAdapter.stopCount)
+        assertEquals(0, oldAdapter.stopCount)
+        assertTrue(manager.sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, "1"), emptyList()))
+    }
+
+    @Test
     fun `commit reload should route sends through candidate adapter`() = runBlocking {
         val oldAdapter = RecordingAdapter(sendResult = false)
         val newAdapter = RecordingAdapter(sendResult = true)
@@ -146,11 +172,14 @@ class PlatformConnectorManagerTest {
     private class RecordingAdapter(
         private val failOnStart: Boolean = false,
         private val sendResult: Boolean = false,
+        private val connectedAfterStart: Boolean = true,
+        private val readyForReload: Boolean = connectedAfterStart,
     ) : PlatformAdapter {
         var startCount: Int = 0
             private set
         var stopCount: Int = 0
             private set
+        private var connected: Boolean = false
 
         private val mutableEvents = MutableSharedFlow<PlatformInboundMessage>()
         override val eventFlow = mutableEvents
@@ -160,10 +189,16 @@ class PlatformConnectorManagerTest {
             if (failOnStart) {
                 throw IllegalStateException("start failure")
             }
+            connected = connectedAfterStart
+        }
+
+        override suspend fun awaitReadyForReload(timeoutMillis: Long): Boolean {
+            return readyForReload
         }
 
         override suspend fun stop() {
             stopCount++
+            connected = false
         }
 
         suspend fun emitEvent(message: PlatformInboundMessage) {
@@ -175,7 +210,7 @@ class PlatformConnectorManagerTest {
         override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean = sendResult
 
         override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(
-            connected = false,
+            connected = connected,
             reconnectAttempts = 0,
         )
 
@@ -202,6 +237,17 @@ class PlatformConnectorManagerTest {
             hasMention = false,
             fromSelf = false,
             rawPayload = null,
+        )
+    }
+
+    /**
+     * 测试配置只缩短候选连通等待时间，避免回归用例在断线候选上长时间阻塞。
+     */
+    private fun testPlatformConfig(connectTimeoutMillis: Long): PlatformConfig {
+        return PlatformConfig(
+            type = PlatformType.ONEBOT11,
+            adapter = "onebot11",
+            onebot11 = NapCatConfig(connectTimeout = connectTimeoutMillis),
         )
     }
 }

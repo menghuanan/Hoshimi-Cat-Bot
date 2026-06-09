@@ -18,7 +18,7 @@
 - 链接解析配置调整。
 - 部分联系人、分组、过滤器数据调整。
 - WebUI 设置页或订阅页保存的 `BiliConfig.yml`、`BiliData.yml`、`bot.yml` 当前可编辑字段，会进入 WebUI 热重载协调器串行处理；该能力只覆盖前端保存链路，不监听手动改文件。
-- 经 WebUI 保存的 `bot.yml` 平台类型、adapter、OneBot11/NapCat/LlBot/QQ 官方连接参数和 WebUI 运行面参数，会通过候选代际、平台 connector prepare/commit、响应后 WebUI 调度完成热切换；候选失败时旧运行态继续工作并尝试回滚磁盘。
+- 经 WebUI 保存的 `bot.yml` 平台类型、adapter、OneBot11/NapCat/LlBot/QQ 官方连接参数和 WebUI 运行面参数，会通过候选代际、平台 connector prepare/commit、WebUI 受控重启和失败回滚完成热切换；候选未真实连通或 WebUI 入口启动失败时旧运行态继续工作并尝试回滚磁盘。
 
 **注意**：存在运行态缓存时必须同步清理，例如模板策略需经 `TemplateRuntimeCoordinator`。
 

@@ -7,6 +7,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import top.bilibili.config.BotConfig
 import top.bilibili.connector.onebot11.core.KtorOneBot11Transport
 import top.bilibili.connector.onebot11.generic.GenericOneBot11Adapter
@@ -117,6 +118,13 @@ class PlatformConnectorManager(
         val candidateAdapter = createPlatformAdapter(newConfig, adapterFactory)
         return try {
             candidateAdapter.start()
+            val ready = runBlocking {
+                // start() 可能只启动后台重连循环；提交前必须等到候选真的进入 connected。
+                candidateAdapter.awaitReadyForReload(candidateReadinessTimeoutMillis(newConfig))
+            }
+            if (!ready) {
+                error("platform connector candidate did not become connected before timeout")
+            }
             PlatformConnectorPrepareResult(
                 success = true,
                 prepared = PreparedPlatformConnector(
@@ -286,8 +294,20 @@ class PlatformConnectorManager(
      */
     private fun runBlockingStop(adapter: PlatformAdapter?) {
         adapter ?: return
-        kotlinx.coroutines.runBlocking {
+        runBlocking {
             runCatching { adapter.stop() }
+        }
+    }
+
+    /**
+     * 候选连通等待沿用当前平台连接超时，并设置合理下限避免配置过小导致误杀瞬时握手。
+     */
+    private fun candidateReadinessTimeoutMillis(config: BotConfig): Long {
+        return when (config.selectedAdapterKind()) {
+            PlatformAdapterKind.ONEBOT11,
+            PlatformAdapterKind.NAPCAT,
+            PlatformAdapterKind.LLBOT -> config.selectedOneBot11Config().connectTimeout.coerceAtLeast(1_000L)
+            PlatformAdapterKind.QQ_OFFICIAL -> 15_000L
         }
     }
 }
@@ -310,7 +330,7 @@ data class PreparedPlatformConnector internal constructor(
             return
         }
         closed = true
-        kotlinx.coroutines.runBlocking {
+        runBlocking {
             runCatching { candidateAdapter.stop() }
         }
     }

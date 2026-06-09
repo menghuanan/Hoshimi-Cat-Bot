@@ -108,6 +108,10 @@ class RuntimeConfigApplier(
                 closeBiliClients()
                 refreshTaskers()
             }
+            if (webUiPlan.restartRequired) {
+                // WebUI 运行面切换必须先验证成功；之后平台 commit 若失败，catch 可按旧配置恢复管理入口。
+                scheduleWebUiReload(webUiPlan)
+            }
             if (platformConnectorChanged) {
                 val commitResult = commitPlatformConnector(preparedConnector.prepared)
                 if (!commitResult.success) {
@@ -116,12 +120,10 @@ class RuntimeConfigApplier(
                 }
             }
         } catch (error: Throwable) {
+            preparedConnector.prepared?.closeUncommitted()
             restoreChangedRuntimeSlices(generation, changedFiles)
+            rollbackWebUiReloadIfNeeded(generation, changedFiles)
             throw error
-        }
-        if (webUiPlan.restartRequired) {
-            // WebUI reload 只在全部提交成功后调度，确保当前保存响应可以先返回 job DTO。
-            scheduleWebUiReload(webUiPlan)
         }
         return webUiPlan
     }
@@ -159,6 +161,25 @@ class RuntimeConfigApplier(
             reloadImageRuntime()
             closeBiliClients()
             refreshTaskers()
+        }
+    }
+
+    /**
+     * WebUI 运行面若已切到候选后又遇到后续失败，需要按旧 bot.yml 快照恢复管理入口。
+     */
+    private fun rollbackWebUiReloadIfNeeded(
+        generation: RuntimeConfigGeneration,
+        changedFiles: Set<WebUiConfigFileKind>,
+    ) {
+        if (WebUiConfigFileKind.BOT_CONFIG !in changedFiles) {
+            return
+        }
+        val rollbackPlan = planWebUiReload(
+            generation.candidateSnapshot.botConfig,
+            generation.oldSnapshot.botConfig,
+        )
+        if (rollbackPlan.restartRequired) {
+            scheduleWebUiReload(rollbackPlan)
         }
     }
 }

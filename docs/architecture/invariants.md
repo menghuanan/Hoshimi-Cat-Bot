@@ -116,7 +116,7 @@
 | --- | --- | --- | --- | --- |
 | `startup-delayed-jobs` | `INGRESS` | `startupDataInitJob`、`startupTaskBootstrapJob` | `RELAXED_LONG_RUNNING` | 取消延迟初始化与延迟启动任务，避免停机期间“边关边起” |
 | `gateway-platform` | `INGRESS` | `PlatformConnectorManager`、`MessageGatewayProvider` | `RELAXED_LONG_RUNNING` | 停平台入口、清空 connector manager、注销消息网关 |
-| `webui-manager` | `INGRESS` | `WebUiManager` | `RELAXED_LONG_RUNNING` | 关闭本地 WebUI 管理入口，避免停机期间继续接收新的 HTTP 请求 |
+| `webui-manager` | `INGRESS` | `WebUiManager`、`webUiManagerPendingStop` | `RELAXED_LONG_RUNNING` | 关闭当前和热重载待停止的本地 WebUI 管理入口，避免停机期间继续接收新的 HTTP 请求 |
 | `event-collector` | `INGRESS` | `eventCollectorJob` | `STRICT` | 取消事件收集协程 |
 | `taskers` | `WORKERS` | `BiliTasker.*` | `RELAXED_LONG_RUNNING` | 调用 `BiliTasker.cancelAll(timeoutMs = 10_000)` 统一停止后台任务 |
 | `channels` | `CHANNELS` | `dynamicChannel`、`liveChannel`、`messageChannel` | `STRICT` | 关闭三条消息通道 |

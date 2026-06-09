@@ -18,6 +18,7 @@ object DrawingQueueManager {
     private val activeCount = AtomicInteger(0)
     private val pendingCount = AtomicInteger(0)
     private val isCleaning = AtomicBoolean(false)
+    private val cleaningLock = Any()
     private val lastActivityTime = AtomicLong(System.currentTimeMillis())
 
     /**
@@ -32,19 +33,33 @@ object DrawingQueueManager {
         }
 
         var acquired = false
+        var activated = false
         var needsRollback = true  // Track if we need to rollback pending count
         try {
-            // 2. Wait if cleaning
-            while (isCleaning.get()) {
-                delay(100)
+            // 2. Acquire semaphore only after cleanup has no active request, and re-check after waiting.
+            while (true) {
+                while (isCleaning.get()) {
+                    delay(100)
+                }
+                semaphore.acquire()
+                acquired = true
+                var movedToActive = false
+                synchronized(cleaningLock) {
+                    if (!isCleaning.get()) {
+                        pendingCount.decrementAndGet()
+                        needsRollback = false  // Successfully moved from pending to active
+                        activeCount.incrementAndGet()
+                        activated = true
+                        movedToActive = true
+                    }
+                }
+                if (movedToActive) {
+                    break
+                }
+                // cleanup may start while this task waits on the semaphore; release and wait for the cleanup window.
+                semaphore.release()
+                acquired = false
             }
-
-            // 3. Acquire semaphore
-            semaphore.acquire()
-            acquired = true
-            pendingCount.decrementAndGet()
-            needsRollback = false  // Successfully moved from pending to active
-            activeCount.incrementAndGet()
 
             // 4. Record activity
             lastActivityTime.set(System.currentTimeMillis())
@@ -55,7 +70,9 @@ object DrawingQueueManager {
             }
         } finally {
             if (acquired) {
-                activeCount.decrementAndGet()
+                if (activated) {
+                    activeCount.decrementAndGet()
+                }
                 semaphore.release()
             } else if (needsRollback) {
                 // 仅在真正进入等待队列失败时回滚，避免 pending 计数被重复扣减。
@@ -77,15 +94,19 @@ object DrawingQueueManager {
      * 清理全局 Skia/字体资源时暂停新绘图并等待活动绘图完成，调用方的 close 块在暂停窗口内执行。
      */
     suspend fun runExclusiveCleanup(block: () -> Unit) {
-        isCleaning.set(true)
+        synchronized(cleaningLock) {
+            isCleaning.set(true)
+        }
         try {
-            // 等待所有活动任务完成
+            // 等待所有活动任务完成；已排队任务会在 acquire 后二次检查 cleaning 并退回等待。
             while (activeCount.get() > 0) {
                 delay(100)
             }
             block()
         } finally {
-            isCleaning.set(false)
+            synchronized(cleaningLock) {
+                isCleaning.set(false)
+            }
         }
     }
 

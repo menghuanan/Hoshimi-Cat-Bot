@@ -43,13 +43,15 @@ import top.bilibili.webui.service.WebUiConfigWriteFacade
 import top.bilibili.webui.service.WebUiLogFacade
 import top.bilibili.webui.service.WebUiRuntimeFacade
 import top.bilibili.webui.service.WebUiSubscriptionManagementFacade
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.util.concurrent.CancellationException
 
 /**
  * WebUI 管理器只拥有嵌入式服务器生命周期，并把本次启动时间传给日志面做会话裁切。
  */
 class WebUiManager(
-    private val settings: WebUiSettings,
+    internal val settings: WebUiSettings,
     private val logWindowStartEpochMillis: Long = 0L,
 ) {
     private val logger = LoggerFactory.getLogger(WebUiManager::class.java)
@@ -85,6 +87,7 @@ class WebUiManager(
             configFacade = configFacade,
         )
         val configHotReloadCoordinator = BiliBiliBot.requireWebUiConfigHotReloadCoordinator()
+        ensureEndpointAvailable()
         val startedServer = embeddedServer(CIO, host = settings.host, port = settings.port) {
             installWebUiModule(
                 settings = settings,
@@ -107,6 +110,20 @@ class WebUiManager(
         startedServer.start(wait = false)
         server = startedServer
         logger.info("WebUI 已启动: http://${settings.host}:${settings.port}/")
+    }
+
+    /**
+     * Ktor CIO 的 bind 失败可能在后台协程抛出；启动前先做同步端口探测，让热重载 job 能立即失败并回滚。
+     */
+    private fun ensureEndpointAvailable() {
+        runCatching {
+            ServerSocket().use { socket ->
+                socket.reuseAddress = false
+                socket.bind(InetSocketAddress(settings.host, settings.port))
+            }
+        }.getOrElse { throwable ->
+            throw IllegalStateException("WebUI endpoint is unavailable: ${settings.host}:${settings.port}", throwable)
+        }
     }
 
     /**
