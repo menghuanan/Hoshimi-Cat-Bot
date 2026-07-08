@@ -125,9 +125,12 @@ sealed interface OutgoingPart {
         override val data: Map<String, String> = mapOf("qq" to "all")
     }
 
-    data class Reply(val messageId: Int) : OutgoingPart {
+    data class Reply(val messageId: String) : OutgoingPart {
+        // 保留旧 Int 构造入口，让 OneBot11 与既有测试继续复用统一回复片段。
+        constructor(messageId: Int) : this(messageId.toString())
+
         override val type: String = "reply"
-        override val data: Map<String, String> = mapOf("id" to messageId.toString())
+        override val data: Map<String, String> = mapOf("id" to messageId)
     }
 
     companion object {
@@ -155,6 +158,11 @@ sealed interface OutgoingPart {
          * 构造回复片段，保持各平台回复能力都走同一抽象入口。
          */
         fun reply(messageId: Int): OutgoingPart = Reply(messageId)
+
+        /**
+         * 构造字符串消息 ID 回复片段，兼容 QQ 官方等非数字消息 ID 平台。
+         */
+        fun reply(messageId: String): OutgoingPart = Reply(messageId)
     }
 }
 
@@ -169,6 +177,9 @@ data class PlatformInboundMessage(
     val hasMention: Boolean,
     val fromSelf: Boolean,
     val rawPayload: Any?,
+    val eventId: String? = null,
+    val messageId: String? = null,
+    val metadata: Map<String, String> = emptyMap(),
 ) {
     // 为仍在迁移中的调用方保留字符串 ID 访问入口，避免再次回退到 Long 假设。
     val chatId: String get() = chatContact.id

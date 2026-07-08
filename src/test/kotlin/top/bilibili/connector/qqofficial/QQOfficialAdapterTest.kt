@@ -20,6 +20,7 @@ import kotlinx.serialization.json.put
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -109,14 +110,72 @@ class QQOfficialAdapterTest {
             assertEquals(PlatformType.QQ_OFFICIAL, groupEvent.platform)
             assertEquals(PlatformChatType.GROUP, groupEvent.chatType)
             assertEquals("group_openid_demo", groupEvent.chatContact.id)
-            assertEquals("member_openid_demo", groupEvent.senderContact.id)
+            assertEquals(PlatformChatType.GROUP, groupEvent.senderContact.type)
+            assertEquals("group_openid_demo", groupEvent.senderContact.id)
+            assertEquals("evt-group-1", groupEvent.eventId)
+            assertEquals("msg-group-1", groupEvent.messageId)
+            assertEquals("group_openid_demo", groupEvent.metadata["group_openid"])
+            assertEquals("member_openid_demo", groupEvent.metadata["member_openid"])
+            assertFalse(groupEvent.metadata.containsKey("user_openid"))
             assertTrue(groupEvent.hasMention)
 
             val c2cEvent = events[1]
             assertEquals(PlatformChatType.PRIVATE, c2cEvent.chatType)
             assertEquals("user_openid_demo", c2cEvent.chatContact.id)
             assertEquals("user_openid_demo", c2cEvent.senderContact.id)
+            assertEquals("evt-c2c-1", c2cEvent.eventId)
+            assertEquals("msg-c2c-1", c2cEvent.messageId)
+            assertEquals("user_openid_demo", c2cEvent.metadata["user_openid"])
             assertFalse(c2cEvent.hasMention)
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `access token should refresh at official sixty second window`() = runBlocking {
+        var now = 0L
+        val transport = FakeTransport().apply {
+            tokenExpiresInSeconds = "120"
+        }
+        val adapter = createStartedAdapter(transport, currentTimeMillis = { now })
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+            val initialTokenRequests = transport.tokenRequestCount()
+
+            now = 59_000L
+            assertTrue(adapter.sendMessage(groupContact, listOf(OutgoingPart.text("未到刷新窗口"))))
+            assertEquals(initialTokenRequests, transport.tokenRequestCount())
+
+            now = 60_001L
+            assertTrue(adapter.sendMessage(groupContact, listOf(OutgoingPart.text("进入刷新窗口"))))
+            assertEquals(initialTokenRequests + 1, transport.tokenRequestCount())
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `openapi authorization failure should force refresh token and retry once`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+            transport.failNextMessageWith401 = true
+
+            assertTrue(adapter.sendMessage(groupContact, listOf(OutgoingPart.text("刷新后重试"))))
+
+            val messageRequests = transport.requests.filter { it.url.endsWith("/v2/groups/group_openid_demo/messages") }
+            assertEquals(2, transport.tokenRequestCount())
+            assertEquals(2, messageRequests.size)
+            assertEquals("QQBot access-token-demo", messageRequests[0].headers["Authorization"])
+            assertEquals("QQBot access-token-demo-2", messageRequests[1].headers["Authorization"])
         } finally {
             stopAdapter(adapter)
         }
@@ -145,6 +204,53 @@ class QQOfficialAdapterTest {
             assertEquals("群消息", groupRequest.body!!.jsonObject["content"]!!.jsonPrimitive.content)
             assertEquals(0, privateRequest.body!!.jsonObject["msg_type"]!!.jsonPrimitive.content.toInt())
             assertEquals("私聊消息", privateRequest.body!!.jsonObject["content"]!!.jsonPrimitive.content)
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `reply send should keep string msg id and increment msg seq per message id`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+
+            assertTrue(adapter.sendMessage(groupContact, listOf(OutgoingPart.reply("msg-group-1"), OutgoingPart.text("第一次"))))
+            assertTrue(adapter.sendMessage(groupContact, listOf(OutgoingPart.reply("msg-group-1"), OutgoingPart.text("第二次"))))
+
+            val sendRequests = transport.requests.filter { it.url.endsWith("/v2/groups/group_openid_demo/messages") }
+            assertEquals("msg-group-1", sendRequests[0].body!!.jsonObject["msg_id"]!!.jsonPrimitive.content)
+            assertEquals(1, sendRequests[0].body!!.jsonObject["msg_seq"]!!.jsonPrimitive.content.toInt())
+            assertEquals("msg-group-1", sendRequests[1].body!!.jsonObject["msg_id"]!!.jsonPrimitive.content)
+            assertEquals(2, sendRequests[1].body!!.jsonObject["msg_seq"]!!.jsonPrimitive.content.toInt())
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `rate limiter should guard bot and group qpm before openapi send`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(
+            transport = transport,
+            botQpmLimit = 1,
+            groupQpmLimit = 1,
+        )
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+
+            assertTrue(adapter.sendMessage(groupContact, listOf(OutgoingPart.text("第一条"))))
+            assertFalse(adapter.sendMessage(groupContact, listOf(OutgoingPart.text("第二条"))))
+
+            val sendRequests = transport.requests.filter { it.url.endsWith("/v2/groups/group_openid_demo/messages") }
+            assertEquals(1, sendRequests.size)
         } finally {
             stopAdapter(adapter)
         }
@@ -188,6 +294,8 @@ class QQOfficialAdapterTest {
         val transport = FakeTransport()
         val adapter = createStartedAdapter(transport)
         val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+        val tempImage = Files.createTempFile("qq-official-capability", ".png")
+        Files.write(tempImage, byteArrayOf(1, 2, 3))
 
         try {
             transport.emitGatewayText(groupMessageFrame())
@@ -195,10 +303,12 @@ class QQOfficialAdapterTest {
 
             assertTrue(adapter.canSendMessage(groupContact))
             assertTrue(adapter.canSendImages(groupContact, listOf(ImageSource.RemoteUrl("https://example.com/demo.png"))))
-            assertFalse(adapter.canSendImages(groupContact, listOf(ImageSource.LocalFile("temp/demo.png"))))
+            assertTrue(adapter.canSendImages(groupContact, listOf(ImageSource.LocalFile(tempImage.toString()))))
+            assertTrue(adapter.canSendImages(groupContact, listOf(ImageSource.Binary(byteArrayOf(4, 5, 6), "demo.png"))))
             assertTrue(adapter.canReply(groupContact))
             assertFalse(adapter.canAtAll(groupContact))
         } finally {
+            Files.deleteIfExists(tempImage)
             stopAdapter(adapter)
         }
     }
@@ -221,10 +331,14 @@ class QQOfficialAdapterTest {
     }
 
     @Test
-    fun `local image should degrade to plain text while reply should keep explicit msg id`() = runBlocking {
+    fun `local and binary images should upload file data while reply keeps string msg id`() = runBlocking {
         val transport = FakeTransport()
         val adapter = createStartedAdapter(transport)
         val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+        val tempImage = Files.createTempFile("qq-official-local", ".png")
+        val localBytes = byteArrayOf(1, 2, 3, 4)
+        val binaryBytes = byteArrayOf(5, 6, 7, 8)
+        Files.write(tempImage, localBytes)
 
         try {
             transport.emitGatewayText(groupMessageFrame())
@@ -234,25 +348,33 @@ class QQOfficialAdapterTest {
                 adapter.sendMessage(
                     groupContact,
                     listOf(
-                        OutgoingPart.reply(42),
-                        OutgoingPart.text("仅文本降级"),
-                        OutgoingPart.Image(ImageSource.LocalFile("temp/demo.png")),
+                        OutgoingPart.reply("msg-group-1"),
+                        OutgoingPart.text("带本地图"),
+                        OutgoingPart.Image(ImageSource.LocalFile(tempImage.toString())),
+                        OutgoingPart.Image(ImageSource.Binary(binaryBytes, "binary.png")),
                     ),
                 ),
             )
 
-            val sendRequest = transport.requests.last { it.url.endsWith("/v2/groups/group_openid_demo/messages") }
-            assertEquals(0, sendRequest.body!!.jsonObject["msg_type"]!!.jsonPrimitive.content.toInt())
-            assertEquals("仅文本降级", sendRequest.body!!.jsonObject["content"]!!.jsonPrimitive.content)
-            assertEquals("42", sendRequest.body!!.jsonObject["msg_id"]!!.jsonPrimitive.content)
-            assertFalse(sendRequest.body!!.jsonObject.containsKey("media"))
+            val uploadRequests = transport.requests.filter { it.url.endsWith("/v2/groups/group_openid_demo/files") }
+            val sendRequests = transport.requests.filter { it.url.endsWith("/v2/groups/group_openid_demo/messages") }
+
+            assertEquals(2, uploadRequests.size)
+            assertEquals(Base64.getEncoder().encodeToString(localBytes), uploadRequests[0].body!!.jsonObject["file_data"]!!.jsonPrimitive.content)
+            assertEquals(Base64.getEncoder().encodeToString(binaryBytes), uploadRequests[1].body!!.jsonObject["file_data"]!!.jsonPrimitive.content)
+            assertEquals(7, sendRequests[0].body!!.jsonObject["msg_type"]!!.jsonPrimitive.content.toInt())
+            assertEquals("带本地图", sendRequests[0].body!!.jsonObject["content"]!!.jsonPrimitive.content)
+            assertEquals("msg-group-1", sendRequests[0].body!!.jsonObject["msg_id"]!!.jsonPrimitive.content)
+            assertEquals(1, sendRequests[0].body!!.jsonObject["msg_seq"]!!.jsonPrimitive.content.toInt())
+            assertEquals(7, sendRequests[1].body!!.jsonObject["msg_type"]!!.jsonPrimitive.content.toInt())
         } finally {
+            Files.deleteIfExists(tempImage)
             stopAdapter(adapter)
         }
     }
 
     @Test
-    fun `pure local image should fail explicitly when no text fallback exists`() = runBlocking {
+    fun `missing local image should fail explicitly when no text fallback exists`() = runBlocking {
         val transport = FakeTransport()
         val adapter = createStartedAdapter(transport)
         val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
@@ -274,10 +396,12 @@ class QQOfficialAdapterTest {
     }
 
     @Test
-    fun `guard capability should expose explicit unsupported reason for local image and atall`() = runBlocking {
+    fun `guard capability should support readable local image and reject atall explicitly`() = runBlocking {
         val transport = FakeTransport()
         val adapter = createStartedAdapter(transport)
         val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+        val tempImage = Files.createTempFile("qq-official-guard", ".png")
+        Files.write(tempImage, byteArrayOf(1, 2, 3))
 
         try {
             transport.emitGatewayText(groupMessageFrame())
@@ -287,7 +411,7 @@ class QQOfficialAdapterTest {
                 CapabilityRequest(
                     capability = PlatformCapability.SEND_IMAGES,
                     contact = groupContact,
-                    images = listOf(ImageSource.LocalFile("temp/demo.png")),
+                    images = listOf(ImageSource.LocalFile(tempImage.toString())),
                 ),
             )
             val atAllGuard = adapter.guardCapability(
@@ -297,36 +421,39 @@ class QQOfficialAdapterTest {
                 ),
             )
 
-            val degradedImage = assertIs<CapabilityGuardResult.Degraded>(imageGuard)
-            assertTrue(degradedImage.reason.contains("public remote image"), "qq official image reason should be explicit")
+            assertIs<CapabilityGuardResult.Supported>(imageGuard)
             val unsupportedAtAll = assertIs<CapabilityGuardResult.Unsupported>(atAllGuard)
             assertTrue(unsupportedAtAll.reason.contains("@全体"), "qq official at-all reason should be explicit")
         } finally {
+            Files.deleteIfExists(tempImage)
             stopAdapter(adapter)
         }
     }
 
     @Test
-    fun `qq official image resolver should keep local and binary images on explicit fallback path`() {
+    fun `qq official image upload should keep local and binary images on file data path`() {
         val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
 
-        // QQ Official 只允许公网 URL 直发，本地图和二进制图必须继续交给上层文本降级。
-        assertTrue(source.contains("is ImageSource.LocalFile -> null"))
-        assertTrue(source.contains("is ImageSource.Binary -> null"))
+        // QQ Official 本地图和二进制图必须走 file_data 上传，而不是退回纯文本。
+        assertTrue(source.contains("encodeLocalFileAsBase64"))
+        assertTrue(source.contains("is ImageSource.Binary -> QQOfficialMediaUploadSource.FileData"))
+        assertTrue(source.contains("put(\"file_data\", source.fileData)"))
     }
 
     @Test
-    fun `group manage events should toggle send capability`() = runBlocking {
+    fun `active message receive and reject events should toggle send capability`() = runBlocking {
         val transport = FakeTransport()
         val adapter = createStartedAdapter(transport)
         val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+        val privateContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.PRIVATE, "user_openid_demo")
 
         try {
             assertFalse(adapter.canSendMessage(groupContact))
+            assertFalse(adapter.canSendMessage(privateContact))
 
             transport.emitGatewayText(
                 manageGroupFrame(
-                    eventType = "GROUP_ADD_ROBOT",
+                    eventType = "GROUP_MSG_RECEIVE",
                     groupOpenId = "group_openid_demo",
                 ),
             )
@@ -335,7 +462,7 @@ class QQOfficialAdapterTest {
 
             transport.emitGatewayText(
                 manageGroupFrame(
-                    eventType = "GROUP_DEL_ROBOT",
+                    eventType = "GROUP_MSG_REJECT",
                     groupOpenId = "group_openid_demo",
                 ),
             )
@@ -346,6 +473,18 @@ class QQOfficialAdapterTest {
                 }
             }
             assertFalse(adapter.canSendMessage(groupContact))
+
+            transport.emitGatewayText(manageC2CFrame(eventType = "C2C_MSG_RECEIVE", openId = "user_openid_demo"))
+            waitForReachable(adapter, privateContact)
+            assertTrue(adapter.canSendMessage(privateContact))
+
+            transport.emitGatewayText(manageC2CFrame(eventType = "C2C_MSG_REJECT", openId = "user_openid_demo"))
+            withTimeout(1_000) {
+                while (adapter.canSendMessage(privateContact)) {
+                    delay(10)
+                }
+            }
+            assertFalse(adapter.canSendMessage(privateContact))
         } finally {
             stopAdapter(adapter)
         }
@@ -363,7 +502,7 @@ class QQOfficialAdapterTest {
         val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
 
         try {
-            transport.emitGatewayText(groupMessageFrame())
+            transport.emitGatewayText(manageGroupFrame(eventType = "GROUP_MSG_RECEIVE", groupOpenId = "group_openid_demo"))
             waitForReachable(adapter, groupContact)
 
             now += 1_001L
@@ -412,6 +551,111 @@ class QQOfficialAdapterTest {
     }
 
     @Test
+    fun `close code 4009 should reconnect with resume payload`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+            transport.lastGatewaySession.closeWithCode(4009, "session timeout")
+            waitForGatewayOpenCount(transport, 2)
+            val secondSession = transport.lastGatewaySession
+            val resumePayload = waitForSentOp(secondSession, 6).jsonObject["d"]!!.jsonObject
+
+            assertEquals("session-demo", resumePayload["session_id"]!!.jsonPrimitive.content)
+            assertEquals(2, resumePayload["seq"]!!.jsonPrimitive.content.toInt())
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `close code 4006 should clear resume state and identify again`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+
+        try {
+            transport.enqueueGatewayBootstrap(listOf(helloFrame(), readyFrame(sessionId = "session-after-identify")))
+            transport.lastGatewaySession.closeWithCode(4006, "invalid session")
+            waitForGatewayOpenCount(transport, 2)
+            val secondSession = transport.lastGatewaySession
+
+            assertTrue(secondSession.sentTexts.any { it.jsonObject["op"]?.jsonPrimitive?.content == "2" })
+            assertFalse(secondSession.sentTexts.any { it.jsonObject["op"]?.jsonPrimitive?.content == "6" })
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `fatal close code should stop reconnect and report unavailable`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+
+        try {
+            transport.lastGatewaySession.closeWithCode(4013, "invalid intents")
+            withTimeout(1_000) {
+                while (adapter.runtimeStatus().connected) {
+                    delay(10)
+                }
+            }
+            delay(100)
+
+            assertFalse(adapter.runtimeStatus().connected)
+            assertEquals(1, transport.gatewaySessions.size)
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `heartbeat ack timeout should close session and reconnect`() = runBlocking {
+        var now = 0L
+        val transport = FakeTransport().apply {
+            heartbeatIntervalMillis = 20
+        }
+        val adapter = createStartedAdapter(transport, currentTimeMillis = { now })
+
+        try {
+            val firstSession = transport.lastGatewaySession
+            waitForSentOp(firstSession, 1)
+
+            now = 100L
+            waitForGatewayOpenCount(transport, 2)
+
+            assertFalse(firstSession.closeSignal.isActive)
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `dispatch seq should commit only after normalized inbound delivery`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(malformedGroupMessageFrame(seq = 77))
+            transport.lastGatewaySession.closeWithCode(4009, "resume after malformed")
+            waitForGatewayOpenCount(transport, 2)
+            val resumeAfterMalformed = waitForSentOp(transport.lastGatewaySession, 6).jsonObject["d"]!!.jsonObject
+            assertEquals(1, resumeAfterMalformed["seq"]!!.jsonPrimitive.content.toInt())
+
+            transport.emitGatewayText(groupMessageFrame(seq = 8))
+            waitForReachable(adapter, groupContact)
+            transport.lastGatewaySession.closeWithCode(4009, "resume after delivered")
+            waitForGatewayOpenCount(transport, 3)
+            val resumeAfterDelivered = waitForSentOp(transport.lastGatewaySession, 6).jsonObject["d"]!!.jsonObject
+            assertEquals(8, resumeAfterDelivered["seq"]!!.jsonPrimitive.content.toInt())
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
     fun `qq official reconnect should use shared bounded backoff without recursive retry scheduling`() {
         val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
         val policySource = read("src/main/kotlin/top/bilibili/connector/ConnectionBackoffPolicy.kt")
@@ -447,6 +691,10 @@ class QQOfficialAdapterTest {
         currentTimeMillis: () -> Long = { System.currentTimeMillis() },
         reachableContactTtlMillis: Long = QQOfficialAdapter.DEFAULT_REACHABLE_CONTACT_TTL_MILLIS,
         reachableContactsMaxSize: Int = QQOfficialAdapter.DEFAULT_REACHABLE_CONTACTS_MAX_SIZE,
+        botQpmLimit: Int = QQOfficialAdapter.DEFAULT_BOT_QPM_LIMIT,
+        groupQpmLimit: Int = QQOfficialAdapter.DEFAULT_GROUP_QPM_LIMIT,
+        groupPassiveReplyWindowMillis: Long = QQOfficialAdapter.DEFAULT_GROUP_PASSIVE_REPLY_WINDOW_MILLIS,
+        privatePassiveReplyWindowMillis: Long = QQOfficialAdapter.DEFAULT_PRIVATE_PASSIVE_REPLY_WINDOW_MILLIS,
     ): QQOfficialAdapter {
         val adapter = QQOfficialAdapter(
             config = QQOfficialConfig(
@@ -457,6 +705,10 @@ class QQOfficialAdapterTest {
             currentTimeMillis = currentTimeMillis,
             reachableContactTtlMillis = reachableContactTtlMillis,
             reachableContactsMaxSize = reachableContactsMaxSize,
+            botQpmLimit = botQpmLimit,
+            groupQpmLimit = groupQpmLimit,
+            groupPassiveReplyWindowMillis = groupPassiveReplyWindowMillis,
+            privatePassiveReplyWindowMillis = privatePassiveReplyWindowMillis,
         )
         adapter.start()
         return adapter
@@ -471,17 +723,56 @@ class QQOfficialAdapterTest {
         }
     }
 
+    // 等待 fake transport 建立到指定代际，避免 close/reconnect 测试与后台协程竞争。
+    private suspend fun waitForGatewayOpenCount(transport: FakeTransport, expectedCount: Int) {
+        withTimeout(5_000) {
+            while (transport.gatewaySessions.size < expectedCount) {
+                delay(10)
+            }
+        }
+    }
+
+    // 等待指定 op 的网关出站帧，避免心跳与 identify/resume 的发送顺序影响断言。
+    private suspend fun waitForSentOp(session: FakeGatewaySession, op: Int): JsonElement {
+        return withTimeout(2_000) {
+            while (true) {
+                session.sentTexts.firstOrNull { it.jsonObject["op"]?.jsonPrimitive?.content == op.toString() }?.let {
+                    return@withTimeout it
+                }
+                delay(10)
+            }
+            error("unreachable")
+        }
+    }
+
     // 构造群聊消息事件，覆盖 group_openid/member_openid 的运行时归一化路径。
-    private fun groupMessageFrame(): String {
+    private fun groupMessageFrame(seq: Int = 2): String {
         return buildJsonObject {
             put("op", 0)
-            put("s", 2)
+            put("s", seq)
             put("t", "GROUP_AT_MESSAGE_CREATE")
             put("id", "evt-group-1")
             put("d", buildJsonObject {
                 put("id", "msg-group-1")
                 put("content", "/bili list")
                 put("group_openid", "group_openid_demo")
+                put("author", buildJsonObject {
+                    put("member_openid", "member_openid_demo")
+                })
+            })
+        }.toString()
+    }
+
+    // 构造缺少 group_openid 的群消息，覆盖归一化失败时不得提交 seq 的路径。
+    private fun malformedGroupMessageFrame(seq: Int): String {
+        return buildJsonObject {
+            put("op", 0)
+            put("s", seq)
+            put("t", "GROUP_AT_MESSAGE_CREATE")
+            put("id", "evt-group-malformed")
+            put("d", buildJsonObject {
+                put("id", "msg-group-malformed")
+                put("content", "/bili malformed")
                 put("author", buildJsonObject {
                     put("member_openid", "member_openid_demo")
                 })
@@ -519,37 +810,74 @@ class QQOfficialAdapterTest {
         }.toString()
     }
 
+    // 构造 C2C 管理事件，覆盖主动私聊开关的 receive/reject 路径。
+    private fun manageC2CFrame(eventType: String, openId: String): String {
+        return buildJsonObject {
+            put("op", 0)
+            put("s", 5)
+            put("t", eventType)
+            put("id", "evt-manage-$eventType")
+            put("d", buildJsonObject {
+                put("openid", openId)
+            })
+        }.toString()
+    }
+
+    // 构造 Hello 帧，允许心跳 ACK 测试压缩 interval。
+    private fun helloFrame(heartbeatIntervalMillis: Int = 30_000): String {
+        return buildJsonObject {
+            put("op", 10)
+            put("d", buildJsonObject {
+                put("heartbeat_interval", heartbeatIntervalMillis)
+            })
+        }.toString()
+    }
+
+    // 构造 READY 帧，覆盖 identify 后的首轮会话建立。
+    private fun readyFrame(sessionId: String = "session-demo", seq: Int = 1): String {
+        return buildJsonObject {
+            put("op", 0)
+            put("s", seq)
+            put("t", "READY")
+            put("id", "evt-ready-1")
+            put("d", buildJsonObject {
+                put("version", 1)
+                put("session_id", sessionId)
+                put("user", buildJsonObject {
+                    put("id", "bot_openid_demo")
+                    put("username", "hoshimi-cat-bot")
+                    put("bot", true)
+                })
+                put("shard", buildJsonArray {
+                    add(kotlinx.serialization.json.JsonPrimitive(0))
+                    add(kotlinx.serialization.json.JsonPrimitive(1))
+                })
+            })
+        }.toString()
+    }
+
+    // 构造 RESUMED 帧，覆盖 reconnect 后的恢复会话完成信号。
+    private fun resumedFrame(seq: Int = 1): String {
+        return buildJsonObject {
+            put("op", 0)
+            put("s", seq)
+            put("t", "RESUMED")
+            put("id", "evt-resumed-1")
+            put("d", buildJsonObject {})
+        }.toString()
+    }
+
     private inner class FakeTransport : QQOfficialTransport {
         val requests = mutableListOf<RecordedRequest>()
-        val lastGatewaySession = FakeGatewaySession(
-            bootstrapFrames = listOf(
-                buildJsonObject {
-                    put("op", 10)
-                    put("d", buildJsonObject {
-                        put("heartbeat_interval", 30_000)
-                    })
-                }.toString(),
-                buildJsonObject {
-                    put("op", 0)
-                    put("s", 1)
-                    put("t", "READY")
-                    put("id", "evt-ready-1")
-                    put("d", buildJsonObject {
-                        put("version", 1)
-                        put("session_id", "session-demo")
-                        put("user", buildJsonObject {
-                            put("id", "bot_openid_demo")
-                            put("username", "hoshimi-cat-bot")
-                            put("bot", true)
-                        })
-                        put("shard", buildJsonArray {
-                            add(kotlinx.serialization.json.JsonPrimitive(0))
-                            add(kotlinx.serialization.json.JsonPrimitive(1))
-                        })
-                    })
-                }.toString(),
-            ),
-        )
+        val gatewaySessions = mutableListOf<FakeGatewaySession>()
+        var heartbeatIntervalMillis: Int = 30_000
+        var tokenExpiresInSeconds: String = "7200"
+        var failNextMessageWith401: Boolean = false
+        lateinit var lastGatewaySession: FakeGatewaySession
+            private set
+        private var tokenRequestCounter: Int = 0
+        private var gatewayOpenCounter: Int = 0
+        private val queuedGatewayBootstraps = mutableListOf<List<String>>()
 
         override suspend fun getJson(url: String, headers: Map<String, String>): JsonObject {
             requests += RecordedRequest("GET", url, null, headers)
@@ -569,13 +897,18 @@ class QQOfficialAdapterTest {
             requests += RecordedRequest("POST", url, body, headers)
             return when {
                 url.endsWith("/app/getAppAccessToken") -> buildJsonObject {
-                    put("access_token", "access-token-demo")
-                    put("expires_in", "7200")
+                    tokenRequestCounter++
+                    put("access_token", if (tokenRequestCounter == 1) "access-token-demo" else "access-token-demo-$tokenRequestCounter")
+                    put("expires_in", tokenExpiresInSeconds)
                 }
                 url.endsWith("/files") -> buildJsonObject {
                     put("file_uuid", "file-uuid-demo")
                     put("file_info", "file-info-demo")
                     put("ttl", 60)
+                }
+                url.endsWith("/messages") && failNextMessageWith401 -> {
+                    failNextMessageWith401 = false
+                    throw QQOfficialHttpException(401, """{"message":"unauthorized"}""")
                 }
                 else -> buildJsonObject {
                     put("id", "message-demo")
@@ -585,7 +918,18 @@ class QQOfficialAdapterTest {
 
         override suspend fun openGateway(url: String, headers: Map<String, String>): QQOfficialGatewaySession {
             requests += RecordedRequest("WS", url, null, headers)
-            return lastGatewaySession
+            val bootstrapFrames = if (queuedGatewayBootstraps.isNotEmpty()) {
+                queuedGatewayBootstraps.removeAt(0)
+            } else if (gatewayOpenCounter == 0) {
+                listOf(helloFrame(heartbeatIntervalMillis), readyFrame())
+            } else {
+                listOf(helloFrame(heartbeatIntervalMillis), resumedFrame())
+            }
+            gatewayOpenCounter++
+            return FakeGatewaySession(bootstrapFrames = bootstrapFrames).also { session ->
+                lastGatewaySession = session
+                gatewaySessions += session
+            }
         }
 
         /**
@@ -601,6 +945,16 @@ class QQOfficialAdapterTest {
         suspend fun emitGatewayText(text: String) {
             lastGatewaySession.emit(text)
         }
+
+        // 统计 token 请求次数，避免测试依赖请求列表的筛选细节。
+        fun tokenRequestCount(): Int {
+            return requests.count { it.url.endsWith("/app/getAppAccessToken") }
+        }
+
+        // 指定下一次网关打开时注入的 bootstrap 帧，供 identify/resume 分流测试使用。
+        fun enqueueGatewayBootstrap(frames: List<String>) {
+            queuedGatewayBootstraps += frames
+        }
     }
 
     private data class RecordedRequest(
@@ -614,7 +968,7 @@ class QQOfficialAdapterTest {
         bootstrapFrames: List<String>,
     ) : QQOfficialGatewaySession {
         private val incomingFlow = MutableSharedFlow<String>(replay = 16, extraBufferCapacity = 16)
-        private val closed = CompletableDeferred<Throwable?>()
+        private val closed = CompletableDeferred<QQOfficialGatewayClose>()
         val sentTexts = mutableListOf<JsonElement>()
 
         init {
@@ -632,13 +986,20 @@ class QQOfficialAdapterTest {
 
         override suspend fun close(reason: String) {
             if (!closed.isCompleted) {
-                closed.complete(null)
+                closed.complete(QQOfficialGatewayClose(code = 1000, reason = reason))
             }
         }
 
         // 允许测试在运行中向适配器注入新的网关消息。
         suspend fun emit(text: String) {
             incomingFlow.emit(text)
+        }
+
+        // 允许测试直接注入 QQ 官方 close code，覆盖 adapter 分流逻辑。
+        fun closeWithCode(code: Int, reason: String) {
+            if (!closed.isCompleted) {
+                closed.complete(QQOfficialGatewayClose(code = code, reason = reason))
+            }
         }
     }
 }

@@ -16,6 +16,7 @@ import io.ktor.http.contentType
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
+import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -76,7 +77,7 @@ internal interface QQOfficialTransport : Closeable {
 
 internal interface QQOfficialGatewaySession {
     val incoming: Flow<String>
-    val closeSignal: CompletableDeferred<Throwable?>
+    val closeSignal: CompletableDeferred<QQOfficialGatewayClose>
 
     /**
      * 发送单个文本帧，供 identify/resume/heartbeat 使用。
@@ -88,6 +89,15 @@ internal interface QQOfficialGatewaySession {
      */
     suspend fun close(reason: String = "shutdown")
 }
+
+/**
+ * QQ 官方网关 Close 帧需要按 code 分流，failure 只保留传输异常本身。
+ */
+internal data class QQOfficialGatewayClose(
+    val code: Int? = null,
+    val reason: String? = null,
+    val failure: Throwable? = null,
+)
 
 internal class QQOfficialHttpException(
     val statusCode: Int,
@@ -154,7 +164,7 @@ internal class KtorQQOfficialTransport(
      */
     override suspend fun openGateway(url: String, headers: Map<String, String>): QQOfficialGatewaySession {
         val incomingFlow = MutableSharedFlow<String>(replay = 32, extraBufferCapacity = 64)
-        val closeSignal = CompletableDeferred<Throwable?>()
+        val closeSignal = CompletableDeferred<QQOfficialGatewayClose>()
         val outgoingChannel = Channel<String>(64)
         val sessionRef = AtomicReference<DefaultClientWebSocketSession?>()
         // 每次建连只创建 session 级 job，统一挂到 transportScope 下，避免重连时遗留新的根协程树。
@@ -162,6 +172,7 @@ internal class KtorQQOfficialTransport(
         val sessionScope = CoroutineScope(transportScope.coroutineContext + sessionJob)
         val job = sessionScope.launch {
             var failure: Throwable? = null
+            var closeFrame: QQOfficialGatewayClose? = null
             try {
                 client.webSocket(
                     urlString = url,
@@ -182,7 +193,15 @@ internal class KtorQQOfficialTransport(
                         for (frame in incoming) {
                             when (frame) {
                                 is Frame.Text -> incomingFlow.emit(frame.readText())
-                                is Frame.Close -> break
+                                is Frame.Close -> {
+                                    val closeReason = frame.readReason()
+                                    // Ktor 可能给出空 close reason，adapter 仍需收到一个结构化 close 事件。
+                                    closeFrame = QQOfficialGatewayClose(
+                                        code = closeReason?.code?.toInt(),
+                                        reason = closeReason?.message,
+                                    )
+                                    break
+                                }
                                 else -> Unit
                             }
                         }
@@ -196,14 +215,14 @@ internal class KtorQQOfficialTransport(
                 outgoingChannel.close()
                 webSocketSessionActive.set(false)
                 if (!closeSignal.isCompleted) {
-                    closeSignal.complete(failure)
+                    closeSignal.complete(closeFrame ?: QQOfficialGatewayClose(failure = failure))
                 }
             }
         }
 
         return object : QQOfficialGatewaySession {
             override val incoming: Flow<String> = incomingFlow
-            override val closeSignal: CompletableDeferred<Throwable?> = closeSignal
+            override val closeSignal: CompletableDeferred<QQOfficialGatewayClose> = closeSignal
 
             /**
              * 将 identify/resume/heartbeat 文本帧写入当前网关连接。
@@ -221,7 +240,12 @@ internal class KtorQQOfficialTransport(
                 sessionJob.cancel()
                 job.cancelAndJoin()
                 if (!closeSignal.isCompleted) {
-                    closeSignal.complete(null)
+                    closeSignal.complete(
+                        QQOfficialGatewayClose(
+                            code = CloseReason.Codes.NORMAL.code.toInt(),
+                            reason = reason,
+                        ),
+                    )
                 }
             }
         }
