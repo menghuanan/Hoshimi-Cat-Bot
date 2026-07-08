@@ -428,120 +428,136 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
           role="dialog"
           aria-modal="true"
           aria-labelledby="subscription-editor-title"
-          className="modal-panel grid max-h-[90vh] w-full max-w-[52rem] items-start gap-5 overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl lg:grid-cols-[minmax(12rem,14rem)_minmax(0,1fr)]"
+          className="modal-panel relative flex max-w-none flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
+          style={{width: 'min(46rem, calc(100vw - 2rem))', height: 'min(42rem, calc(100vh - 3rem))'}}
         >
-          <aside className="space-y-4 lg:col-start-1">
-            <div>
-              <h3 id="subscription-editor-title" className="text-base font-semibold text-slate-950">编辑订阅配置</h3>
-              <p className="mt-1 text-sm text-slate-600">{readItemField(item, 'title') || '未命名订阅'}</p>
-            </div>
-            <div className="grid gap-2">
-              <button type="button" onClick={() => void openAction('targets')} className={actionButtonClass(activeAction === 'targets')}>编辑推送群聊</button>
-              {showUidEditor ? <button type="button" onClick={() => void openAction('uids')} className={actionButtonClass(activeAction === 'uids')}>编辑订阅ID</button> : null}
-              {supportsNestedConfig ? <button type="button" onClick={() => void openAction('filters')} className={actionButtonClass(activeAction === 'filters')}>编辑过滤器</button> : null}
-              {supportsNestedConfig ? <button type="button" onClick={() => void openAction('templates')} className={actionButtonClass(activeAction === 'templates')}>编辑模板</button> : null}
-              {supportsNestedConfig ? <button type="button" onClick={() => void openAction('atall')} className={actionButtonClass(activeAction === 'atall')}>编辑at全体</button> : null}
-              <button type="button" onClick={() => void openAction('theme')} className={actionButtonClass(activeAction === 'theme')}>编辑主题色</button>
-            </div>
-            <button type="button" onClick={onClose} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">关闭</button>
-          </aside>
+          <button
+            type="button"
+            aria-label="关闭编辑订阅配置"
+            onClick={onClose}
+            className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-lg leading-none text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
 
-          <div data-subscription-editor-panel className="min-w-0 w-full space-y-4 lg:col-start-2 lg:max-w-lg">
-            {activeAction === 'overview' ? <EditorEmptyState text="选择左侧编辑器开始配置" /> : null}
-            {activeAction === 'targets' ? (
-              <div className="space-y-3">
-                {targetFormOpen ? (
-                  <TargetForm onSubmit={submitTarget} onCancel={cancelForm} />
-                ) : (
-                  <>
-                    <EditorList items={targetItems} kind="target" emptyText="暂无推送群聊" onDelete={(draft) => void deleteConfigItem('target', draft)} />
-                    <button type="button" onClick={() => startForm('target')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增推送群聊</button>
-                  </>
-                )}
+          <header className="border-b border-slate-200 px-5 py-4 pr-14">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">订阅卡片编辑</p>
+            <h3 id="subscription-editor-title" className="mt-1 text-lg font-semibold text-slate-950">编辑订阅配置</h3>
+            <p className="mt-1 max-w-[36rem] truncate text-sm text-slate-600">{readItemField(item, 'title') || '未命名订阅'}</p>
+          </header>
+
+          <div data-subscription-editor-body className="grid min-h-0 flex-1 items-stretch gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
+            <aside className="min-h-0 w-full justify-self-start rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+              <div className="mb-3 border-b border-slate-200 pb-3">
+                <p className="text-xs font-semibold text-slate-500">编辑入口</p>
               </div>
-            ) : null}
-            {activeAction === 'uids' ? (
-              <div className="space-y-3">
-                {uidFormOpen ? (
-                  <UidForm onSubmit={submitUid} onCancel={cancelForm} />
-                ) : (
-                  <>
-                    <EditorList items={uidItems} kind="uid" emptyText="暂无订阅ID" onDelete={(draft) => void deleteConfigItem('uid', draft)} />
-                    <button type="button" onClick={() => startForm('uid')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增订阅ID</button>
-                  </>
-                )}
+              <div className="grid gap-2">
+                <button type="button" onClick={() => void openAction('targets')} className={actionButtonClass(activeAction === 'targets')}>编辑推送群聊</button>
+                {showUidEditor ? <button type="button" onClick={() => void openAction('uids')} className={actionButtonClass(activeAction === 'uids')}>编辑订阅ID</button> : null}
+                {supportsNestedConfig ? <button type="button" onClick={() => void openAction('filters')} className={actionButtonClass(activeAction === 'filters')}>编辑过滤器</button> : null}
+                {supportsNestedConfig ? <button type="button" onClick={() => void openAction('templates')} className={actionButtonClass(activeAction === 'templates')}>编辑模板</button> : null}
+                {supportsNestedConfig ? <button type="button" onClick={() => void openAction('atall')} className={actionButtonClass(activeAction === 'atall')}>编辑at全体</button> : null}
+                <button type="button" onClick={() => void openAction('theme')} className={actionButtonClass(activeAction === 'theme')}>编辑主题色</button>
               </div>
-            ) : null}
-            {activeAction === 'filters' ? (
-              <div className="space-y-3">
-                {filterFormOpen ? (
-                  <FilterForm title={editorFormTitle('filter', editingDraft)} targets={showNestedTargetSelector ? targets : []} draft={editingDraft} onSubmit={submitFilter} onCancel={cancelForm} />
-                ) : (
-                  <>
-                    <EditorList items={filters} kind="filter" emptyText="暂无过滤器" onEdit={(draft) => startForm('filter', draft)} onDelete={(draft) => void deleteConfigItem('filter', draft)} />
-                    <button type="button" onClick={() => startForm('filter')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加过滤器</button>
-                  </>
-                )}
-              </div>
-            ) : null}
-            {activeAction === 'templates' ? (
-              <div className="space-y-3">
-                {templateFormOpen ? (
-                  <TemplateForm title={editorFormTitle('template', editingDraft)} targets={showNestedTargetSelector ? targets : []} draft={editingDraft} onSubmit={submitTemplate} onCancel={cancelForm} />
-                ) : (
-                  <>
-                    <label data-toggle-shell className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
-                      <input aria-label="随机模板" type="checkbox" checked={randomEnabled} onChange={(event) => void toggleRandom(event.target.checked)} className="toggle-input" />
-                      <span className="toggle-track" aria-hidden="true">
-                        <span className="toggle-thumb" />
-                      </span>
-                      <span>随机模板</span>
-                    </label>
-                    <EditorList items={templates} kind="template" emptyText="暂无模板" onEdit={(draft) => startForm('template', draft)} onDelete={(draft) => void deleteConfigItem('template', draft)} />
-                    <button type="button" onClick={() => startForm('template')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加模板</button>
-                  </>
-                )}
-              </div>
-            ) : null}
-            {activeAction === 'atall' ? (
-              <div className="space-y-3">
-                {atAllFormOpen ? (
-                  <AtAllForm targets={targets} draft={editingDraft} onSubmit={submitAtAll} onCancel={cancelForm} />
-                ) : (
-                  <>
-                    <EditorList items={atAllItems} kind="atall" emptyText="暂无atall信息" onEdit={(draft) => startForm('atall', draft)} onDelete={(draft) => void deleteConfigItem('atall', draft)} />
-                    <button type="button" onClick={() => startForm('atall')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加at全体</button>
-                  </>
-                )}
-              </div>
-            ) : null}
-            {activeAction === 'theme' ? (
-              <form className="grid max-w-sm gap-3" onSubmit={submitTheme}>
-                <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  <span>主题颜色</span>
-                  <input value={themeColor} onChange={(event) => setThemeColor(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                </label>
-                {showThemeTargets ? (
-                  <fieldset className="grid gap-2 rounded-lg border border-slate-200 p-3">
-                    <legend className="px-1 text-sm font-semibold text-slate-700">目标群聊</legend>
-                    <div className="grid gap-2">
-                      {targets.map((target) => (
-                        <label key={target} className="inline-flex min-w-0 items-center gap-2 text-sm text-slate-700">
-                          <input type="checkbox" checked={themeTargetGroups.includes(target)} onChange={(event) => updateThemeTarget(target, event.target.checked)} />
-                          <span className="min-w-0 break-all">{target}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                ) : null}
-                <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">保存主题色</button>
-              </form>
-            ) : null}
-            {status ? (
-              <p role={statusTone === 'error' ? 'alert' : 'status'} className={`rounded-lg px-3 py-2 text-sm font-medium ${statusTone === 'success' ? 'bg-emerald-50 text-emerald-700' : statusTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-700'}`}>
-                {status}
-              </p>
-            ) : null}
+            </aside>
+
+            <div data-subscription-editor-panel className="min-h-0 min-w-0 w-full space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              {activeAction === 'overview' ? <EditorEmptyState text="选择左侧编辑器开始配置" /> : null}
+              {activeAction === 'targets' ? (
+                <div className="space-y-3">
+                  {targetFormOpen ? (
+                    <TargetForm onSubmit={submitTarget} onCancel={cancelForm} />
+                  ) : (
+                    <>
+                      <EditorList items={targetItems} kind="target" emptyText="暂无推送群聊" onDelete={(draft) => void deleteConfigItem('target', draft)} />
+                      <button type="button" onClick={() => startForm('target')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增推送群聊</button>
+                    </>
+                  )}
+                </div>
+              ) : null}
+              {activeAction === 'uids' ? (
+                <div className="space-y-3">
+                  {uidFormOpen ? (
+                    <UidForm onSubmit={submitUid} onCancel={cancelForm} />
+                  ) : (
+                    <>
+                      <EditorList items={uidItems} kind="uid" emptyText="暂无订阅ID" onDelete={(draft) => void deleteConfigItem('uid', draft)} />
+                      <button type="button" onClick={() => startForm('uid')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">新增订阅ID</button>
+                    </>
+                  )}
+                </div>
+              ) : null}
+              {activeAction === 'filters' ? (
+                <div className="space-y-3">
+                  {filterFormOpen ? (
+                    <FilterForm title={editorFormTitle('filter', editingDraft)} targets={showNestedTargetSelector ? targets : []} draft={editingDraft} onSubmit={submitFilter} onCancel={cancelForm} />
+                  ) : (
+                    <>
+                      <EditorList items={filters} kind="filter" emptyText="暂无过滤器" onEdit={(draft) => startForm('filter', draft)} onDelete={(draft) => void deleteConfigItem('filter', draft)} />
+                      <button type="button" onClick={() => startForm('filter')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加过滤器</button>
+                    </>
+                  )}
+                </div>
+              ) : null}
+              {activeAction === 'templates' ? (
+                <div className="space-y-3">
+                  {templateFormOpen ? (
+                    <TemplateForm title={editorFormTitle('template', editingDraft)} targets={showNestedTargetSelector ? targets : []} draft={editingDraft} onSubmit={submitTemplate} onCancel={cancelForm} />
+                  ) : (
+                    <>
+                      <label data-toggle-shell className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                        <input aria-label="随机模板" type="checkbox" checked={randomEnabled} onChange={(event) => void toggleRandom(event.target.checked)} className="toggle-input" />
+                        <span className="toggle-track" aria-hidden="true">
+                          <span className="toggle-thumb" />
+                        </span>
+                        <span>随机模板</span>
+                      </label>
+                      <EditorList items={templates} kind="template" emptyText="暂无模板" onEdit={(draft) => startForm('template', draft)} onDelete={(draft) => void deleteConfigItem('template', draft)} />
+                      <button type="button" onClick={() => startForm('template')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加模板</button>
+                    </>
+                  )}
+                </div>
+              ) : null}
+              {activeAction === 'atall' ? (
+                <div className="space-y-3">
+                  {atAllFormOpen ? (
+                    <AtAllForm targets={targets} draft={editingDraft} onSubmit={submitAtAll} onCancel={cancelForm} />
+                  ) : (
+                    <>
+                      <EditorList items={atAllItems} kind="atall" emptyText="暂无atall信息" onEdit={(draft) => startForm('atall', draft)} onDelete={(draft) => void deleteConfigItem('atall', draft)} />
+                      <button type="button" onClick={() => startForm('atall')} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">添加at全体</button>
+                    </>
+                  )}
+                </div>
+              ) : null}
+              {activeAction === 'theme' ? (
+                <form className="grid gap-3" onSubmit={submitTheme}>
+                  <label className="grid gap-1 text-sm font-medium text-slate-700">
+                    <span>主题颜色</span>
+                    <input value={themeColor} onChange={(event) => setThemeColor(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
+                  </label>
+                  {showThemeTargets ? (
+                    <fieldset className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3">
+                      <legend className="px-1 text-sm font-semibold text-slate-700">目标群聊</legend>
+                      <div className="grid gap-2">
+                        {targets.map((target) => (
+                          <label key={target} className="inline-flex min-w-0 items-center gap-2 text-sm text-slate-700">
+                            <input type="checkbox" checked={themeTargetGroups.includes(target)} onChange={(event) => updateThemeTarget(target, event.target.checked)} />
+                            <span className="min-w-0 break-all">{target}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : null}
+                  <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">保存主题色</button>
+                </form>
+              ) : null}
+              {status ? (
+                <p role={statusTone === 'error' ? 'alert' : 'status'} className={`rounded-lg px-3 py-2 text-sm font-medium ${statusTone === 'success' ? 'bg-emerald-50 text-emerald-700' : statusTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-white text-slate-700'}`}>
+                  {status}
+                </p>
+              ) : null}
+            </div>
           </div>
         </section>
       </div>
@@ -560,18 +576,18 @@ function FilterForm({title, targets, draft, onSubmit, onCancel}: {title?: string
   const typeContent = dynamicFilterTypeOptions.includes(content) ? content : dynamicFilterTypeOptions[0]
 
   return (
-    <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+    <form className="grid gap-3" onSubmit={onSubmit}>
       {title ? <p className="text-sm font-semibold text-slate-900">{title}</p> : null}
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>过滤类型</span>
-        <select name="kind" value={kind} onChange={(event) => setKind(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="kind" value={kind} onChange={(event) => setKind(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
           <option value="regex">正则</option>
           <option value="type">动态类型</option>
         </select>
       </label>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>规则模式</span>
-        <select name="mode" defaultValue={readItemField(draft || {}, 'mode') || 'black'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="mode" defaultValue={readItemField(draft || {}, 'mode') || 'black'} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
           <option value="black">黑名单</option>
           <option value="white">白名单</option>
         </select>
@@ -579,11 +595,11 @@ function FilterForm({title, targets, draft, onSubmit, onCancel}: {title?: string
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>规则内容</span>
         {kind === 'type' ? (
-          <select name="content" value={typeContent} onChange={(event) => setContent(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <select name="content" value={typeContent} onChange={(event) => setContent(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
             {dynamicFilterTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
         ) : (
-          <input name="content" value={content} onChange={(event) => setContent(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input name="content" value={content} onChange={(event) => setContent(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
         )}
       </label>
       <TargetGroupsField targets={targets} draft={draft} />
@@ -597,11 +613,11 @@ function FilterForm({title, targets, draft, onSubmit, onCancel}: {title?: string
  */
 function TemplateForm({title, targets, draft, onSubmit, onCancel}: {title?: string, targets: string[], draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
-    <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+    <form className="grid gap-3" onSubmit={onSubmit}>
       {title ? <p className="text-sm font-semibold text-slate-900">{title}</p> : null}
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>模板类型</span>
-        <select name="type" defaultValue={readItemField(draft || {}, 'type') || 'dynamic'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="type" defaultValue={readItemField(draft || {}, 'type') || 'dynamic'} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
           <option value="dynamic">动态</option>
           <option value="live">直播</option>
           <option value="liveClose">下播</option>
@@ -609,11 +625,11 @@ function TemplateForm({title, targets, draft, onSubmit, onCancel}: {title?: stri
       </label>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>模板名称</span>
-        <input name="name" defaultValue={readItemField(draft || {}, 'name')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <input name="name" defaultValue={readItemField(draft || {}, 'name')} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
       </label>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>模板内容</span>
-        <textarea name="content" defaultValue={readItemField(draft || {}, 'content')} className="min-h-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <textarea name="content" defaultValue={readItemField(draft || {}, 'content')} className="min-h-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
       </label>
       <TargetGroupsField targets={targets} draft={draft} />
       <FormButtons submitText="保存模板" onCancel={onCancel} />
@@ -648,10 +664,10 @@ function TargetGroupsField({targets, draft}: {targets: string[], draft: Record<s
 function AtAllForm({targets, draft, onSubmit, onCancel}: {targets: string[], draft: Record<string, unknown> | null, onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   const selectedGroups = new Set([...readItemArray(draft || {}, 'targetGroups'), ...readItemArray(draft || {}, 'groups')])
   return (
-    <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+    <form className="grid gap-3" onSubmit={onSubmit}>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>at类型</span>
-        <select name="type" defaultValue={readItemField(draft || {}, 'type') || '全部'} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select name="type" defaultValue={readItemField(draft || {}, 'type') || '全部'} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
           <option value="全部">全部</option>
           <option value="全部动态">全部动态</option>
           <option value="直播">直播</option>
@@ -679,10 +695,10 @@ function AtAllForm({targets, draft, onSubmit, onCancel}: {targets: string[], dra
  */
 function TargetForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
-    <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+    <form className="grid gap-3" onSubmit={onSubmit}>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>推送群聊</span>
-        <input name="targetGroup" inputMode="numeric" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <input name="targetGroup" inputMode="numeric" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
       </label>
       <FormButtons submitText="保存推送群聊" onCancel={onCancel} />
     </form>
@@ -694,10 +710,10 @@ function TargetForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormE
  */
 function UidForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
   return (
-    <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={onSubmit}>
+    <form className="grid gap-3" onSubmit={onSubmit}>
       <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>订阅ID</span>
-        <input name="uid" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <input name="uid" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
       </label>
       <FormButtons submitText="保存订阅ID" onCancel={onCancel} />
     </form>
@@ -759,8 +775,8 @@ function EditorList({items, kind, emptyText, onEdit, onDelete}: {
  */
 function actionButtonClass(active: boolean): string {
   return active
-    ? 'rounded-lg bg-slate-950 px-3 py-2 text-left text-sm font-semibold text-white'
-    : 'rounded-lg border border-slate-300 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50'
+    ? 'rounded-lg bg-slate-950 px-3 py-2 text-left text-sm font-semibold text-white shadow-sm'
+    : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400'
 }
 
 /**

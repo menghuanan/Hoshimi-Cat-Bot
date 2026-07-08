@@ -39,6 +39,7 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
     await expect(page.getByRole('heading', {name: heading}).first()).toBeVisible()
   }
 
+  await page.setViewportSize({width: 1440, height: 900})
   await page.goto('/subscriptions')
   await expect(page.getByText('群聊：1072150397、1245551')).toBeVisible()
   await expect(page.getByText('2 个过滤器')).toBeVisible()
@@ -49,6 +50,8 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
   await page.getByRole('button', {name: '编辑'}).click()
   await page.getByRole('button', {name: '编辑过滤器'}).click()
   const editorOverlayBox = await page.locator('[data-subscription-editor-overlay]').boundingBox()
+  const editorBodyBox = await page.locator('[data-subscription-editor-body]').boundingBox()
+  const editorLeftBox = await page.locator('[data-subscription-editor-body] aside').boundingBox()
   const editorPanelBox = await page.locator('[data-subscription-editor-panel]').boundingBox()
   const viewportSize = page.viewportSize()
   expect(editorOverlayBox).not.toBeNull()
@@ -56,7 +59,16 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
   expect(editorOverlayBox?.y).toBeLessThan(1)
   expect(editorOverlayBox?.width).toBeGreaterThan((viewportSize?.width || 0) - 1)
   expect(editorOverlayBox?.height).toBeGreaterThan((viewportSize?.height || 0) - 1)
+  // 订阅编辑弹窗下方保持左侧入口贴左，右侧内容吃满剩余空间。
+  expect(editorBodyBox).not.toBeNull()
+  expect(editorLeftBox).not.toBeNull()
   expect(editorPanelBox).not.toBeNull()
+  const editorBodyRight = (editorBodyBox?.x || 0) + (editorBodyBox?.width || 0)
+  const editorLeftRight = (editorLeftBox?.x || 0) + (editorLeftBox?.width || 0)
+  const editorPanelRight = (editorPanelBox?.x || 0) + (editorPanelBox?.width || 0)
+  expect(Math.abs((editorLeftBox?.x || 0) - ((editorBodyBox?.x || 0) + 16))).toBeLessThan(2)
+  expect(Math.abs((editorPanelBox?.x || 0) - (editorLeftRight + 16))).toBeLessThan(2)
+  expect(Math.abs(editorPanelRight - (editorBodyRight - 16))).toBeLessThan(2)
   expect(editorPanelBox?.width).toBeLessThan(520)
 })
 
@@ -82,6 +94,15 @@ test('keeps dark theme hover states on dark surfaces', async ({page}) => {
   const themeSelect = page.getByLabel('主题模式')
   await themeSelect.hover()
   await expect.poll(() => themeSelect.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(30, 41, 59)')
+
+  await page.setViewportSize({width: 1280, height: 900})
+  await page.goto('/subscriptions')
+  await page.getByRole('button', {name: '编辑'}).click()
+  const editorLeftPanel = page.locator('[data-subscription-editor-body] aside')
+  const editorRightPanel = page.locator('[data-subscription-editor-panel]')
+  // 订阅编辑弹窗的半透明浅灰分区在暗色主题下必须转成深色面，避免视觉反色。
+  await expect.poll(() => editorLeftPanel.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(30, 41, 59, 0.86)')
+  await expect.poll(() => editorRightPanel.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(30, 41, 59, 0.86)')
 })
 
 test('centers settings cards within the page while keeping the tabs fixed', async ({page}) => {

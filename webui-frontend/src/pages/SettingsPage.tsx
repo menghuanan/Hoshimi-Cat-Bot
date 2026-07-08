@@ -34,6 +34,8 @@ export function SettingsPage() {
   const {loading, biliConfig, biliData, botConfig, saveBatch, patchBiliConfig, patchBiliData, patchBotConfig} = useSettingsFiles()
   const {showToast} = useToast()
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
+  // 子配置切换只重挂载显示层，用来重播入场动效，不改变表单值来源或保存语义。
+  const [categoryMotionToken, setCategoryMotionToken] = useState(0)
   const [editedValues, setEditedValues] = useState<SettingsFormValues>({})
   const [saving, setSaving] = useState(false)
   const activeCategory = settingsCategories.find((category) => category.id === activeCategoryId) || settingsCategories[0]
@@ -80,10 +82,11 @@ export function SettingsPage() {
   }
 
   /**
-   * 切换设置分区时丢弃未提交编辑，下一页重新从快照派生值。
+   * 切换设置分区时丢弃未提交编辑，并让新分区的纯展示动效重新播放。
    */
   const selectCategory = (categoryId: SettingsCategoryId) => {
     setEditedValues({})
+    setCategoryMotionToken((current) => current + 1)
     setActiveCategoryId(categoryId)
   }
 
@@ -188,7 +191,7 @@ export function SettingsPage() {
         )}
       >
         <SettingsTabs categories={settingsCategories} activeCategoryId={activeCategoryId} onSelectCategory={selectCategory} />
-        <div className="space-y-4">
+        <div key={`${activeCategoryId}-${categoryMotionToken}`} className="space-y-4">
           {visibleFieldGroups.map((group) => (
             <SettingsGroup
               key={group.title}
@@ -257,14 +260,16 @@ function SettingsGroup({title, fields, values, onChange}: {
   onChange: (key: string, value: string | boolean) => void
 }) {
   return (
-    <section data-layout="single-column" className="space-y-3">
+    <section data-layout="single-column" className="settings-group-motion space-y-3">
       <fieldset className="mx-auto w-full md:w-3/4 rounded-lg border border-slate-200 bg-white px-4 pb-4 pt-3 shadow-sm">
         <legend className="px-2 text-sm font-semibold text-slate-900">{title}</legend>
         <div className="grid gap-4">
           {fields.map((field) => (
-            field.key === 'adminsText'
-              ? <GroupAdminField key={field.key} value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
-              : <SettingsField key={field.key} field={field} value={values[field.key] ?? ''} onChange={onChange} />
+            <div key={field.key} className="settings-field-motion">
+              {field.key === 'adminsText'
+                ? <GroupAdminField value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
+                : <SettingsField field={field} value={values[field.key] ?? ''} onChange={onChange} />}
+            </div>
           ))}
         </div>
       </fieldset>

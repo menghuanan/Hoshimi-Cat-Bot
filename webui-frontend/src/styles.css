@@ -22,6 +22,114 @@ body {
   }
 }
 
+/* 设置页大分组复用路由入场幅度，保持系统配置页与子配置层级的动效关系一致。 */
+.settings-group-motion {
+  animation: page-fade-up 180ms ease-out both;
+  will-change: opacity, transform;
+}
+
+/* 设置字段卡片使用更大的下到上位移，短间隔串联后最长分区仍在 1 秒内完成。 */
+.settings-field-motion {
+  animation: settings-field-rise 560ms cubic-bezier(0.2, 0.72, 0.22, 1) both;
+  will-change: opacity, transform;
+}
+
+.settings-field-motion:nth-child(2) {
+  animation-delay: 18ms;
+}
+
+.settings-field-motion:nth-child(3) {
+  animation-delay: 36ms;
+}
+
+.settings-field-motion:nth-child(4) {
+  animation-delay: 54ms;
+}
+
+.settings-field-motion:nth-child(5) {
+  animation-delay: 72ms;
+}
+
+.settings-field-motion:nth-child(6) {
+  animation-delay: 90ms;
+}
+
+.settings-field-motion:nth-child(7) {
+  animation-delay: 108ms;
+}
+
+.settings-field-motion:nth-child(8) {
+  animation-delay: 126ms;
+}
+
+.settings-field-motion:nth-child(9) {
+  animation-delay: 144ms;
+}
+
+.settings-field-motion:nth-child(10) {
+  animation-delay: 162ms;
+}
+
+.settings-field-motion:nth-child(11) {
+  animation-delay: 180ms;
+}
+
+.settings-field-motion:nth-child(12) {
+  animation-delay: 198ms;
+}
+
+.settings-field-motion:nth-child(13) {
+  animation-delay: 216ms;
+}
+
+.settings-field-motion:nth-child(14) {
+  animation-delay: 234ms;
+}
+
+.settings-field-motion:nth-child(15) {
+  animation-delay: 252ms;
+}
+
+.settings-field-motion:nth-child(16) {
+  animation-delay: 270ms;
+}
+
+.settings-field-motion:nth-child(17) {
+  animation-delay: 288ms;
+}
+
+.settings-field-motion:nth-child(18) {
+  animation-delay: 306ms;
+}
+
+.settings-field-motion:nth-child(19) {
+  animation-delay: 324ms;
+}
+
+.settings-field-motion:nth-child(20) {
+  animation-delay: 342ms;
+}
+
+@keyframes settings-field-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 用户开启减少动态效果时直接显示配置项，避免动效影响可读性。 */
+@media (prefers-reduced-motion: reduce) {
+  .settings-group-motion,
+  .settings-field-motion {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+  }
+}
+
 /* 侧边栏导航项用短过渡反馈 hover 和选中态变化。 */
 .nav-item {
   transition: background-color 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
@@ -348,6 +456,12 @@ body {
   background: #1f2937;
 }
 
+/* 半透明浅灰工具类在订阅编辑弹窗里用作分区底色，暗色主题下要转成深色面。 */
+.theme-dark .bg-slate-50\/80,
+.theme-dark .bg-slate-50\/70 {
+  background: rgba(30, 41, 59, 0.86);
+}
+
 /* 暗色 hover 使用比底色略亮的深灰，反推亮色模式的浅灰悬停反馈。 */
 .theme-dark .hover\:bg-slate-100:hover,
 .theme-dark .hover\:bg-slate-50:hover {
@@ -509,6 +623,12 @@ body {
   /* 系统模式需要同步覆盖浅灰底色，避免侧栏底部按钮和局部卡片在暗色系统主题下仍然发白。 */
   .theme-system .bg-slate-50 {
     background: #1f2937;
+  }
+
+  /* 系统暗色同样覆盖半透明浅灰分区，避免弹窗主体在跟随系统时发白。 */
+  .theme-system .bg-slate-50\/80,
+  .theme-system .bg-slate-50\/70 {
+    background: rgba(30, 41, 59, 0.86);
   }
 
   .theme-system .hover\:bg-slate-100:hover,
