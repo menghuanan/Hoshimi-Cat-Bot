@@ -82,6 +82,7 @@ class QQOfficialAdapterTest {
             assertEquals("GET", transport.requests.first { it.url.endsWith("/gateway/bot") }.method)
             assertEquals(2, identifyPayload["op"]!!.jsonPrimitive.content.toInt())
             assertEquals("QQBot access-token-demo", identifyPayload["d"]!!.jsonObject["token"]!!.jsonPrimitive.content)
+            assertEquals((1 shl 25) or (1 shl 24), identifyPayload["d"]!!.jsonObject["intents"]!!.jsonPrimitive.content.toInt())
         } finally {
             stopAdapter(adapter)
         }
@@ -95,12 +96,13 @@ class QQOfficialAdapterTest {
         try {
             val events = mutableListOf<top.bilibili.connector.PlatformInboundMessage>()
             val collectJob = launch {
-                adapter.eventFlow.take(2).toList(events)
+                adapter.eventFlow.take(3).toList(events)
             }
 
             // 让 SharedFlow 收集协程先完成订阅，避免测试线程比收集线程更早发出事件。
             delay(10)
-            transport.emitGatewayText(groupMessageFrame())
+            transport.emitGatewayText(groupMessageFrame(eventType = "GROUP_MESSAGE_CREATE", content = "/login"))
+            transport.emitGatewayText(groupMessageFrame(eventType = "GROUP_AT_MESSAGE_CREATE", seq = 4, messageId = "msg-group-at"))
             transport.emitGatewayText(c2cMessageFrame())
 
             withTimeout(1_000) {
@@ -111,16 +113,21 @@ class QQOfficialAdapterTest {
             assertEquals(PlatformType.QQ_OFFICIAL, groupEvent.platform)
             assertEquals(PlatformChatType.GROUP, groupEvent.chatType)
             assertEquals("group_openid_demo", groupEvent.chatContact.id)
-            assertEquals(PlatformChatType.GROUP, groupEvent.senderContact.type)
-            assertEquals("group_openid_demo", groupEvent.senderContact.id)
+            assertEquals(PlatformChatType.PRIVATE, groupEvent.senderContact.type)
+            assertEquals("member_openid_demo", groupEvent.senderContact.id)
             assertEquals("evt-group-1", groupEvent.eventId)
             assertEquals("msg-group-1", groupEvent.messageId)
             assertEquals("group_openid_demo", groupEvent.metadata["group_openid"])
             assertEquals("member_openid_demo", groupEvent.metadata["member_openid"])
             assertFalse(groupEvent.metadata.containsKey("user_openid"))
-            assertTrue(groupEvent.hasMention)
+            assertFalse(groupEvent.hasMention)
 
-            val c2cEvent = events[1]
+            val groupAtEvent = events[1]
+            assertEquals(PlatformChatType.GROUP, groupAtEvent.chatType)
+            assertEquals("msg-group-at", groupAtEvent.messageId)
+            assertTrue(groupAtEvent.hasMention)
+
+            val c2cEvent = events[2]
             assertEquals(PlatformChatType.PRIVATE, c2cEvent.chatType)
             assertEquals("user_openid_demo", c2cEvent.chatContact.id)
             assertEquals("user_openid_demo", c2cEvent.senderContact.id)
@@ -492,6 +499,29 @@ class QQOfficialAdapterTest {
     }
 
     @Test
+    fun `group member and subscribe status events should commit gateway sequence`() = runBlocking {
+        val transport = FakeTransport().apply {
+            heartbeatIntervalMillis = 20
+            ackHeartbeatDuringSend = true
+        }
+        val adapter = createStartedAdapter(transport)
+
+        try {
+            transport.emitGatewayText(groupMemberFrame(eventType = "GROUP_MEMBER_ADD", seq = 24))
+            transport.emitGatewayText(groupMemberFrame(eventType = "GROUP_MEMBER_REMOVE", seq = 25))
+            transport.emitGatewayText(subscribeStatusFrame(seq = 26))
+            waitForHeartbeatSeq(transport.lastGatewaySession, 26)
+            transport.lastGatewaySession.closeWithCode(4009, "resume after managed events")
+            waitForGatewayOpenCount(transport, 2)
+            val resumePayload = waitForSentOp(transport.lastGatewaySession, 6).jsonObject["d"]!!.jsonObject
+
+            assertEquals(26, resumePayload["seq"]!!.jsonPrimitive.content.toInt())
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
     fun `reachable contacts should expire after configured ttl`() = runBlocking {
         var now = 1_000L
         val transport = FakeTransport()
@@ -569,6 +599,8 @@ class QQOfficialAdapterTest {
             "QQ 官方联系人已标记为可达",
             "QQ 官方发送限额不足",
             "QQ 官方入站事件已投递",
+            "QQ 官方群成员事件已处理",
+            "QQ 官方订阅消息授权状态事件已记录",
         ).forEach { expectedLog ->
             assertTrue(source.contains(expectedLog), "missing QQ Official Chinese log: $expectedLog")
         }
@@ -850,16 +882,36 @@ class QQOfficialAdapterTest {
         }
     }
 
-    // 构造群聊消息事件，覆盖 group_openid/member_openid 的运行时归一化路径。
-    private fun groupMessageFrame(seq: Int = 2): String {
+    // 等待心跳携带指定 seq，证明异步收帧协程已经提交到该网关序号。
+    private suspend fun waitForHeartbeatSeq(session: FakeGatewaySession, seq: Int) {
+        withTimeout(2_000) {
+            while (
+                session.sentTexts.none {
+                    it.jsonObject["op"]?.jsonPrimitive?.content == "1" &&
+                        it.jsonObject["d"]?.toString() == seq.toString()
+                }
+            ) {
+                delay(10)
+            }
+        }
+    }
+
+    // 构造群聊消息事件，覆盖 group_openid/member_openid 与普通/AT 事件的归一化路径。
+    private fun groupMessageFrame(
+        seq: Int = 2,
+        eventType: String = "GROUP_MESSAGE_CREATE",
+        eventId: String = "evt-group-1",
+        messageId: String = "msg-group-1",
+        content: String = "/bili list",
+    ): String {
         return buildJsonObject {
             put("op", 0)
             put("s", seq)
-            put("t", "GROUP_AT_MESSAGE_CREATE")
-            put("id", "evt-group-1")
+            put("t", eventType)
+            put("id", eventId)
             put("d", buildJsonObject {
-                put("id", "msg-group-1")
-                put("content", "/bili list")
+                put("id", messageId)
+                put("content", content)
                 put("group_openid", "group_openid_demo")
                 put("author", buildJsonObject {
                     put("member_openid", "member_openid_demo")
@@ -873,7 +925,7 @@ class QQOfficialAdapterTest {
         return buildJsonObject {
             put("op", 0)
             put("s", seq)
-            put("t", "GROUP_AT_MESSAGE_CREATE")
+            put("t", "GROUP_MESSAGE_CREATE")
             put("id", "evt-group-malformed")
             put("d", buildJsonObject {
                 put("id", "msg-group-malformed")
@@ -911,6 +963,40 @@ class QQOfficialAdapterTest {
             put("id", "evt-manage-$eventType")
             put("d", buildJsonObject {
                 put("group_openid", groupOpenId)
+                put("op_member_openid", "member_openid_demo")
+                put("timestamp", 1_700_000_000)
+            })
+        }.toString()
+    }
+
+    // 构造群成员事件，覆盖 GROUP_MEMBER_ADD / GROUP_MEMBER_REMOVE 的 seq 提交流程。
+    private fun groupMemberFrame(eventType: String, seq: Int): String {
+        return buildJsonObject {
+            put("op", 0)
+            put("s", seq)
+            put("t", eventType)
+            put("id", "evt-member-$eventType")
+            put("d", buildJsonObject {
+                put("group_openid", "group_openid_demo")
+                put("member_openid", "member_openid_demo")
+                put("timestamp", 1_700_000_001)
+            })
+        }.toString()
+    }
+
+    // 构造订阅消息授权状态事件，覆盖非消息事件不得进入业务 eventFlow 的路径。
+    private fun subscribeStatusFrame(seq: Int): String {
+        return buildJsonObject {
+            put("op", 0)
+            put("s", seq)
+            put("t", "SUBSCRIBE_MESSAGE_STATUS")
+            put("id", "evt-subscribe-status")
+            put("d", buildJsonObject {
+                put("openid", "user_openid_demo")
+                put("group_openid", "group_openid_demo")
+                put("subscribe_id", "subscribe-demo")
+                put("status", "accept")
+                put("timestamp", 1_700_000_002)
             })
         }.toString()
     }

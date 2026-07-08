@@ -45,7 +45,11 @@ import top.bilibili.connector.PlatformObservabilitySnapshot
 
 internal const val QQ_OFFICIAL_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
 internal const val QQ_OFFICIAL_API_BASE = "https://api.sgroup.qq.com"
+// 同时订阅公域消息与群成员事件，覆盖开发平台已勾选的群聊交互入口。
 internal const val QQ_OFFICIAL_GATEWAY_INTENT_PUBLIC_MESSAGES = 1 shl 25
+internal const val QQ_OFFICIAL_GATEWAY_INTENT_GROUP_MEMBERS = 1 shl 24
+internal const val QQ_OFFICIAL_GATEWAY_INTENT_SUBSCRIBED_EVENTS =
+    QQ_OFFICIAL_GATEWAY_INTENT_PUBLIC_MESSAGES or QQ_OFFICIAL_GATEWAY_INTENT_GROUP_MEMBERS
 
 internal val QQOfficialJson = Json {
     ignoreUnknownKeys = true
@@ -356,6 +360,8 @@ internal data class QQOfficialMessageEvent(
 
 @Serializable
 internal data class QQOfficialAuthor(
+    @SerialName("openid")
+    val openId: String? = null,
     @SerialName("member_openid")
     val memberOpenId: String? = null,
     @SerialName("user_openid")
@@ -371,11 +377,30 @@ internal data class QQOfficialAttachment(
 internal data class QQOfficialGroupManageEvent(
     @SerialName("group_openid")
     val groupOpenId: String? = null,
+    @SerialName("member_openid")
+    val memberOpenId: String? = null,
+    @SerialName("op_member_openid")
+    val opMemberOpenId: String? = null,
+    val timestamp: Long? = null,
 )
 
 @Serializable
 internal data class QQOfficialC2CManageEvent(
     val openid: String? = null,
+)
+
+// 订阅状态事件只用于日志与 seq 提交，状态字段保持宽松以兼容平台侧枚举形态变化。
+@Serializable
+internal data class QQOfficialSubscribeMessageStatusEvent(
+    val openid: String? = null,
+    @SerialName("user_openid")
+    val userOpenId: String? = null,
+    @SerialName("group_openid")
+    val groupOpenId: String? = null,
+    @SerialName("subscribe_id")
+    val subscribeId: String? = null,
+    val status: JsonElement? = null,
+    val timestamp: JsonElement? = null,
 )
 
 @Serializable

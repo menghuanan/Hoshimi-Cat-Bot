@@ -98,6 +98,12 @@
 - `appSecret` 必填。
 - `botToken` 字段存在，但 `validateSelectedPlatform()` 当前只检查 `appId` 和 `appSecret`。
 
+**行为差异**：
+
+- 网关 identify 同时请求公域消息与群成员事件 intent，用于接收 `GROUP_MESSAGE_CREATE`、`GROUP_AT_MESSAGE_CREATE`、`C2C_MESSAGE_CREATE`、群成员变更和主动消息接收/拒收等开发平台已订阅事件。
+- `GROUP_MESSAGE_CREATE`、`GROUP_AT_MESSAGE_CREATE` 和 `C2C_MESSAGE_CREATE` 会归一化为 `PlatformInboundMessage` 并进入命令/监听链；群成员、主动消息状态和订阅消息授权状态事件只更新运行态或日志，不会伪装成用户消息。
+- 回复消息使用官方 `msg_id` 与按消息递增的 `msg_seq`，避免同一消息多次回复时重复使用序号 1。
+
 **约束**：不要把 QQ 官方平台适配成 Long 群号模型；必须使用 `PlatformContact`。
 
 ## 能力 guard 语义

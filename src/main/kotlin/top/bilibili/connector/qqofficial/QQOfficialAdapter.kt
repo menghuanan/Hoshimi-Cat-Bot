@@ -627,13 +627,18 @@ internal class QQOfficialAdapter(
                 logger.info("QQ 官方网关已恢复会话：会话标识已配置={}，当前序号={}", booleanText(!sessionId.isNullOrBlank()), lastSeq ?: "无")
                 true
             }
-            "GROUP_AT_MESSAGE_CREATE" -> {
-                val inbound = normalizeMessage(frame, PlatformChatType.GROUP) ?: return false
+            "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE" -> {
+                // 群普通消息与 AT 消息都进入业务链，mention 标记只按事件类型区分。
+                val inbound = normalizeMessage(
+                    frame = frame,
+                    chatType = PlatformChatType.GROUP,
+                    hasMention = frame.t == "GROUP_AT_MESSAGE_CREATE",
+                ) ?: return false
                 markPassiveReplyWindow(inbound.chatContact)
                 recordInboundEvent(inbound)
             }
             "C2C_MESSAGE_CREATE" -> {
-                val inbound = normalizeMessage(frame, PlatformChatType.PRIVATE) ?: return false
+                val inbound = normalizeMessage(frame, PlatformChatType.PRIVATE, hasMention = false) ?: return false
                 markPassiveReplyWindow(inbound.chatContact)
                 recordInboundEvent(inbound)
             }
@@ -651,6 +656,8 @@ internal class QQOfficialAdapter(
                 }
                 true
             }
+            "GROUP_MEMBER_ADD", "GROUP_MEMBER_REMOVE" -> handleGroupMemberEvent(frame)
+            "SUBSCRIBE_MESSAGE_STATUS" -> recordSubscribeMessageStatusEvent(frame)
             "FRIEND_ADD", "C2C_MSG_RECEIVE" -> {
                 val event = frame.d?.let { QQOfficialJson.decodeFromJsonElement<QQOfficialC2CManageEvent>(it) } ?: return false
                 event.openid?.let { openId ->
@@ -666,7 +673,7 @@ internal class QQOfficialAdapter(
                 true
             }
             else -> {
-                logger.debug("忽略未订阅的 QQ 官方分发事件：类型={}", frame.t ?: "无")
+                logger.debug("QQ 官方收到暂未显式处理的分发事件：类型={}", frame.t ?: "无")
                 true
             }
         }
@@ -675,25 +682,34 @@ internal class QQOfficialAdapter(
     /**
      * 将 QQ 官方 dispatch 消息归一化为平台无关的入站模型，供命令链与监听链直接消费。
      */
-    private fun normalizeMessage(frame: QQOfficialGatewayFrame, chatType: PlatformChatType): PlatformInboundMessage? {
+    private fun normalizeMessage(
+        frame: QQOfficialGatewayFrame,
+        chatType: PlatformChatType,
+        hasMention: Boolean,
+    ): PlatformInboundMessage? {
         val message = frame.d?.let { QQOfficialJson.decodeFromJsonElement<QQOfficialMessageEvent>(it) } ?: return null
         val groupOpenId = message.groupOpenId
         val memberOpenId = message.author.memberOpenId
         val userOpenId = message.author.userOpenId
+        val openId = message.author.openId
         val chatContact = when (chatType) {
             PlatformChatType.GROUP -> {
                 val requiredGroupOpenId = groupOpenId ?: return null
                 PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, requiredGroupOpenId)
             }
             PlatformChatType.PRIVATE -> {
-                val requiredUserOpenId = userOpenId ?: return null
+                val requiredUserOpenId = userOpenId ?: openId ?: return null
                 PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.PRIVATE, requiredUserOpenId)
             }
         }
         val senderContact = when (chatType) {
-            PlatformChatType.GROUP -> chatContact
+            PlatformChatType.GROUP -> {
+                // 群内命令权限依赖实际发送者，不能把群 openid 误当作用户联系人。
+                val requiredSenderOpenId = memberOpenId ?: userOpenId ?: openId ?: return null
+                PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.PRIVATE, requiredSenderOpenId)
+            }
             PlatformChatType.PRIVATE -> {
-                val requiredUserOpenId = userOpenId ?: return null
+                val requiredUserOpenId = userOpenId ?: openId ?: return null
                 PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.PRIVATE, requiredUserOpenId)
             }
         }
@@ -712,28 +728,66 @@ internal class QQOfficialAdapter(
             selfContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.PRIVATE, selfOpenId),
             messageText = message.content,
             searchTexts = searchTexts,
-            hasMention = chatType == PlatformChatType.GROUP,
-            fromSelf = listOfNotNull(userOpenId, memberOpenId).any { it == selfOpenId },
+            hasMention = hasMention,
+            fromSelf = listOfNotNull(userOpenId, memberOpenId, openId).any { it == selfOpenId },
             rawPayload = frame,
             eventId = frame.id,
             messageId = message.id.ifBlank { null },
-            metadata = buildOpenIdMetadata(groupOpenId, memberOpenId, userOpenId),
+            metadata = buildOpenIdMetadata(groupOpenId, memberOpenId, userOpenId, openId),
         )
     }
 
     /**
-     * 显式保留 QQ 官方三类 openid，避免 member_openid 与 user_openid 被误当成同一种身份。
+     * 显式保留 QQ 官方 openid 变体，避免 member_openid 与 user_openid 被误当成同一种身份。
      */
     private fun buildOpenIdMetadata(
         groupOpenId: String?,
         memberOpenId: String?,
         userOpenId: String?,
+        openId: String?,
     ): Map<String, String> {
         return buildMap {
             groupOpenId?.takeIf { it.isNotBlank() }?.let { put("group_openid", it) }
             memberOpenId?.takeIf { it.isNotBlank() }?.let { put("member_openid", it) }
             userOpenId?.takeIf { it.isNotBlank() }?.let { put("user_openid", it) }
+            openId?.takeIf { it.isNotBlank() }?.let { put("openid", it) }
         }
+    }
+
+    /**
+     * 群成员增删事件只更新观测日志与 seq 进度，不应伪装成用户消息进入命令链。
+     */
+    private fun handleGroupMemberEvent(frame: QQOfficialGatewayFrame): Boolean {
+        val event = frame.d?.let { QQOfficialJson.decodeFromJsonElement<QQOfficialGroupManageEvent>(it) } ?: return false
+        val groupOpenId = event.groupOpenId ?: return false
+        val memberOpenId = event.memberOpenId ?: event.opMemberOpenId ?: return false
+        logger.info(
+            "QQ 官方群成员事件已处理：类型={}，群={}，成员={}，操作时间={}",
+            frame.t ?: "无",
+            groupOpenId,
+            memberOpenId,
+            event.timestamp ?: "无",
+        )
+        return true
+    }
+
+    /**
+     * 订阅消息授权状态变更不携带可直接回复的用户消息，只记录关键字段并提交网关序号。
+     */
+    private fun recordSubscribeMessageStatusEvent(frame: QQOfficialGatewayFrame): Boolean {
+        val event = frame.d?.let {
+            QQOfficialJson.decodeFromJsonElement<QQOfficialSubscribeMessageStatusEvent>(it)
+        } ?: QQOfficialSubscribeMessageStatusEvent()
+        logger.info(
+            "QQ 官方订阅消息授权状态事件已记录：事件编号={}，用户={}，群={}，订阅={}，状态={}，操作时间={}",
+            frame.id ?: "无",
+            event.openid ?: event.userOpenId ?: "无",
+            event.groupOpenId ?: "无",
+            event.subscribeId ?: "无",
+            event.status ?: "无",
+            event.timestamp ?: "无",
+        )
+        return true
     }
 
     /**
@@ -802,16 +856,16 @@ internal class QQOfficialAdapter(
     }
 
     /**
-     * 发送 identify，声明当前仅监听公域群聊/C2C 事件。
+     * 发送 identify，声明当前监听公域消息与群成员事件。
      */
     private suspend fun sendIdentify() {
         val token = currentAccessToken(forceRefresh = false)
-        logger.info("QQ 官方正在发送网关鉴权帧：监听意图=公域消息，分片=0/1")
+        logger.info("QQ 官方正在发送网关鉴权帧：监听意图=公域消息+群成员事件，分片=0/1")
         val payload = buildJsonObject {
             put("op", 2)
             put("d", buildJsonObject {
                 put("token", "QQBot $token")
-                put("intents", QQ_OFFICIAL_GATEWAY_INTENT_PUBLIC_MESSAGES)
+                put("intents", QQ_OFFICIAL_GATEWAY_INTENT_SUBSCRIBED_EVENTS)
                 put("shard", buildJsonArray {
                     add(JsonPrimitive(0))
                     add(JsonPrimitive(1))
