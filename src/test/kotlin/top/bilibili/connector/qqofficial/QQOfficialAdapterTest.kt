@@ -1,6 +1,7 @@
 package top.bilibili.connector.qqofficial
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -69,7 +70,7 @@ class QQOfficialAdapterTest {
 
         try {
             val tokenRequest = transport.requests.first { it.url.endsWith("/app/getAppAccessToken") }
-            // 心跳协程与 identify 会并发启动，测试需要显式挑出 op=2 帧而不是依赖发送顺序。
+            // 心跳协程在 READY 后才启动，测试仍显式挑出 op=2 帧避免依赖发送顺序。
             val identifyPayload =
                 transport.lastGatewaySession.sentTexts.first {
                     it.jsonObject["op"]?.jsonPrimitive?.content == "2"
@@ -550,6 +551,39 @@ class QQOfficialAdapterTest {
         assertTrue(source.contains("inboundDroppedEvents.incrementAndGet()"))
     }
 
+    // 回归保护 QQ 官方关键日志覆盖点，避免后续改动只保留故障日志而丢失任务状态。
+    @Test
+    fun `qq official adapter should keep Chinese logs for platform and task states`() {
+        val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
+
+        listOf(
+            "QQ 官方适配器启动参数",
+            "QQ 官方任务状态",
+            "QQ 官方网关收帧任务已启动",
+            "QQ 官方网关关闭监听任务已启动",
+            "QQ 官方心跳任务已启动",
+            "QQ 官方网关重连任务已启动",
+            "QQ 官方准备发送消息",
+            "QQ 官方访问令牌已刷新",
+            "QQ 官方开放接口鉴权失败，已刷新访问令牌后重试",
+            "QQ 官方联系人已标记为可达",
+            "QQ 官方发送限额不足",
+            "QQ 官方入站事件已投递",
+        ).forEach { expectedLog ->
+            assertTrue(source.contains(expectedLog), "missing QQ Official Chinese log: $expectedLog")
+        }
+        listOf(
+            "QQ Official does not support @全体",
+            "qpm guard",
+            "READY: self",
+            "Close: code",
+            "path={}, reason={}",
+            "app_id 或 app_secret",
+        ).forEach { legacyLog ->
+            assertFalse(source.contains(legacyLog), "legacy QQ Official log should stay replaced: $legacyLog")
+        }
+    }
+
     @Test
     fun `close code 4009 should reconnect with resume payload`() = runBlocking {
         val transport = FakeTransport()
@@ -626,6 +660,77 @@ class QQOfficialAdapterTest {
             waitForGatewayOpenCount(transport, 2)
 
             assertFalse(firstSession.closeSignal.isActive)
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    // READY 前不应发送心跳，官方要求鉴权成功后才开始周期心跳。
+    @Test
+    fun `heartbeat should wait until gateway ready before first send`() = runBlocking {
+        val now = 0L
+        val transport = FakeTransport().apply {
+            heartbeatIntervalMillis = 20
+            enqueueGatewayBootstrap(listOf(helloFrame(heartbeatIntervalMillis)))
+        }
+        val adapter = QQOfficialAdapter(
+            config = QQOfficialConfig(
+                appId = "demo-app",
+                appSecret = "demo-secret",
+            ),
+            transport = transport,
+            currentTimeMillis = { now },
+        )
+        var firstSession: FakeGatewaySession? = null
+        val startJob = launch(Dispatchers.IO) {
+            adapter.start()
+        }
+
+        try {
+            waitForGatewayOpenCount(transport, 1)
+            val session = transport.lastGatewaySession
+            firstSession = session
+            waitForSentOp(session, 2)
+
+            // 只收到 Hello 时仍处于待鉴权状态，此时不能提前发送 op=1。
+            delay(80)
+            assertFalse(session.sentTexts.any { it.jsonObject["op"]?.jsonPrimitive?.content == "1" })
+
+            session.emit(readyFrame())
+            withTimeout(1_000) {
+                startJob.join()
+            }
+            waitForSentOp(session, 1)
+        } finally {
+            if (startJob.isActive) {
+                firstSession?.emit(readyFrame())
+                withTimeout(1_000) {
+                    startJob.join()
+                }
+            }
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `heartbeat ack during send should not trigger timeout reconnect`() = runBlocking {
+        var now = 0L
+        val transport = FakeTransport().apply {
+            heartbeatIntervalMillis = 20
+            ackHeartbeatDuringSend = true
+        }
+        val adapter = createStartedAdapter(transport, currentTimeMillis = { now })
+
+        try {
+            val firstSession = transport.lastGatewaySession
+            waitForSentOp(firstSession, 1)
+
+            // 将业务时钟推进到超时窗口之后，验证快速 ACK 已经清掉 in-flight 状态。
+            now = 100L
+            delay(80)
+
+            assertTrue(firstSession.closeSignal.isActive)
+            assertEquals(1, transport.gatewaySessions.size)
         } finally {
             stopAdapter(adapter)
         }
@@ -833,6 +938,13 @@ class QQOfficialAdapterTest {
         }.toString()
     }
 
+    // 构造心跳 ACK 帧，覆盖 ACK 与 sendText 返回顺序不同步的竞态。
+    private fun heartbeatAckFrame(): String {
+        return buildJsonObject {
+            put("op", 11)
+        }.toString()
+    }
+
     // 构造 READY 帧，覆盖 identify 后的首轮会话建立。
     private fun readyFrame(sessionId: String = "session-demo", seq: Int = 1): String {
         return buildJsonObject {
@@ -871,6 +983,7 @@ class QQOfficialAdapterTest {
         val requests = mutableListOf<RecordedRequest>()
         val gatewaySessions = mutableListOf<FakeGatewaySession>()
         var heartbeatIntervalMillis: Int = 30_000
+        var ackHeartbeatDuringSend: Boolean = false
         var tokenExpiresInSeconds: String = "7200"
         var failNextMessageWith401: Boolean = false
         lateinit var lastGatewaySession: FakeGatewaySession
@@ -926,7 +1039,10 @@ class QQOfficialAdapterTest {
                 listOf(helloFrame(heartbeatIntervalMillis), resumedFrame())
             }
             gatewayOpenCounter++
-            return FakeGatewaySession(bootstrapFrames = bootstrapFrames).also { session ->
+            return FakeGatewaySession(
+                bootstrapFrames = bootstrapFrames,
+                ackHeartbeatDuringSend = ackHeartbeatDuringSend,
+            ).also { session ->
                 lastGatewaySession = session
                 gatewaySessions += session
             }
@@ -966,6 +1082,7 @@ class QQOfficialAdapterTest {
 
     private inner class FakeGatewaySession(
         bootstrapFrames: List<String>,
+        private val ackHeartbeatDuringSend: Boolean,
     ) : QQOfficialGatewaySession {
         private val incomingFlow = MutableSharedFlow<String>(replay = 16, extraBufferCapacity = 16)
         private val closed = CompletableDeferred<QQOfficialGatewayClose>()
@@ -981,7 +1098,12 @@ class QQOfficialAdapterTest {
         override val closeSignal = closed
 
         override suspend fun sendText(text: String) {
-            sentTexts += json.parseToJsonElement(text)
+            val payload = json.parseToJsonElement(text)
+            sentTexts += payload
+            // 在 sendText 返回前注入 ACK，复现真实网关快速响应时的状态顺序。
+            if (ackHeartbeatDuringSend && payload.jsonObject["op"]?.jsonPrimitive?.content == "1") {
+                incomingFlow.emit(heartbeatAckFrame())
+            }
         }
 
         override suspend fun close(reason: String) {
