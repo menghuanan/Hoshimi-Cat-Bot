@@ -22,10 +22,18 @@
 ./gradlew.bat windowsReleaseDistZip linuxReleaseDistTar
 ```
 
+Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 Linux x64 JDK 17：
+
+```powershell
+.\gradlew.bat linuxReleaseDistTar -PlinuxJdkHome=C:\path\to\jdk-17-linux-x64
+```
+
+也可以用 `LINUX_JDK_HOME` 环境变量替代 `-PlinuxJdkHome`。
+
 说明：
 
 - `windowsReleaseDistZip` 只能在 Windows runner 上执行（产出内置 Windows jlink runtime）。
-- `linuxReleaseDistTar` 只能在 Linux runner 上执行（产出内置 Linux jlink runtime）。
+- `linuxReleaseDistTar` 在 Linux runner 上会直接使用当前 JDK 产出内置 Linux jlink runtime；在 Windows 上需要通过 `linuxJdkHome`/`LINUX_JDK_HOME` 指向 Linux x64 JDK 17 的 `jmods`。
 
 ## Docker 部署
 
@@ -110,6 +118,7 @@ Linux `start.sh`：
 发布流程约束：
 
 - GitHub Release 必须在 Windows/Linux 原生 runner 分别打包后再聚合发布，避免跨平台 runtime 不匹配。
+- Windows 本地交叉编译 Linux 裸机包时，必须显式提供 Linux x64 JDK 17，并在打包任务中保留 `runtime/bin/*` 与 `bin/start.sh` 的可执行权限。
 
 ## 部署 checklist
 

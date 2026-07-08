@@ -54,6 +54,7 @@
 - `docker-compose.yml` 变更必须考虑已有用户的 volume、环境变量和升级兼容。
 - 发布 workflow 变更必须同步核对 release notes、tag 命名和产物命名。
 - 裸机发布包若内置 `jlink` runtime，Windows/Linux 必须分别在对应平台 runner 上打包，再聚合到 GitHub Release。
+- Windows 本地需要交叉产出 Linux 裸机包时，必须通过 `linuxJdkHome` 或 `LINUX_JDK_HOME` 显式提供 Linux x64 JDK 17，并确保 tar 中保留 Linux runtime 与 `start.sh` 的可执行权限。
 - 若发布产物包含 WebUI 静态资源，必须确认 `src/main/resources/webui/react/index.html` 和 `assets/app.js`、`assets/app.css` 来自当前前端构建，而不是手工编辑或旧产物残留。
 
 ## 查询 checklist

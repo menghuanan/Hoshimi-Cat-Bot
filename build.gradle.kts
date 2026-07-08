@@ -189,7 +189,8 @@ tasks.shadowJar {
 
 val generatedDistributionScriptsDir = layout.buildDirectory.dir("generated/distribution-scripts")
 val detectedRuntimeModulesFile = layout.buildDirectory.file("generated/runtime-modules/jlink-modules.txt")
-val linkedRuntimeImageDir = layout.buildDirectory.dir("release-platform/runtime-image")
+val hostLinkedRuntimeImageDir = layout.buildDirectory.dir("release-platform/host-runtime-image")
+val linuxLinkedRuntimeImageDir = layout.buildDirectory.dir("release-platform/linux-runtime-image")
 
 // 统一解析当前构建机 JDK 工具路径，确保 jdeps/jlink 直接使用本次构建的 JDK 版本。
 val hostOs = OperatingSystem.current()
@@ -197,6 +198,43 @@ val hostExecutableSuffix = if (hostOs.isWindows) ".exe" else ""
 val configuredJavaHome = file(System.getenv("JAVA_HOME") ?: System.getProperty("java.home"))
 val jdepsExecutable = configuredJavaHome.resolve("bin/jdeps$hostExecutableSuffix")
 val jlinkExecutable = configuredJavaHome.resolve("bin/jlink$hostExecutableSuffix")
+val linuxJdkHomeProvider = providers.gradleProperty("linuxJdkHome")
+    .orElse(providers.environmentVariable("LINUX_JDK_HOME"))
+val linuxRuntimeJdkHomeInput = providers.provider {
+    if (hostOs.isLinux) configuredJavaHome.absolutePath else linuxJdkHomeProvider.orNull.orEmpty()
+}
+
+// 校验目标 JDK 根目录确实包含 jmods，避免把 JRE 或错误目录打进裸机发行包。
+fun requireJdkJmods(jdkHome: File, targetDescription: String): File {
+    val jmodsDir = jdkHome.resolve("jmods")
+    require(jmodsDir.isDirectory) {
+        "$targetDescription jmods directory not found: ${jmodsDir.absolutePath}. Please point to a full JDK 17."
+    }
+    return jmodsDir
+}
+
+// Windows 交叉打包 Linux 时只读取目标 JDK 的 jmods，并用 release 文件阻止误传 Windows/macOS JDK。
+fun requireLinuxX64JdkHome(jdkHome: File): File {
+    val releaseFile = jdkHome.resolve("release")
+    require(releaseFile.isFile) {
+        "Linux target JDK release file not found: ${releaseFile.absolutePath}. Please point linuxJdkHome to an extracted Linux x64 JDK 17 root."
+    }
+
+    val releaseText = releaseFile.readText(Charsets.UTF_8)
+    require(releaseText.contains("""JAVA_VERSION="17""") || releaseText.contains("""JAVA_VERSION="17.""")) {
+        "Linux target JDK must be JDK 17: ${jdkHome.absolutePath}."
+    }
+    require(releaseText.contains("""OS_NAME="Linux"""")) {
+        "linuxJdkHome must point to a Linux JDK, but release metadata is not Linux: ${jdkHome.absolutePath}."
+    }
+    require(
+        releaseText.contains("""OS_ARCH="x86_64"""") ||
+            releaseText.contains("""OS_ARCH="amd64""")
+    ) {
+        "linuxJdkHome must point to a Linux x64 JDK: ${jdkHome.absolutePath}."
+    }
+    return jdkHome
+}
 
 // 基于主程序 class 文件与 fat jar 依赖图自动探测最小模块集合，并补齐 jdeps 无法静态识别的 TLS 模块。
 val detectRuntimeModules = tasks.register("detectRuntimeModules") {
@@ -244,24 +282,66 @@ val detectRuntimeModules = tasks.register("detectRuntimeModules") {
     }
 }
 
-// 使用 jlink 构建当前平台精简运行时，供裸机发行包内置使用，避免用户额外安装 Java。
-val createLinkedRuntimeImage = tasks.register("createLinkedRuntimeImage") {
+// 使用 jlink 构建当前平台精简运行时，供 Windows 裸机发行包内置使用，避免用户额外安装 Java。
+val createHostLinkedRuntimeImage = tasks.register("createHostLinkedRuntimeImage") {
     dependsOn(detectRuntimeModules)
-    outputs.dir(linkedRuntimeImageDir)
+    inputs.file(detectedRuntimeModulesFile)
+    inputs.property("targetJdkHome", configuredJavaHome.absolutePath)
+    outputs.dir(hostLinkedRuntimeImageDir)
 
     doLast {
         val modules = detectedRuntimeModulesFile.get().asFile.readText(Charsets.UTF_8).trim()
-        val runtimeOutputDir = linkedRuntimeImageDir.get().asFile
+        val runtimeOutputDir = hostLinkedRuntimeImageDir.get().asFile
         runtimeOutputDir.mkdirs()
 
         require(jlinkExecutable.isFile) {
             "jlink executable not found: ${jlinkExecutable.absolutePath}. Please build with a full JDK 17."
         }
 
-        val jmodsDir = configuredJavaHome.resolve("jmods")
-        require(jmodsDir.isDirectory) {
-            "JDK jmods directory not found: ${jmodsDir.absolutePath}. Please set JAVA_HOME to a full JDK 17."
+        val jmodsDir = requireJdkJmods(configuredJavaHome, "Host JDK")
+
+        delete(runtimeOutputDir)
+        exec {
+            executable = jlinkExecutable.absolutePath
+            args(
+                "--module-path", jmodsDir.absolutePath,
+                "--add-modules", modules,
+                "--strip-debug",
+                "--no-header-files",
+                "--no-man-pages",
+                "--compress=2",
+                "--output", runtimeOutputDir.absolutePath
+            )
         }
+    }
+}
+
+// 使用目标 Linux JDK 的 jmods 构建 Linux 精简运行时，允许 Windows 通过 linuxJdkHome 交叉产出 Linux tar.gz。
+val createLinuxLinkedRuntimeImage = tasks.register("createLinuxLinkedRuntimeImage") {
+    dependsOn(detectRuntimeModules)
+    inputs.file(detectedRuntimeModulesFile)
+    inputs.property("targetJdkHome", linuxRuntimeJdkHomeInput)
+    outputs.dir(linuxLinkedRuntimeImageDir)
+
+    doLast {
+        val modules = detectedRuntimeModulesFile.get().asFile.readText(Charsets.UTF_8).trim()
+        val runtimeOutputDir = linuxLinkedRuntimeImageDir.get().asFile
+        runtimeOutputDir.mkdirs()
+
+        require(jlinkExecutable.isFile) {
+            "jlink executable not found: ${jlinkExecutable.absolutePath}. Please build with a full JDK 17."
+        }
+
+        val targetJdkHome = if (hostOs.isLinux) {
+            configuredJavaHome
+        } else {
+            val configuredLinuxJdkHome = linuxJdkHomeProvider.orNull
+            require(!configuredLinuxJdkHome.isNullOrBlank()) {
+                "linuxReleaseDistTar on ${hostOs.name} requires -PlinuxJdkHome=<extracted Linux x64 JDK 17> or LINUX_JDK_HOME."
+            }
+            file(configuredLinuxJdkHome)
+        }
+        val jmodsDir = requireJdkJmods(requireLinuxX64JdkHome(targetJdkHome), "Linux target JDK")
 
         delete(runtimeOutputDir)
         exec {
@@ -422,9 +502,9 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
 
 val sharedReleaseContentsDir = layout.buildDirectory.dir("release-platform/shared")
 
-// 平台发行包共享同一份 fat jar 与资源，避免 Windows/Linux 打包逻辑重复维护公共 payload。
+// 平台发行包共享同一份 fat jar 与资源，平台专属 runtime 由各自发行包任务单独写入。
 val stageSharedReleaseContents = tasks.register<Sync>("stageSharedReleaseContents") {
-    dependsOn(tasks.shadowJar, createLinkedRuntimeImage)
+    dependsOn(tasks.shadowJar)
     into(sharedReleaseContentsDir)
 
     from(tasks.shadowJar) {
@@ -434,41 +514,50 @@ val stageSharedReleaseContents = tasks.register<Sync>("stageSharedReleaseContent
         into("resources")
         exclude("logback")
     }
-    // 将 jlink 生成的精简运行时写入 runtime 目录，启动脚本仅依赖此路径，不再依赖系统 Java。
-    from(createLinkedRuntimeImage) {
-        into("runtime")
-    }
 }
 
 // Windows 发布资产只暴露 Windows 启动入口，避免用户在发行包中误用 Linux 或 Gradle 默认脚本。
 val windowsReleaseDistZip = tasks.register<Zip>("windowsReleaseDistZip") {
     group = "distribution"
     description = "Builds the Windows x64 release archive with the packaged start.bat entrypoint."
-    dependsOn(stageSharedReleaseContents, createDistributionStartScripts)
+    dependsOn(stageSharedReleaseContents, createDistributionStartScripts, createHostLinkedRuntimeImage)
     onlyIf { hostOs.isWindows }
 
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
     archiveFileName.set("hoshimi-cat-bot-windows-x64-v${project.version}.zip")
 
     from(sharedReleaseContentsDir)
+    // 将 jlink 生成的 Windows 精简运行时写入 runtime 目录，启动脚本仅依赖此路径。
+    from(createHostLinkedRuntimeImage) {
+        into("runtime")
+    }
     from(createDistributionStartScripts) {
         include("start.bat")
         into("bin")
     }
 }
 
-// Linux 发布资产只暴露 Linux 启动入口，并生成 tar.gz 以保留 start.sh 的可执行权限。
+// Linux 发布资产只暴露 Linux 启动入口；Windows 交叉打包时由 linuxJdkHome 提供目标 jmods。
 val linuxReleaseDistTar = tasks.register<Tar>("linuxReleaseDistTar") {
     group = "distribution"
     description = "Builds the Linux x64 release archive with the packaged start.sh entrypoint."
-    dependsOn(stageSharedReleaseContents, createDistributionStartScripts)
-    onlyIf { hostOs.isLinux }
+    dependsOn(stageSharedReleaseContents, createDistributionStartScripts, createLinuxLinkedRuntimeImage)
 
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
     archiveFileName.set("hoshimi-cat-bot-linux-x64-v${project.version}.tar.gz")
     compression = Compression.GZIP
 
     from(sharedReleaseContentsDir)
+    // 将 Linux 精简运行时写入 runtime 目录，保证 Windows 产出的 tar.gz 仍可在 Linux 裸机启动。
+    from(createLinuxLinkedRuntimeImage) {
+        into("runtime")
+        // Windows 文件系统不保留 Linux 可执行位，tar 内必须显式修正 runtime 启动入口权限。
+        eachFile {
+            if (path.startsWith("runtime/bin/") || path == "runtime/lib/jexec" || path == "runtime/lib/jspawnhelper") {
+                mode = 0b111101101 // 755
+            }
+        }
+    }
     from(createDistributionStartScripts) {
         include("start.sh")
         into("bin")

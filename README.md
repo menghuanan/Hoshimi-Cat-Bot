@@ -144,9 +144,15 @@ platform:
 chmod +x gradlew
 ./gradlew linuxReleaseDistTar
 ```
+```powershell
+# Windows 交叉编译 Linux 发行包（需先下载并解压 Linux x64 JDK 17）
+.\gradlew.bat linuxReleaseDistTar -PlinuxJdkHome=C:\path\to\jdk-17-linux-x64
+```
 发行包位于 `build/distributions/`：
 - Windows：`hoshimi-cat-bot-windows-x64-v<版本>.zip`
 - Linux：`hoshimi-cat-bot-linux-x64-v<版本>.tar.gz`
+
+Windows 交叉编译 Linux 包时，`linuxJdkHome` 必须指向已解压的 Linux x64 JDK 17 根目录（目录下应有 `release` 和 `jmods`）；也可以用 `LINUX_JDK_HOME` 环境变量替代 Gradle 参数。
 
 ### 2. 运行 Bot
 
