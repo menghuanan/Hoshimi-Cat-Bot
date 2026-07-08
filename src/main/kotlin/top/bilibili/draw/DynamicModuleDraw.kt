@@ -50,9 +50,16 @@ suspend fun ModuleDynamic.Additional.makeGeneral(session: DrawingSession): Image
         }
 
         "ADDITIONAL_TYPE_RESERVE" -> {
+            val reserve = reserve ?: return null
+            val primaryDesc = listOfNotNull(reserve.desc1?.text, reserve.desc2?.text)
+                .filter { it.isNotBlank() }
+                .joinToString("  ")
+            val secondaryDesc = reserve.desc3?.text?.takeIf { it.isNotBlank() }
+            if (reserve.isEmptyReserveCard(primaryDesc, secondaryDesc)) return null
+
             drawAdditionalCard(
                 session,
-                when (reserve!!.stype) {
+                when (reserve.stype) {
                     1 -> "视频预约"
                     2 -> "直播预约"
                     4 -> "首映预告"
@@ -60,8 +67,8 @@ suspend fun ModuleDynamic.Additional.makeGeneral(session: DrawingSession): Image
                 },
                 reserve.premiere?.cover,
                 reserve.title,
-                "${reserve.desc1.text}  ${reserve.desc2.text}",
-                reserve.desc3?.text
+                primaryDesc.ifBlank { secondaryDesc.orEmpty() },
+                secondaryDesc.takeIf { primaryDesc.isNotBlank() }
             )
         }
 
@@ -114,6 +121,18 @@ suspend fun ModuleDynamic.Additional.makeGeneral(session: DrawingSession): Image
             null
         }
     }
+}
+
+/**
+ * 判断预约附加卡片是否只剩空壳，避免已撤销卡片生成空白附加图。
+ */
+private fun ModuleDynamic.Additional.Reserve.isEmptyReserveCard(primaryDesc: String, secondaryDesc: String?): Boolean {
+    return rid == 0L &&
+        state == -1 &&
+        title.isBlank() &&
+        primaryDesc.isBlank() &&
+        secondaryDesc.isNullOrBlank() &&
+        premiere?.cover.isNullOrBlank()
 }
 
 

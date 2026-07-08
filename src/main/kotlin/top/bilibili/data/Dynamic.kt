@@ -495,14 +495,14 @@ data class ModuleDynamic(
          * @param upMid UP主ID
          * @param title 标题
          * @param reserveTotal 预约人数
-         * @param desc1 第一行描述
-         * @param desc2 第二行描述
-         * @param desc3 第三行描述
+         * @param desc1 第一行描述，预约撤销或课程预告空壳卡片可能为 null
+         * @param desc2 第二行描述，预约撤销或课程预告空壳卡片可能为 null
+         * @param desc3 第三行描述，预约撤销或课程预告空壳卡片可能为 null
          * @param premiere 预约封面?
          * @param state 状态
          * @param stype 预约类型 视频预约(1) 直播预约(2) 视频首映直播预告(4)
          * @param jumpUrl 跳转链接
-         * @param button 按钮
+         * @param button 按钮，预约撤销或课程预告空壳卡片可能为 null
          */
         @Serializable
         data class Reserve(
@@ -515,9 +515,9 @@ data class ModuleDynamic(
             @SerialName("reserve_total")
             val reserveTotal: Int,
             @SerialName("desc1")
-            val desc1: Desc,
+            val desc1: Desc? = null,
             @SerialName("desc2")
-            val desc2: Desc,
+            val desc2: Desc? = null,
             @SerialName("desc3")
             val desc3: Desc? = null,
             @SerialName("premiere")
@@ -529,7 +529,7 @@ data class ModuleDynamic(
             @SerialName("jump_url")
             val jumpUrl: String,
             @SerialName("button")
-            val button: Button,
+            val button: Button? = null,
         ) {
 
             /**

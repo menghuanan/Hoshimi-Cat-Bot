@@ -4,6 +4,7 @@ import kotlinx.serialization.decodeFromString
 import top.bilibili.utils.json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class DynamicListDecodeTest {
     /**
@@ -62,5 +63,68 @@ class DynamicListDecodeTest {
 
         assertEquals(1, decoded.items[0].modules.moduleAuthor.following as Any?)
         assertEquals(2, decoded.items[1].modules.moduleAuthor.following as Any?)
+    }
+
+    /**
+     * 已撤销的预约附加卡片可能只保留空壳字段，解码层必须接受 null 描述和按钮。
+     */
+    @Test
+    fun `dynamic list payload should decode revoked reserve additional card`() {
+        val payload = """
+            {
+              "has_more": false,
+              "offset": "1220452787232440338",
+              "update_baseline": "1220456704240517120",
+              "update_num": "1",
+              "items": [
+                {
+                  "type": "DYNAMIC_TYPE_DRAW",
+                  "basic": {
+                    "comment_id_str": "400122292",
+                    "comment_type": 11,
+                    "rid_str": "400122292"
+                  },
+                  "id_str": "1220456678521044999",
+                  "modules": {
+                    "module_author": {
+                      "mid": 12890453,
+                      "name": "author-reserve",
+                      "face": "https://example.invalid/face.jpg",
+                      "pub_ts": 1782998114
+                    },
+                    "module_dynamic": {
+                      "additional": {
+                        "type": "ADDITIONAL_TYPE_RESERVE",
+                        "reserve": {
+                          "title": "",
+                          "desc1": null,
+                          "desc2": null,
+                          "desc3": null,
+                          "premiere": null,
+                          "badge_text": "",
+                          "jump_url": "",
+                          "button": null,
+                          "rid": 0,
+                          "reserve_total": 0,
+                          "state": -1,
+                          "stype": 0,
+                          "up_mid": "0"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val decoded = json.decodeFromString<DynamicList>(payload)
+        val reserve = decoded.items.single().modules.moduleDynamic.additional?.reserve
+
+        assertEquals(-1, reserve?.state)
+        assertNull(reserve?.desc1)
+        assertNull(reserve?.desc2)
+        assertNull(reserve?.desc3)
+        assertNull(reserve?.button)
     }
 }
