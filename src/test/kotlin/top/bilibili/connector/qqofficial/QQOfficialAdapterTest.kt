@@ -102,7 +102,14 @@ class QQOfficialAdapterTest {
             // 让 SharedFlow 收集协程先完成订阅，避免测试线程比收集线程更早发出事件。
             delay(10)
             transport.emitGatewayText(groupMessageFrame(eventType = "GROUP_MESSAGE_CREATE", content = "/login"))
-            transport.emitGatewayText(groupMessageFrame(eventType = "GROUP_AT_MESSAGE_CREATE", seq = 4, messageId = "msg-group-at"))
+            transport.emitGatewayText(
+                groupMessageFrame(
+                    eventType = "GROUP_AT_MESSAGE_CREATE",
+                    seq = 4,
+                    messageId = "msg-group-at",
+                    content = "<@bot_openid_demo> /login",
+                ),
+            )
             transport.emitGatewayText(c2cMessageFrame())
 
             withTimeout(1_000) {
@@ -120,11 +127,15 @@ class QQOfficialAdapterTest {
             assertEquals("group_openid_demo", groupEvent.metadata["group_openid"])
             assertEquals("member_openid_demo", groupEvent.metadata["member_openid"])
             assertFalse(groupEvent.metadata.containsKey("user_openid"))
+            assertEquals("/login", groupEvent.messageText)
+            assertEquals(listOf("/login"), groupEvent.searchTexts)
             assertFalse(groupEvent.hasMention)
 
             val groupAtEvent = events[1]
             assertEquals(PlatformChatType.GROUP, groupAtEvent.chatType)
             assertEquals("msg-group-at", groupAtEvent.messageId)
+            assertEquals("/login", groupAtEvent.messageText)
+            assertEquals(listOf("/login", "<@bot_openid_demo> /login"), groupAtEvent.searchTexts)
             assertTrue(groupAtEvent.hasMention)
 
             val c2cEvent = events[2]

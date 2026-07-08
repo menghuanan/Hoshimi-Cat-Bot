@@ -713,8 +713,12 @@ internal class QQOfficialAdapter(
                 PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.PRIVATE, requiredUserOpenId)
             }
         }
+        val messageText = normalizeInboundMessageText(message.content)
         val searchTexts = buildList {
-            message.content.trim().takeIf { it.isNotEmpty() }?.let(::add)
+            messageText.trim().takeIf { it.isNotEmpty() }?.let(::add)
+            message.content.trim()
+                .takeIf { it.isNotEmpty() && it != messageText.trim() }
+                ?.let(::add)
             message.attachments.mapNotNullTo(this) { attachment ->
                 attachment.url?.trim()?.takeIf { it.isNotEmpty() }
             }
@@ -726,7 +730,7 @@ internal class QQOfficialAdapter(
             chatContact = chatContact,
             senderContact = senderContact,
             selfContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.PRIVATE, selfOpenId),
-            messageText = message.content,
+            messageText = messageText,
             searchTexts = searchTexts,
             hasMention = hasMention,
             fromSelf = listOfNotNull(userOpenId, memberOpenId, openId).any { it == selfOpenId },
@@ -735,6 +739,25 @@ internal class QQOfficialAdapter(
             messageId = message.id.ifBlank { null },
             metadata = buildOpenIdMetadata(groupOpenId, memberOpenId, userOpenId, openId),
         )
+    }
+
+    /**
+     * 移除 QQ 官方在 AT 消息文本开头注入的机器人 mention，确保业务命令继续接收 `/login` 这类纯命令。
+     */
+    private fun normalizeInboundMessageText(rawContent: String): String {
+        val normalized = stripLeadingSelfMention(rawContent)
+        return normalized
+    }
+
+    /**
+     * 仅剥离开头指向当前机器人的 mention，保留正文中其他用户 mention 供业务或日志继续感知。
+     */
+    private fun stripLeadingSelfMention(rawContent: String): String {
+        if (selfOpenId.isBlank()) return rawContent
+        val trimmedStart = rawContent.trimStart()
+        val selfMentionPrefixes = listOf("<@$selfOpenId>", "<@!$selfOpenId>")
+        val matchedPrefix = selfMentionPrefixes.firstOrNull { trimmedStart.startsWith(it) } ?: return rawContent
+        return trimmedStart.removePrefix(matchedPrefix).trimStart()
     }
 
     /**
