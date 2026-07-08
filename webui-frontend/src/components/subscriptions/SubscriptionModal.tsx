@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { ModalPortal } from '../ModalPortal'
 
 type SubscriptionModalProps = {
   open: boolean
@@ -57,80 +58,82 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
   }
 
   return (
-    <div className="modal-overlay fixed inset-0 z-40 flex items-center justify-center px-4 py-6" role="presentation">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="subscription-create-title"
-        className="modal-panel max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
-      >
-        <div className="mb-4">
-          <h3 id="subscription-create-title" className="text-base font-semibold text-slate-950">新增订阅</h3>
-        </div>
-        <form className="grid gap-4" onSubmit={submitForm}>
-          {errorMessage ? (
-            <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {errorMessage}
-            </div>
-          ) : null}
-          <label className="grid gap-1 text-sm font-medium text-slate-700">
-            <span>订阅类型</span>
-            <select value={type} onChange={(event) => setType(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="dynamic">动态</option>
-              <option value="bangumi">番剧</option>
-              <option value="group">分组</option>
-            </select>
-          </label>
-          {type === 'group' ? (
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                <span>分组名称</span>
-                <input value={groupName} onChange={(event) => setGroupName(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                <span>分组 UID</span>
-                <input value={groupUid} onChange={(event) => setGroupUid(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                <span>分组目标群</span>
-                <input value={groupTarget} onChange={(event) => setGroupTarget(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-            </div>
-          ) : null}
-          {type === 'bangumi' ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                <span>番剧 ID</span>
-                <input value={bangumiId} onChange={(event) => setBangumiId(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                <span>番剧目标群</span>
-                <input value={bangumiTarget} onChange={(event) => setBangumiTarget(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-            </div>
-          ) : null}
-          {type === 'dynamic' ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                <span>UID</span>
-                <input value={uid} onChange={(event) => setUid(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                <span>目标群聊</span>
-                <input value={targetGroup} onChange={(event) => setTargetGroup(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-            </div>
-          ) : null}
-          <div className="flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">取消</button>
-            <button type="submit" disabled={pending} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400">
-              {pending ? <span className="button-spinner" aria-hidden="true" /> : null}
-              {pending ? '提交中…' : '确认新增'}
-            </button>
+    <ModalPortal>
+      <div className="modal-overlay fixed inset-0 z-40 flex items-center justify-center px-4 py-6" role="presentation">
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="subscription-create-title"
+          className="modal-panel max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
+        >
+          <div className="mb-4">
+            <h3 id="subscription-create-title" className="text-base font-semibold text-slate-950">新增订阅</h3>
           </div>
-        </form>
-      </section>
-    </div>
+          <form className="grid gap-4" onSubmit={submitForm}>
+            {errorMessage ? (
+              <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {errorMessage}
+              </div>
+            ) : null}
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              <span>订阅类型</span>
+              <select value={type} onChange={(event) => setType(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <option value="dynamic">动态</option>
+                <option value="bangumi">番剧</option>
+                <option value="group">分组</option>
+              </select>
+            </label>
+            {type === 'group' ? (
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  <span>分组名称</span>
+                  <input value={groupName} onChange={(event) => setGroupName(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  <span>分组 UID</span>
+                  <input value={groupUid} onChange={(event) => setGroupUid(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  <span>分组目标群</span>
+                  <input value={groupTarget} onChange={(event) => setGroupTarget(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+              </div>
+            ) : null}
+            {type === 'bangumi' ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  <span>番剧 ID</span>
+                  <input value={bangumiId} onChange={(event) => setBangumiId(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  <span>番剧目标群</span>
+                  <input value={bangumiTarget} onChange={(event) => setBangumiTarget(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+              </div>
+            ) : null}
+            {type === 'dynamic' ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  <span>UID</span>
+                  <input value={uid} onChange={(event) => setUid(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  <span>目标群聊</span>
+                  <input value={targetGroup} onChange={(event) => setTargetGroup(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </label>
+              </div>
+            ) : null}
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">取消</button>
+              <button type="submit" disabled={pending} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400">
+                {pending ? <span className="button-spinner" aria-hidden="true" /> : null}
+                {pending ? '提交中…' : '确认新增'}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </ModalPortal>
   )
 }
 

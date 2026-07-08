@@ -348,10 +348,36 @@ body {
   background: #1f2937;
 }
 
+/* 暗色 hover 使用比底色略亮的深灰，反推亮色模式的浅灰悬停反馈。 */
+.theme-dark .hover\:bg-slate-100:hover,
+.theme-dark .hover\:bg-slate-50:hover {
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+.theme-dark .hover\:bg-rose-50:hover {
+  background: rgba(244, 63, 94, 0.14);
+  color: #fecdd3;
+}
+
+.theme-dark button.bg-slate-950 {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.theme-dark button.disabled\:bg-slate-400:disabled {
+  background: #475569;
+  color: #cbd5e1;
+}
+
 .theme-dark .border-slate-100,
 .theme-dark .border-slate-200,
 .theme-dark .border-slate-300 {
   border-color: #334155;
+}
+
+.theme-dark .border-rose-200 {
+  border-color: rgba(244, 63, 94, 0.38);
 }
 
 /* 状态卡片左侧强调色需要覆盖暗色主题的通用 border-color 重写。 */
@@ -381,6 +407,22 @@ body {
 .theme-dark .text-slate-600,
 .theme-dark .text-slate-500 {
   color: #cbd5e1;
+}
+
+.theme-dark .text-rose-700 {
+  color: #fda4af;
+}
+
+.theme-dark .text-emerald-700 {
+  color: #6ee7b7;
+}
+
+.theme-dark .bg-rose-50 {
+  background: rgba(244, 63, 94, 0.12);
+}
+
+.theme-dark .bg-emerald-50 {
+  background: rgba(16, 185, 129, 0.14);
 }
 
 .theme-dark select,
@@ -469,10 +511,35 @@ body {
     background: #1f2937;
   }
 
+  .theme-system .hover\:bg-slate-100:hover,
+  .theme-system .hover\:bg-slate-50:hover {
+    background: #1e293b;
+    color: #f8fafc;
+  }
+
+  .theme-system .hover\:bg-rose-50:hover {
+    background: rgba(244, 63, 94, 0.14);
+    color: #fecdd3;
+  }
+
+  .theme-system button.bg-slate-950 {
+    background: #e2e8f0;
+    color: #0f172a;
+  }
+
+  .theme-system button.disabled\:bg-slate-400:disabled {
+    background: #475569;
+    color: #cbd5e1;
+  }
+
   .theme-system .border-slate-100,
   .theme-system .border-slate-200,
   .theme-system .border-slate-300 {
     border-color: #334155;
+  }
+
+  .theme-system .border-rose-200 {
+    border-color: rgba(244, 63, 94, 0.38);
   }
 
   .theme-system .border-l-emerald-500 {
@@ -501,6 +568,22 @@ body {
   .theme-system .text-slate-600,
   .theme-system .text-slate-500 {
     color: #cbd5e1;
+  }
+
+  .theme-system .text-rose-700 {
+    color: #fda4af;
+  }
+
+  .theme-system .text-emerald-700 {
+    color: #6ee7b7;
+  }
+
+  .theme-system .bg-rose-50 {
+    background: rgba(244, 63, 94, 0.12);
+  }
+
+  .theme-system .bg-emerald-50 {
+    background: rgba(16, 185, 129, 0.14);
   }
 
   .theme-system select,

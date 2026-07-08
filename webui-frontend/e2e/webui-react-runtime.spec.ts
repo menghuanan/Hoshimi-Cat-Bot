@@ -50,10 +50,38 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
   await page.getByRole('button', {name: '编辑过滤器'}).click()
   const editorOverlayBox = await page.locator('[data-subscription-editor-overlay]').boundingBox()
   const editorPanelBox = await page.locator('[data-subscription-editor-panel]').boundingBox()
+  const viewportSize = page.viewportSize()
   expect(editorOverlayBox).not.toBeNull()
-  expect(editorOverlayBox?.x).toBeGreaterThan(200)
+  expect(editorOverlayBox?.x).toBeLessThan(1)
+  expect(editorOverlayBox?.y).toBeLessThan(1)
+  expect(editorOverlayBox?.width).toBeGreaterThan((viewportSize?.width || 0) - 1)
+  expect(editorOverlayBox?.height).toBeGreaterThan((viewportSize?.height || 0) - 1)
   expect(editorPanelBox).not.toBeNull()
   expect(editorPanelBox?.width).toBeLessThan(520)
+})
+
+test('keeps dark theme hover states on dark surfaces', async ({page}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('hoshimi_cat_bot_webui_theme', 'dark')
+  })
+
+  await page.goto('/login')
+  await page.getByLabel('WebUI 密码').fill('secret-password')
+  await page.getByRole('button', {name: '登录'}).click()
+  await expect(page.getByRole('heading', {name: '运行概览'})).toBeVisible()
+
+  await page.goto('/settings')
+  const homeNavButton = page.getByRole('button', {name: '首页'})
+  await homeNavButton.hover()
+  await expect.poll(() => homeNavButton.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(30, 41, 59)')
+
+  const inactiveSettingsTab = page.getByRole('button', {name: 'B站配置'})
+  await inactiveSettingsTab.hover()
+  await expect.poll(() => inactiveSettingsTab.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(30, 41, 59)')
+
+  const themeSelect = page.getByLabel('主题模式')
+  await themeSelect.hover()
+  await expect.poll(() => themeSelect.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(30, 41, 59)')
 })
 
 test('centers settings cards within the page while keeping the tabs fixed', async ({page}) => {
