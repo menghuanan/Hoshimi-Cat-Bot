@@ -119,8 +119,8 @@ export function Shell({page, onNavigate, children}: ShellProps) {
                 type="button"
                 data-nav-target={target}
                 aria-pressed={page === target}
-                className={`flex w-full items-center rounded-lg px-4 py-2.5 text-left text-base font-medium transition ${
-                  page === target ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-700 hover:bg-slate-100'
+                className={`nav-item flex w-full items-center rounded-lg px-4 py-2.5 text-left text-base font-medium ${
+                  page === target ? 'nav-item-active bg-slate-950 text-white shadow-sm' : 'text-slate-700 hover:bg-slate-100'
                 }`}
                 onClick={() => onNavigate(target as Exclude<WebUiPageName, 'login'>)}
               >
@@ -181,15 +181,20 @@ export function Shell({page, onNavigate, children}: ShellProps) {
         <div className="flex min-w-0 flex-col max-lg:col-start-auto lg:col-start-2">
           {/* 主内容区直接贴靠壳层顶部，页面会在删除标题后自然上移。 */}
           <section className="min-w-0 flex-1 px-6 py-6 max-sm:px-4">
-            <div className="mx-auto w-full max-w-7xl">
+            <div
+              key={page}
+              data-route-transition
+              data-route-page={page}
+              className="page-transition-surface mx-auto w-full max-w-7xl"
+            >
               {children}
             </div>
           </section>
         </div>
       </div>
       {passwordModalOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6" role="presentation" onMouseDown={() => setPasswordModalOpen(false)}>
-          <section className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="account-password-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-overlay fixed inset-0 z-40 flex items-center justify-center px-4 py-6" role="presentation" onMouseDown={() => setPasswordModalOpen(false)}>
+          <section className="modal-panel w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="account-password-title" onMouseDown={(event) => event.stopPropagation()}>
             <h3 id="account-password-title" className="text-base font-semibold text-slate-950">修改密码</h3>
             <div className="mt-5 space-y-4">
               <label className="block">
@@ -208,7 +213,8 @@ export function Shell({page, onNavigate, children}: ShellProps) {
             {accountMessage ? <p className="mt-4 text-sm font-medium text-rose-700">{accountMessage}</p> : null}
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700" onClick={() => setPasswordModalOpen(false)}>取消</button>
-              <button type="button" disabled={accountPending} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" onClick={() => void submitPasswordChange()}>
+              <button type="button" disabled={accountPending} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" onClick={() => void submitPasswordChange()}>
+                {accountPending ? <span className="button-spinner" aria-hidden="true" /> : null}
                 {accountPending ? '提交中' : '确认'}
               </button>
             </div>

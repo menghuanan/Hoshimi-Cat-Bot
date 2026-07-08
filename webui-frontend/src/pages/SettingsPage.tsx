@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
-import { useHighRiskConfirmation } from '../hooks/useHighRiskConfirmation'
 import { useSettingsFiles } from '../hooks/useSettingsFiles'
+import { useToast } from '../hooks/useToast'
 import { formatSaveResultMessage } from '../settings/settingsSaveResult'
 import { buildBiliConfigSavePayload, buildBiliDataSavePayload, buildBotConfigSavePayload } from '../api/settings'
 import { settingsCategories, validateSettingsValues, type SettingsCategoryDefinition, type SettingsCategoryId, type SettingsFieldDefinition } from '../settings/settingsSchema'
@@ -32,11 +32,10 @@ type AdminDraftPair = {
  */
 export function SettingsPage() {
   const {loading, biliConfig, biliData, botConfig, saveBatch, patchBiliConfig, patchBiliData, patchBotConfig} = useSettingsFiles()
-  const {requestHighRiskConfirmation} = useHighRiskConfirmation()
+  const {showToast} = useToast()
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
   const [editedValues, setEditedValues] = useState<SettingsFormValues>({})
   const [saving, setSaving] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<{tone: 'neutral' | 'success' | 'error', message: string}>({tone: 'neutral', message: ''})
   const activeCategory = settingsCategories.find((category) => category.id === activeCategoryId) || settingsCategories[0]
   const allSettingsFields = useMemo(() => settingsCategories.flatMap((category) => category.fields), [])
 
@@ -93,14 +92,13 @@ export function SettingsPage() {
    */
   const saveActiveCategory = async () => {
     setSaving(true)
-    setSaveStatus({tone: 'neutral', message: ''})
     try {
       const biliValues = pickValuesForFile(visibleSettingsFields, values, 'biliConfig')
       const biliDataValues = pickValuesForFile(visibleSettingsFields, values, 'biliData')
       const botValues = pickValuesForFile(visibleSettingsFields, values, 'botConfig')
       const validationErrors = validateSettingsValues({...biliValues, ...biliDataValues, ...botValues})
       if (validationErrors.length > 0) {
-        setSaveStatus({tone: 'error', message: validationErrors.join('；')})
+        showToast('error', validationErrors.join('；'))
         return
       }
 
@@ -111,15 +109,12 @@ export function SettingsPage() {
       const biliDataToken = String(biliData?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
       const confirmationMessage = buildSettingsConfirmationMessage(completeValues)
-      const shouldSaveBili = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'biliConfig')
-      const shouldSaveBiliData = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'biliData')
-      const shouldSaveBot = hasEditedValuesForFile(visibleSettingsFields, editedValues, 'botConfig')
-      // 没有任何待写文件时仍然走统一密码确认，避免保存入口在空状态下直接静默返回。
+      const shouldSaveBili = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'biliConfig')
+      const shouldSaveBiliData = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'biliData')
+      const shouldSaveBot = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'botConfig')
+      // 没有有效差异时不进入高风险确认，也不向后端提交 batch，避免空保存触发热重载或写盘。
       if (!shouldSaveBili && !shouldSaveBiliData && !shouldSaveBot) {
-        const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
-        if (!confirmationPassword) {
-          return
-        }
+        showToast('warning', '没有检测到配置变更')
         return
       }
       const batchPayload: Record<string, Record<string, unknown>> = {}
@@ -152,11 +147,11 @@ export function SettingsPage() {
 
       const job = await saveBatch(batchPayload, confirmationMessage)
       if (!job) {
-        setSaveStatus({tone: 'neutral', message: formatSaveResultMessage([])})
+        showToast('warning', formatSaveResultMessage([]))
         return
       }
       if (job.phase === 'FAILED') {
-        setSaveStatus({tone: 'error', message: formatHotReloadJobMessage(job)})
+        showToast('error', formatHotReloadJobMessage(job))
         return
       }
 
@@ -164,9 +159,9 @@ export function SettingsPage() {
       patchBiliData(completeBiliDataValues, outcomeToken(job, 'BILI_DATA'))
       patchBotConfig(completeBotValues, outcomeToken(job, 'BOT_CONFIG'))
       setEditedValues({})
-      setSaveStatus({tone: 'success', message: formatHotReloadJobMessage(job)})
+      showToast('success', formatHotReloadJobMessage(job))
     } catch (error) {
-      setSaveStatus({tone: 'error', message: formatPasswordErrorMessage(error, '保存失败')})
+      showToast('error', formatPasswordErrorMessage(error, '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -182,17 +177,13 @@ export function SettingsPage() {
             {/* 顶部只保留保存操作和保存结果，标题由 PageSection 承载。 */}
             <button
               type="button"
-              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
               disabled={saving || loading}
               onClick={saveActiveCategory}
             >
-              {saving ? '热重载中' : '保存'}
+              {saving ? <span className="button-spinner" aria-hidden="true" /> : null}
+              {saving ? '保存中…' : '保存'}
             </button>
-            {saveStatus.message ? (
-              <span className={`text-sm font-medium ${saveStatus.tone === 'success' ? 'text-emerald-600' : saveStatus.tone === 'error' ? 'text-rose-600' : 'text-slate-600'}`}>
-                {saveStatus.message}
-              </span>
-            ) : null}
           </>
         )}
       >
@@ -560,12 +551,29 @@ function pickValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFo
 }
 
 /**
- * 保存入口只提交本轮用户实际编辑过的文件，避免同页未改字段触发无关文件校验和密码确认。
+ * 保存入口只提交当前值相对快照确实变化的文件，避免改回原值后仍触发热重载。
  */
-function hasEditedValuesForFile(fields: SettingsFieldDefinition[], values: SettingsFormValues, file: 'biliConfig' | 'biliData' | 'botConfig'): boolean {
+function hasChangedValuesForFile(
+  fields: SettingsFieldDefinition[],
+  editedValues: SettingsFormValues,
+  initialValues: SettingsFormValues,
+  currentValues: SettingsFormValues,
+  file: 'biliConfig' | 'biliData' | 'botConfig',
+): boolean {
   return fields.some((field) => (
-    field.file === file && Object.prototype.hasOwnProperty.call(values, field.key)
+    field.file === file &&
+    Object.prototype.hasOwnProperty.call(editedValues, field.key) &&
+    normalizeSettingsDiffValue(currentValues[field.key]) !== normalizeSettingsDiffValue(initialValues[field.key])
   ))
+}
+
+/**
+ * 表单差异比较统一把 checkbox 和输入框值转成稳定文本，避免类型表现差异造成误保存。
+ */
+function normalizeSettingsDiffValue(value: string | boolean | undefined): string {
+  if (value === true) return 'true'
+  if (value === false) return 'false'
+  return String(value ?? '')
 }
 
 /**

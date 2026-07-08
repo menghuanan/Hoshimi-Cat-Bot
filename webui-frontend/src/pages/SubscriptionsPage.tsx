@@ -3,6 +3,7 @@ import { PageSection } from '../components/PageSection'
 import { SubscriptionEditorModal } from '../components/subscriptions/SubscriptionEditorModal'
 import { SubscriptionModal } from '../components/subscriptions/SubscriptionModal'
 import { useSubscriptions } from '../hooks/useSubscriptions'
+import { useToast } from '../hooks/useToast'
 import { formatPasswordErrorMessage } from '../utils/errorMessages'
 
 type SubscriptionItem = Record<string, unknown>
@@ -12,11 +13,11 @@ type SubscriptionItem = Record<string, unknown>
  */
 export function SubscriptionsPage() {
   const subscriptionActions = useSubscriptions()
+  const {showToast} = useToast()
   const {items, loading, saveSubscription, removeSubscription, reload} = subscriptionActions
   const [createOpen, setCreateOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<SubscriptionItem | null>(null)
   const [pending, setPending] = useState(false)
-  const [message, setMessage] = useState('')
 
   const subscriptionItems = items as SubscriptionItem[]
 
@@ -25,14 +26,13 @@ export function SubscriptionsPage() {
    */
   const submitSubscription = async (payload: Record<string, unknown>) => {
     setPending(true)
-    setMessage('')
     try {
       await saveSubscription(payload)
       await reload()
       setCreateOpen(false)
-      setMessage('订阅已提交')
+      showToast('success', '订阅已提交')
     } catch (error) {
-      setMessage(formatPasswordErrorMessage(error, '订阅提交失败'))
+      showToast('error', formatPasswordErrorMessage(error, '订阅提交失败'))
     } finally {
       setPending(false)
     }
@@ -41,17 +41,16 @@ export function SubscriptionsPage() {
   const deleteItem = async (item: SubscriptionItem) => {
     const itemId = readStableDeletionId(item)
     if (!itemId) {
-      setMessage('当前条目缺少可删除标识')
+      showToast('error', '当前条目缺少可删除标识')
       return
     }
     setPending(true)
-    setMessage('')
     try {
       await removeSubscription(itemId)
       await reload()
-      setMessage('订阅已删除')
+      showToast('success', '订阅已删除')
     } catch (error) {
-      setMessage(formatPasswordErrorMessage(error, '删除失败'))
+      showToast('error', formatPasswordErrorMessage(error, '删除失败'))
     } finally {
       setPending(false)
     }
@@ -81,7 +80,6 @@ export function SubscriptionsPage() {
             />
           ))}
         </div>
-        {message ? <p className="text-sm font-medium text-slate-700">{message}</p> : null}
       </PageSection>
 
       <SubscriptionModal open={createOpen} pending={pending} onClose={() => setCreateOpen(false)} onSubmit={submitSubscription} />

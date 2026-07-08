@@ -57,12 +57,12 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 px-4 py-6" role="presentation">
+    <div className="modal-overlay fixed inset-0 z-40 flex items-center justify-center px-4 py-6" role="presentation">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="subscription-create-title"
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
+        className="modal-panel max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
       >
         <div className="mb-4">
           <h3 id="subscription-create-title" className="text-base font-semibold text-slate-950">新增订阅</h3>
@@ -123,7 +123,10 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
           ) : null}
           <div className="flex justify-end gap-3">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">取消</button>
-            <button type="submit" disabled={pending} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400">确认新增</button>
+            <button type="submit" disabled={pending} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400">
+              {pending ? <span className="button-spinner" aria-hidden="true" /> : null}
+              {pending ? '提交中…' : '确认新增'}
+            </button>
           </div>
         </form>
       </section>

@@ -5,6 +5,260 @@ body {
   min-width: 320px;
 }
 
+/* 路由切换只作用于右侧内容区，侧边栏保持稳定不参与动画。 */
+.page-transition-surface {
+  animation: page-fade-up 180ms ease-out;
+  will-change: opacity, transform;
+}
+
+@keyframes page-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 侧边栏导航项用短过渡反馈 hover 和选中态变化。 */
+.nav-item {
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.nav-item:hover {
+  transform: translateX(2px);
+}
+
+.nav-item-active {
+  transform: translateX(2px);
+}
+
+/* 通用弹窗遮罩提供变暗和轻微模糊，面板使用短 scale 入场。 */
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: modal-overlay-in 150ms ease-out;
+}
+
+.modal-panel {
+  animation: modal-panel-in 150ms ease-out;
+  transform-origin: center;
+}
+
+@keyframes modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Toast 固定在右上角，进入滑入淡入，离场由同一动画末段淡出。 */
+.toast-viewport {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 70;
+  display: grid;
+  width: min(24rem, calc(100vw - 2rem));
+  gap: 0.75rem;
+  pointer-events: none;
+}
+
+.toast {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3rem;
+  border: 1px solid #e2e8f0;
+  border-left-width: 4px;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 0.75rem 1rem;
+  color: #0f172a;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  pointer-events: auto;
+  animation: toast-slide-in 180ms ease-out, toast-slide-out 180ms ease-in 3400ms forwards;
+}
+
+.toast-success {
+  border-left-color: #10b981;
+}
+
+.toast-error {
+  border-left-color: #f43f5e;
+}
+
+.toast-warning {
+  border-left-color: #f59e0b;
+}
+
+.toast-icon {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.toast-success .toast-icon {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.toast-error .toast-icon {
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+.toast-warning .toast-icon {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toast-slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+}
+
+/* 自定义 toggle 保留真实 checkbox 语义，视觉层由 track 和 thumb 承担。 */
+[data-toggle-shell] {
+  position: relative;
+  cursor: pointer;
+}
+
+.toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.toggle-track {
+  position: relative;
+  display: inline-flex;
+  width: 2.5rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  align-items: center;
+  border-radius: 9999px;
+  background: #cbd5e1;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.12);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.toggle-thumb {
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: 0.15rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.28);
+  transition: transform 150ms ease;
+}
+
+.toggle-input:checked + .toggle-track {
+  background: #10b981;
+}
+
+.toggle-input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(1.15rem);
+}
+
+.toggle-input:focus-visible + .toggle-track {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+/* 设置说明统一为低对比小字；警告类说明升级为可扫描警示条。 */
+.settings-muted-helper {
+  margin-top: 0.5rem;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: rgba(71, 85, 105, 0.72);
+}
+
+.settings-warning-helper {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 0.625rem 0.75rem;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: #92400e;
+}
+
+.settings-helper-icon {
+  display: grid;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9999px;
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400e;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* 按钮 loading 只占图标位，避免文字变化造成按钮宽度跳动过大。 */
+.button-spinner {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  border-radius: 9999px;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* 运行态进度条改用原生 progress 控件，避免 inline style 破坏严格 CSP。 */
 .resource-meter {
   width: 100%;
@@ -23,11 +277,60 @@ body {
 .resource-meter::-webkit-progress-value {
   border-radius: 9999px;
   background: #10b981;
+  transition: width 400ms ease-out, background-color 180ms ease;
 }
 
 .resource-meter::-moz-progress-bar {
   border-radius: 9999px;
   background: #10b981;
+  transition: background-color 180ms ease;
+}
+
+.resource-meter-safe::-webkit-progress-value {
+  background: #10b981;
+}
+
+.resource-meter-warn::-webkit-progress-value {
+  background: #f59e0b;
+}
+
+.resource-meter-danger::-webkit-progress-value {
+  background: #ef4444;
+}
+
+.resource-meter-safe::-moz-progress-bar {
+  background: #10b981;
+}
+
+.resource-meter-warn::-moz-progress-bar {
+  background: #f59e0b;
+}
+
+.resource-meter-danger::-moz-progress-bar {
+  background: #ef4444;
+}
+
+/* 日志窗口滚动条跟随深色窗口，不再使用浏览器默认浅色矩形。 */
+.log-container {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-width: thin;
+}
+
+.log-container::-webkit-scrollbar {
+  width: 10px;
+}
+
+.log-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log-container::-webkit-scrollbar-thumb {
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.log-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* 暗色主题覆盖现有 Tailwind 实用类，保证主题模式选择立即改变整个 WebUI 外观。 */
@@ -88,6 +391,30 @@ body {
   border-color: #475569;
 }
 
+.theme-dark .toast {
+  border-color: #334155;
+  background: rgba(15, 23, 42, 0.96);
+  color: #f8fafc;
+}
+
+.theme-dark .toggle-track {
+  background: #475569;
+}
+
+.theme-dark .toggle-input:checked + .toggle-track {
+  background: #10b981;
+}
+
+.theme-dark .settings-muted-helper {
+  color: rgba(203, 213, 225, 0.62);
+}
+
+.theme-dark .settings-warning-helper {
+  border-color: rgba(251, 191, 36, 0.36);
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+}
+
 .theme-dark .subscription-info-block {
   background: #1f2937;
   border-color: #334155;
@@ -101,12 +428,28 @@ body {
   background: #334155;
 }
 
-.theme-dark .resource-meter::-webkit-progress-value {
+.theme-dark .resource-meter-safe::-webkit-progress-value {
   background: #34d399;
 }
 
-.theme-dark .resource-meter::-moz-progress-bar {
+.theme-dark .resource-meter-warn::-webkit-progress-value {
+  background: #fbbf24;
+}
+
+.theme-dark .resource-meter-danger::-webkit-progress-value {
+  background: #fb7185;
+}
+
+.theme-dark .resource-meter-safe::-moz-progress-bar {
   background: #34d399;
+}
+
+.theme-dark .resource-meter-warn::-moz-progress-bar {
+  background: #fbbf24;
+}
+
+.theme-dark .resource-meter-danger::-moz-progress-bar {
+  background: #fb7185;
 }
 
 /* 跟随系统时只在系统暗色偏好下应用同一组覆盖，保持选项语义清晰。 */
@@ -168,6 +511,30 @@ body {
     border-color: #475569;
   }
 
+  .theme-system .toast {
+    border-color: #334155;
+    background: rgba(15, 23, 42, 0.96);
+    color: #f8fafc;
+  }
+
+  .theme-system .toggle-track {
+    background: #475569;
+  }
+
+  .theme-system .toggle-input:checked + .toggle-track {
+    background: #10b981;
+  }
+
+  .theme-system .settings-muted-helper {
+    color: rgba(203, 213, 225, 0.62);
+  }
+
+  .theme-system .settings-warning-helper {
+    border-color: rgba(251, 191, 36, 0.36);
+    background: rgba(251, 191, 36, 0.12);
+    color: #fde68a;
+  }
+
   .theme-system .subscription-info-block {
     background: #1f2937;
     border-color: #334155;
@@ -181,11 +548,27 @@ body {
     background: #334155;
   }
 
-  .theme-system .resource-meter::-webkit-progress-value {
+  .theme-system .resource-meter-safe::-webkit-progress-value {
     background: #34d399;
   }
 
-  .theme-system .resource-meter::-moz-progress-bar {
+  .theme-system .resource-meter-warn::-webkit-progress-value {
+    background: #fbbf24;
+  }
+
+  .theme-system .resource-meter-danger::-webkit-progress-value {
+    background: #fb7185;
+  }
+
+  .theme-system .resource-meter-safe::-moz-progress-bar {
     background: #34d399;
+  }
+
+  .theme-system .resource-meter-warn::-moz-progress-bar {
+    background: #fbbf24;
+  }
+
+  .theme-system .resource-meter-danger::-moz-progress-bar {
+    background: #fb7185;
   }
 }

@@ -454,6 +454,86 @@ class WebUiConfigHotReloadCoordinatorTest {
     }
 
     /**
+     * 候选快照与旧快照完全一致时不得写盘或进入 runtime apply，避免空保存触发热重载。
+     */
+    @Test
+    fun `hot reload apply should skip persistence and runtime apply when candidate is unchanged`() = runBlocking {
+        var persistCalls = 0
+        var applyCalls = 0
+        val service = WebUiConfigHotReloadApplyService(
+            batchSaveService = WebUiConfigBatchSaveService(
+                prepareBiliConfig = { _, current -> PreparedBiliConfigWrite(config = current, result = saveResult("same-token")) },
+            ),
+            captureRuntimeSnapshot = { testRuntimeSnapshot() },
+            persistBiliConfig = {
+                persistCalls += 1
+                true
+            },
+            applyRuntime = {
+                applyCalls += 1
+                WebUiReloadPlan(restartRequired = false)
+            },
+        )
+
+        val job = service.apply("job-unchanged", batchWithBiliConfigToken("old-bili"))
+
+        assertEquals(WebUiConfigHotReloadPhase.APPLIED, job.phase)
+        assertTrue(job.files.isEmpty())
+        assertEquals(0, persistCalls)
+        assertEquals(0, applyCalls)
+        assertTrue(job.message.contains("unchanged"))
+    }
+
+    /**
+     * 多文件保存只应持久化和热重载真正变化的 owner，未变化文件不能被同批 payload 误带上。
+     */
+    @Test
+    fun `hot reload apply should persist and apply only effectively changed files`() = runBlocking {
+        var persistedBiliConfig = 0
+        var persistedBotConfig = 0
+        var appliedGeneration: RuntimeConfigGeneration? = null
+        val service = WebUiConfigHotReloadApplyService(
+            batchSaveService = WebUiConfigBatchSaveService(
+                prepareBiliConfig = { _, current -> PreparedBiliConfigWrite(config = current, result = saveResult("same-bili")) },
+                prepareBotConfig = { _, _ -> successPreparedBotConfig("changed-bot") },
+            ),
+            captureRuntimeSnapshot = { testRuntimeSnapshot() },
+            persistBiliConfig = {
+                persistedBiliConfig += 1
+                true
+            },
+            persistBotConfig = {
+                persistedBotConfig += 1
+                true
+            },
+            applyRuntime = { generation ->
+                appliedGeneration = generation
+                WebUiReloadPlan(restartRequired = false)
+            },
+        )
+
+        val job = service.apply(
+            "job-partial-change",
+            WebUiConfigBatchSaveRequestDto(
+                biliConfig = WebUiBiliConfigWriteRequestDto(snapshotToken = "old-bili"),
+                botConfig = WebUiBotConfigWriteRequestDto(
+                    snapshotToken = "old-bot",
+                    platformType = "ONEBOT11",
+                    adapter = "onebot11",
+                    oneBot11Host = "127.0.0.1",
+                    oneBot11Port = 3001,
+                ),
+            ),
+        )
+
+        assertEquals(WebUiConfigHotReloadPhase.APPLIED, job.phase)
+        assertEquals(listOf(WebUiConfigFileKind.BOT_CONFIG), job.files)
+        assertEquals(0, persistedBiliConfig)
+        assertEquals(1, persistedBotConfig)
+        assertEquals(setOf(WebUiConfigFileKind.BOT_CONFIG), appliedGeneration?.changedFiles)
+    }
+
+    /**
      * WebUI 监听地址变化的跳转地址由 runtime applier 判定，apply 服务必须把它透传给前端 job。
      */
     @Test
@@ -639,11 +719,11 @@ class WebUiConfigHotReloadCoordinatorTest {
     }
 
     /**
-     * 成功的 bot.yml prepare 返回候选对象，用于验证批量服务组装跨文件候选快照。
+     * 成功的 bot.yml prepare 返回有差异的候选对象，用于验证批量服务组装跨文件候选快照。
      */
     private fun successPreparedBotConfig(token: String): PreparedBotConfigWrite {
         return PreparedBotConfigWrite(
-            config = BotConfig(),
+            config = BotConfig(firstRunFlag = 2),
             result = saveResult(token),
         )
     }

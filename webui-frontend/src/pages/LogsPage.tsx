@@ -41,8 +41,8 @@ export function LogsPage() {
       <PageSection title="实时日志">
         <div className="grid min-h-0 gap-4">
           {/* 筛选控件统一撑满各自网格单元，避免桌面宽屏下输入框边界挤到后面的按钮列。 */}
-          <div className="grid w-full min-w-0 items-end gap-x-6 gap-y-3 md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto_auto_auto_auto]">
-            <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
+          <div data-log-filter-bar className="flex w-full min-w-0 flex-wrap items-end gap-3">
+            <label className="grid min-w-0 min-w-[10rem] flex-1 gap-1 text-xs font-medium text-slate-600">
               日志来源
               <select
                 aria-label="日志来源"
@@ -59,33 +59,36 @@ export function LogsPage() {
                 })}
               </select>
             </label>
-            <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
+            <label className="grid min-w-0 min-w-[8rem] flex-1 gap-1 text-xs font-medium text-slate-600">
               级别
               <select aria-label="级别" value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)} className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950">
                 <option value="all">全部</option>
                 {levels.map((level) => <option key={level} value={level}>{level}</option>)}
               </select>
             </label>
-            <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
+            <label className="grid min-w-0 min-w-[8rem] flex-1 gap-1 text-xs font-medium text-slate-600">
               模块
               <select aria-label="模块" value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)} className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950">
                 <option value="all">全部</option>
                 {modules.map((moduleName) => <option key={moduleName} value={moduleName}>{moduleName}</option>)}
               </select>
             </label>
-            <label className="grid min-w-0 gap-1 text-xs font-medium text-slate-600">
+            <label className="grid min-w-0 min-w-[12rem] flex-[1.4] gap-1 text-xs font-medium text-slate-600">
               搜索
               <input aria-label="搜索" value={keyword} onChange={(event) => setKeyword(event.target.value)} className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-950" />
             </label>
-            <label className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">
-              <input aria-label="自动刷新" type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
+            <label data-toggle-shell className="flex h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">
+              <input aria-label="自动刷新" type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} className="toggle-input" />
+              <span className="toggle-track" aria-hidden="true">
+                <span className="toggle-thumb" />
+              </span>
               自动刷新
             </label>
             <button type="button" onClick={() => void reloadWindow()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 whitespace-nowrap">刷新</button>
             <button type="button" onClick={() => exportFilteredRows()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 whitespace-nowrap">导出</button>
             <button type="button" onClick={() => void clearCurrentLog()} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 whitespace-nowrap">清空</button>
           </div>
-          <pre ref={logWindowRef} className="h-[calc(100vh-16rem)] min-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100 shadow-sm">
+          <pre ref={logWindowRef} className="log-container h-[calc(100vh-16rem)] min-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100 shadow-sm">
             {filteredRows.length > 0 ? filteredRows.map((row, index) => (
               <span key={`${row.raw}-${index}`} className="block">{renderLogRow(row.raw, row.level)}</span>
             )) : '暂无日志'}

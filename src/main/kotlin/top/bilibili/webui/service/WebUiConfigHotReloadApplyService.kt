@@ -57,26 +57,40 @@ class WebUiConfigHotReloadApplyService(
         request: WebUiConfigBatchSaveRequestDto,
     ): WebUiConfigHotReloadJobDto {
         val oldSnapshot = captureRuntimeSnapshot()
+        val requestedFiles = request.fileKinds()
         val preparedResult = batchSaveService.prepare(request, oldSnapshot.toWebUiConfigCandidateSnapshot())
         if (!preparedResult.success || preparedResult.prepared == null) {
             return failedJob(
                 jobId = jobId,
-                files = request.fileKinds(),
+                files = requestedFiles,
                 outcomes = preparedResult.outcomes,
                 message = preparedResult.outcomes.firstOrNull { outcome -> !outcome.result.success }?.result?.message
                     ?: "save validation failed",
             )
         }
 
-        val persistenceResult = persistCandidateBatch(request.fileKinds(), preparedResult.prepared.candidateSnapshot)
+        val candidateSnapshot = preparedResult.prepared.candidateSnapshot.toRuntimeConfigSnapshot()
+        val changedFiles = changedFileKinds(requestedFiles, oldSnapshot, candidateSnapshot)
+        if (changedFiles.isEmpty()) {
+            return WebUiConfigHotReloadJobDto(
+                jobId = jobId,
+                phase = WebUiConfigHotReloadPhase.APPLIED,
+                files = emptyList(),
+                outcomes = emptyList(),
+                message = "configuration unchanged; hot reload skipped",
+            )
+        }
+
+        val changedPrepareOutcomes = preparedResult.outcomes.filter { outcome -> outcome.file in changedFiles }
+        val persistenceResult = persistCandidateBatch(changedFiles, preparedResult.prepared.candidateSnapshot)
         if (!persistenceResult.success) {
             // 持久化失败时即使 persist-only 没污染内存，也显式恢复旧运行态来兜住 owner 实现差异。
             restoreRuntime(oldSnapshot)
             val rollbackSucceeded = rollbackPersistedFiles(persistenceResult.persistedFiles, oldSnapshot)
             return failedJob(
                 jobId = jobId,
-                files = request.fileKinds(),
-                outcomes = preparedResult.outcomes + persistenceResult.outcomes,
+                files = changedFiles,
+                outcomes = changedPrepareOutcomes + persistenceResult.outcomes,
                 message = rollbackAwareMessage(
                     baseMessage = persistenceResult.outcomes.first { outcome -> !outcome.result.success }.result.message,
                     rollbackSucceeded = rollbackSucceeded,
@@ -84,13 +98,12 @@ class WebUiConfigHotReloadApplyService(
             )
         }
 
-        val candidateSnapshot = preparedResult.prepared.candidateSnapshot.toRuntimeConfigSnapshot()
         val webUiPlan = runCatching {
             applyRuntime(
                 RuntimeConfigGeneration(
                     oldSnapshot = oldSnapshot,
                     candidateSnapshot = candidateSnapshot,
-                    changedFiles = request.fileKinds().toSet(),
+                    changedFiles = changedFiles.toSet(),
                 ),
             )
         }.getOrElse { error ->
@@ -99,8 +112,8 @@ class WebUiConfigHotReloadApplyService(
             val rollbackSucceeded = rollbackPersistedFiles(persistenceResult.persistedFiles, oldSnapshot)
             return failedJob(
                 jobId = jobId,
-                files = request.fileKinds(),
-                outcomes = preparedResult.outcomes + persistenceResult.outcomes,
+                files = changedFiles,
+                outcomes = changedPrepareOutcomes + persistenceResult.outcomes,
                 message = rollbackAwareMessage(
                     baseMessage = error.message ?: "config hot reload apply failed",
                     rollbackSucceeded = rollbackSucceeded,
@@ -110,11 +123,28 @@ class WebUiConfigHotReloadApplyService(
         return WebUiConfigHotReloadJobDto(
             jobId = jobId,
             phase = WebUiConfigHotReloadPhase.APPLIED,
-            files = request.fileKinds(),
-            outcomes = preparedResult.outcomes + persistenceResult.outcomes,
+            files = changedFiles,
+            outcomes = changedPrepareOutcomes + persistenceResult.outcomes,
             webUiRedirectUrl = webUiPlan.webUiRedirectUrl,
             message = "configuration saved and hot reloaded",
         )
+    }
+
+    /**
+     * 只把候选快照中真实变化的文件边界交给写盘和运行态 apply，避免等价保存造成热重载。
+     */
+    private fun changedFileKinds(
+        requestedFiles: List<WebUiConfigFileKind>,
+        oldSnapshot: RuntimeConfigSnapshot,
+        candidateSnapshot: RuntimeConfigSnapshot,
+    ): List<WebUiConfigFileKind> {
+        return requestedFiles.filter { file ->
+            when (file) {
+                WebUiConfigFileKind.BILI_CONFIG -> oldSnapshot.biliConfig != candidateSnapshot.biliConfig
+                WebUiConfigFileKind.BILI_DATA -> oldSnapshot.biliData != candidateSnapshot.biliData
+                WebUiConfigFileKind.BOT_CONFIG -> oldSnapshot.botConfig != candidateSnapshot.botConfig
+            }
+        }
     }
 
     /**

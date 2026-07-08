@@ -25,10 +25,8 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
   if (field.type === 'boolean') {
     return (
       <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex min-w-0 items-center justify-between gap-4">
-          <label htmlFor={id} className="min-w-0">
-            <span className="block text-sm font-medium text-slate-800">{field.label}</span>
-          </label>
+        <label data-toggle-shell className="flex min-w-0 items-center justify-between gap-4">
+          <span className="block min-w-0 text-sm font-medium text-slate-800">{field.label}</span>
           <input
             id={id}
             aria-label={field.label}
@@ -36,10 +34,13 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
             type="checkbox"
             checked={value === true}
             onChange={(event) => onChange(field.key, event.target.checked)}
-            className="h-5 w-5 rounded border-slate-300"
+            className="toggle-input"
           />
-        </div>
-        {description ? <p id={descriptionId} className="mt-2 break-words text-xs leading-5 text-slate-500">{description}</p> : null}
+          <span className="toggle-track" aria-hidden="true">
+            <span className="toggle-thumb" />
+          </span>
+        </label>
+        {description ? <FieldHelper id={descriptionId} fieldKey={field.key} description={description} /> : null}
       </div>
     )
   }
@@ -81,7 +82,30 @@ export function SettingsField({field, value, onChange}: SettingsFieldProps) {
           {...(field.type === 'number' ? numberAttributes : {})}
         />
       )}
-      {description ? <p id={descriptionId} className="mt-2 break-words text-xs leading-5 text-slate-500">{description}</p> : null}
+      {description ? <FieldHelper id={descriptionId} fieldKey={field.key} description={description} /> : null}
     </div>
   )
+}
+
+/**
+ * 字段说明按语义拆成普通辅助和警告提示，避免高风险说明混在灰色小字里。
+ */
+function FieldHelper({id, fieldKey, description}: {id: string | undefined, fieldKey: string, description: string}) {
+  const warning = isWarningDescription(fieldKey)
+  if (warning) {
+    return (
+      <p id={id} data-field-helper-tone="warning" className="settings-warning-helper">
+        <span className="settings-helper-icon" aria-hidden="true">!</span>
+        <span>{description}</span>
+      </p>
+    )
+  }
+  return <p id={id} data-field-helper-tone="muted" className="settings-muted-helper">{description}</p>
+}
+
+/**
+ * 当前只有平台类型说明具备明确“不推荐”语义，先按 key 白名单升级为警示条。
+ */
+function isWarningDescription(fieldKey: string): boolean {
+  return fieldKey === 'platform.type'
 }

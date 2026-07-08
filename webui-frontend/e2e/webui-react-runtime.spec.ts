@@ -158,6 +158,7 @@ test('shows mobile navigation, high-risk confirmation, and page content under a 
   await expect(page.getByRole('button', {name: '系统配置'})).toBeVisible()
   await page.getByRole('button', {name: '系统配置'}).click()
   await expect(page.getByRole('heading', {name: '系统配置'}).first()).toBeVisible()
+  await page.getByLabel('OneBot11 主机').fill('127.0.0.2')
   await page.getByRole('button', {name: '保存'}).click()
   await expect(page.getByRole('dialog', {name: '密码确认'})).toBeVisible()
   await expect(page.getByLabel('确认密码')).toBeVisible()

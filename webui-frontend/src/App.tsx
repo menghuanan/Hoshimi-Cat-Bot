@@ -1,5 +1,6 @@
 import { Shell } from './components/Shell'
 import { ConfirmationProvider } from './contexts/ConfirmationContext'
+import { ToastProvider } from './contexts/ToastContext'
 import { WebUiNavigationProvider } from './contexts/WebUiNavigationContext'
 import { useWebUiNavigation } from './hooks/useWebUiNavigation'
 import { DashboardPage } from './pages/DashboardPage'
@@ -33,11 +34,13 @@ function AppContent() {
  */
 function App() {
   return (
-    <ConfirmationProvider>
-      <WebUiNavigationProvider>
-        <AppContent />
-      </WebUiNavigationProvider>
-    </ConfirmationProvider>
+    <ToastProvider>
+      <ConfirmationProvider>
+        <WebUiNavigationProvider>
+          <AppContent />
+        </WebUiNavigationProvider>
+      </ConfirmationProvider>
+    </ToastProvider>
   )
 }
 

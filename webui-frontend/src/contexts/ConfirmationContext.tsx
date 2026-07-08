@@ -59,7 +59,7 @@ export function ConfirmationProvider({children}: {children: ReactNode}) {
       {children}
       {request ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 px-4 py-6"
+          className="modal-overlay fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
           role="presentation"
           onMouseDown={() => closeRequest('')}
         >
@@ -67,7 +67,7 @@ export function ConfirmationProvider({children}: {children: ReactNode}) {
             aria-modal="true"
             role="dialog"
             aria-labelledby="confirmation-title"
-            className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-2xl"
+            className="modal-panel w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-2xl"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <h2 id="confirmation-title" className="text-lg font-semibold text-zinc-950">

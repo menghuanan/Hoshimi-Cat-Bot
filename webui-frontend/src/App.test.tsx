@@ -151,6 +151,24 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * 右侧内容区承担页面切换动效，侧边栏保持独立不参与路由淡入。
+   */
+  it('wraps routed content in a transition surface without moving the sidebar', () => {
+    renderAtPath('/')
+
+    const routeSurface = document.querySelector('[data-route-transition]')
+    expect(routeSurface).not.toBeNull()
+    expect(routeSurface).toHaveClass('page-transition-surface')
+    expect(routeSurface).toHaveAttribute('data-route-page', 'home')
+    expect(document.querySelector('aside [data-route-transition]')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', {name: '系统配置'}))
+
+    expect(document.querySelector('[data-route-transition]')).toHaveAttribute('data-route-page', 'settings')
+    expect(screen.getByRole('button', {name: '系统配置'})).toHaveClass('nav-item-active')
+  })
+
+  /**
    * Ktor 直接服务 /settings、/subscriptions 和 /logs，React 路由也必须识别这些刷新入口。
    */
   it('renders protected direct path routes without requiring hash navigation', () => {
@@ -235,6 +253,25 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * 字段说明和布尔开关使用统一视觉层级，警告性质说明不能混在普通灰字里。
+   */
+  it('renders settings helper text and boolean fields with visual helper treatments', async () => {
+    renderAtPath('/#settings')
+
+    const platformWarning = await screen.findByText('当前 QQ 官方机器人没有做适配，不推荐使用。')
+    expect(platformWarning.closest('[data-field-helper-tone="warning"]')).not.toBeNull()
+    expect(platformWarning.closest('[data-field-helper-tone="warning"]')).toHaveClass('settings-warning-helper')
+
+    const tlsToggle = await screen.findByLabelText('启用 TLS')
+    expect(tlsToggle).toHaveClass('toggle-input')
+    expect(tlsToggle.closest('[data-toggle-shell]')).not.toBeNull()
+
+    const portHelper = await screen.findByText('填写 OneBot11 实际开放端口。')
+    expect(portHelper.closest('[data-field-helper-tone="muted"]')).not.toBeNull()
+    expect(portHelper.closest('[data-field-helper-tone="muted"]')).toHaveClass('settings-muted-helper')
+  })
+
+  /**
    * 配置保存必须把后端业务结果反馈给用户，不能把 success=false 的响应当成成功提交。
    */
   it('formats detailed settings save result messages from the backend response', () => {
@@ -303,7 +340,57 @@ describe('webui shell routing', () => {
     await user.click(screen.getByRole('button', {name: '确认'}))
 
     await waitFor(() => expect(screen.getByLabelText('关注分组')).toHaveValue('新分组'))
-    expect(await screen.findByText(/保存成功/)).toBeInTheDocument()
+    const toast = (await screen.findByText(/保存成功/)).closest('[data-toast]')
+    expect(toast).not.toBeNull()
+    expect(toast).toHaveClass('toast-success')
+    expect(toast?.parentElement).toHaveAttribute('data-toast-viewport', 'true')
+  })
+
+  /**
+   * 字段改回原值后不应进入高风险确认或批量保存，避免无有效变更也触发热重载。
+   */
+  it('skips settings save when edited values return to their original snapshot value', async () => {
+    const batchBodies: Array<Record<string, Record<string, unknown>>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {
+        onBatchBody: (body) => batchBodies.push(body),
+      })
+      if (settingsResponse) {
+        return settingsResponse
+      }
+      if (url.includes('/api/config/bili-config') && (!init || init.method === 'GET')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: 'bili-token', fields: []})}
+      }
+      if (url.includes('/api/config/bot') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            sourceFile: 'bot.yml',
+            snapshotToken: 'bot-token',
+            fields: [
+              {key: 'platform.onebot11.host', label: 'OneBot11 主机', value: '127.0.0.1', capability: 'EDITABLE', editable: true},
+            ],
+          }),
+        }
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+
+    const hostInput = await screen.findByLabelText('OneBot11 主机')
+    await user.clear(hostInput)
+    await user.type(hostInput, '127.0.0.2')
+    await user.clear(hostInput)
+    await user.type(hostInput, '127.0.0.1')
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(await screen.findByText('没有检测到配置变更')).toBeInTheDocument()
+    expect(screen.queryByLabelText('确认密码')).not.toBeInTheDocument()
+    expect(batchBodies).toHaveLength(0)
   })
 
   /**
@@ -479,6 +566,31 @@ describe('webui shell routing', () => {
     expect(screen.getByText('120G/256G')).toBeInTheDocument()
     expect(screen.queryByText('50%')).not.toBeInTheDocument()
     expect(document.querySelector('progress.resource-meter')?.getAttribute('style')).toBeNull()
+    expect(screen.getByLabelText('CPU')).toHaveClass('resource-meter-safe')
+    expect(screen.getByLabelText('内存')).toHaveClass('resource-meter-safe')
+    expect(screen.getByLabelText('存储')).toHaveClass('resource-meter-safe')
+  })
+
+  /**
+   * 资源进度条按阈值变色，并为数字滚动保留稳定显示节点。
+   */
+  it('classifies runtime resource meters by usage thresholds', async () => {
+    stubRuntimeSummary({
+      host: {
+        cpuUsagePercent: 59,
+        memory: {usagePercent: 75},
+        storage: {usedBytes: 900 * 1024 ** 3, totalBytes: 1000 * 1024 ** 3, usagePercent: 90},
+      },
+    })
+
+    renderAtPath('/')
+
+    expect(await screen.findByText('59.0%')).toHaveAttribute('data-count-up-value', '59')
+    expect(screen.getByText('75.0%')).toHaveAttribute('data-count-up-value', '75')
+    expect(screen.getByText('900G/1000G')).toHaveAttribute('data-count-up-value', '90')
+    expect(screen.getByLabelText('CPU')).toHaveClass('resource-meter-safe')
+    expect(screen.getByLabelText('内存')).toHaveClass('resource-meter-warn')
+    expect(screen.getByLabelText('存储')).toHaveClass('resource-meter-danger')
   })
 
   /**
@@ -655,6 +767,8 @@ describe('webui shell routing', () => {
     expect(screen.getByText(/0\.0\.0\.0/)).toBeInTheDocument()
     expect(screen.getByText(/对外暴露/)).toBeInTheDocument()
 
+    await user.clear(screen.getByLabelText('WebUI 端口'))
+    await user.type(screen.getByLabelText('WebUI 端口'), '18081')
     await user.click(screen.getByRole('button', {name: '保存'}))
     expect(await screen.findByRole('dialog', {name: '密码确认'})).toHaveTextContent(/0\.0\.0\.0/)
   })
@@ -1090,6 +1204,8 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('模块')).toBeInTheDocument()
     expect(screen.getByLabelText('搜索')).toBeInTheDocument()
     expect(screen.getByLabelText('自动刷新')).toBeInTheDocument()
+    expect(screen.getByLabelText('自动刷新')).toHaveClass('toggle-input')
+    expect(screen.getByLabelText('自动刷新').closest('[data-toggle-shell]')).not.toBeNull()
     expect(screen.getByRole('button', {name: '刷新'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '导出'})).toBeInTheDocument()
     expect(screen.getByRole('button', {name: '清空'})).toBeInTheDocument()
@@ -1099,6 +1215,8 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('搜索').parentElement).toHaveClass('min-w-0')
     const logWindow = document.querySelector('pre')
     expect(logWindow).not.toBeNull()
+    expect(logWindow).toHaveClass('log-container')
+    expect(logWindow?.parentElement?.querySelector('[data-log-filter-bar]')).not.toBeNull()
     await waitFor(() => expect((logWindow as HTMLPreElement).scrollTop).toBe(640))
   })
 
@@ -1188,6 +1306,8 @@ describe('webui shell routing', () => {
 
     await user.click(screen.getByRole('button', {name: '新增订阅'}))
     expect(screen.getByRole('dialog', {name: '新增订阅'})).toBeInTheDocument()
+    expect(screen.getByRole('dialog', {name: '新增订阅'})).toHaveClass('modal-panel')
+    expect(screen.getByRole('dialog', {name: '新增订阅'}).parentElement).toHaveClass('modal-overlay')
     expect(screen.queryByRole('button', {name: '关闭新增订阅'})).not.toBeInTheDocument()
     fireEvent.mouseDown(document.querySelector('div[role="presentation"]') as Element)
     expect(screen.getByRole('dialog', {name: '新增订阅'})).toBeInTheDocument()
@@ -1199,10 +1319,12 @@ describe('webui shell routing', () => {
 
     await user.click(screen.getByRole('button', {name: '编辑'}))
     expect(screen.getByRole('dialog', {name: '编辑订阅配置'})).toBeInTheDocument()
+    expect(screen.getByRole('dialog', {name: '编辑订阅配置'})).toHaveClass('modal-panel')
     const editorOverlay = document.querySelector('[data-subscription-editor-overlay]')
     const editorPanel = document.querySelector('[data-subscription-editor-panel]')
     expect(editorOverlay).not.toBeNull()
     expect(editorOverlay).toHaveClass('inset-0')
+    expect(editorOverlay).toHaveClass('modal-overlay')
     expect(editorOverlay).not.toHaveClass('lg:left-60')
     expect(editorPanel).not.toBeNull()
     const editorDialog = screen.getByRole('dialog', {name: '编辑订阅配置'})
@@ -1454,6 +1576,37 @@ describe('webui shell routing', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('UID必须是正整数')
     expect(screen.queryByRole('dialog', {name: '密码确认'})).not.toBeInTheDocument()
     expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/subscriptions') && init?.method === 'POST')).toBe(false)
+  })
+
+  /**
+   * 新增订阅成功后只通过全局 toast 反馈，避免页面局部散落弱提示。
+   */
+  it('shows subscription submission feedback through the toast system', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
+        return {ok: true, status: 200, json: async () => ({items: []})}
+      }
+      if (url.endsWith('/api/subscriptions') && init?.method === 'POST') {
+        return {ok: true, status: 200, json: async () => ({success: true})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+
+    renderAtPath('/#subscriptions')
+
+    await user.click(await screen.findByRole('button', {name: '新增订阅'}))
+    await user.type(screen.getByLabelText('UID'), '12345')
+    await user.type(screen.getByLabelText('目标群聊'), '10001')
+    await user.click(screen.getByRole('button', {name: '确认新增'}))
+    await user.type(await screen.findByLabelText('确认密码'), 'subscription-password')
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    const toast = (await screen.findByText('订阅已提交')).closest('[data-toast]')
+    expect(toast).not.toBeNull()
+    expect(toast).toHaveClass('toast-success')
+    expect(toast?.parentElement).toHaveAttribute('data-toast-viewport', 'true')
   })
 
   /**

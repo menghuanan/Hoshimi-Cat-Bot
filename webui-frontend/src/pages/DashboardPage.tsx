@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { PageSection } from '../components/PageSection'
 import { StatusCard } from '../components/StatusCard'
 import { useRuntimeSummary } from '../hooks/useRuntimeSummary'
@@ -65,6 +66,54 @@ function formatStorageUsage(usedBytes: number | null, totalBytes: number | null)
 }
 
 /**
+ * 资源数字只在目标值变化时滚动，首屏直接使用快照值避免加载阶段闪烁。
+ */
+function useCountUpValue(value: number | null) {
+  const target = Math.max(0, Math.min(100, value ?? 0))
+  const previousTargetRef = useRef(target)
+  const [displayValue, setDisplayValue] = useState(target)
+
+  useEffect(() => {
+    const previousTarget = previousTargetRef.current
+    if (previousTarget === target) {
+      setDisplayValue(target)
+      return undefined
+    }
+    const startedAt = window.performance.now()
+    const durationMs = 400
+    let frameId = 0
+    let finished = false
+    const finishTimer = window.setTimeout(() => {
+      finished = true
+      previousTargetRef.current = target
+      setDisplayValue(target)
+      window.cancelAnimationFrame(frameId)
+    }, durationMs + 30)
+    const step = (now: number) => {
+      if (finished) {
+        return
+      }
+      const progress = Math.min(1, (now - startedAt) / durationMs)
+      const eased = 1 - (1 - progress) ** 3
+      setDisplayValue(previousTarget + (target - previousTarget) * eased)
+      if (progress < 1) {
+        frameId = window.requestAnimationFrame(step)
+      } else {
+        window.clearTimeout(finishTimer)
+        previousTargetRef.current = target
+      }
+    }
+    frameId = window.requestAnimationFrame(step)
+    return () => {
+      window.clearTimeout(finishTimer)
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [target])
+
+  return displayValue
+}
+
+/**
  * 运行信息行保持左右两列，便于和旧 WebUI 的扫描密度对齐。
  */
 function MetricRow({label, value}: {label: string, value: string}) {
@@ -81,16 +130,27 @@ function MetricRow({label, value}: {label: string, value: string}) {
  */
 function ResourceMeter({label, value, detail}: {label: string, value: number | null, detail?: string}) {
   const width = Math.max(0, Math.min(100, value ?? 0))
-  const display = detail || (value === null ? '--' : `${Number.isInteger(value) ? value : value.toFixed(1)}%`)
+  const animatedValue = useCountUpValue(value)
+  const display = detail || (value === null ? '--' : `${animatedValue.toFixed(1)}%`)
+  const toneClass = resourceMeterToneClass(width)
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="font-medium text-slate-700">{label}</span>
-        <strong className="text-slate-950">{display}</strong>
+        <strong data-count-up-value={value === null ? undefined : String(width)} className="text-slate-950">{display}</strong>
       </div>
-      <progress className="resource-meter" max={100} value={width} aria-label={label} />
+      <progress className={`resource-meter ${toneClass}`} max={100} value={width} aria-label={label} />
     </div>
   )
+}
+
+/**
+ * 资源阈值颜色保持和运维直觉一致：正常绿色，接近风险黄色，高风险红色。
+ */
+function resourceMeterToneClass(value: number): string {
+  if (value > 85) return 'resource-meter-danger'
+  if (value >= 60) return 'resource-meter-warn'
+  return 'resource-meter-safe'
 }
 
 /**
