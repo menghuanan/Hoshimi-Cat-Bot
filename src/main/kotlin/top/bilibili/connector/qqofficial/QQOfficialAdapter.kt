@@ -105,6 +105,7 @@ internal class QQOfficialAdapter(
     private val heartbeatInFlight = AtomicBoolean(false)
     private val lastHeartbeatAckAtMillis = AtomicLong(0L)
     private val lastHeartbeatSentAtMillis = AtomicLong(0L)
+    private val heartbeatAckLogCounter = AtomicInteger(0)
 
     override val eventFlow: Flow<PlatformInboundMessage> = _eventFlow.asSharedFlow()
 
@@ -135,7 +136,7 @@ internal class QQOfficialAdapter(
      */
     override fun start() {
         if (!started.compareAndSet(false, true)) {
-            logger.info("QQ 官方适配器已在运行中，忽略重复启动")
+            logger.debug("QQ 官方适配器已在运行中，忽略重复启动")
             return
         }
         logger.info("正在启动 QQ 官方适配器")
@@ -149,7 +150,7 @@ internal class QQOfficialAdapter(
             runBlocking {
                 connectGateway(initialBootstrap = true)
             }
-            logger.info("QQ 官方适配器已完成首轮网关握手")
+            logger.info("QQ 官方适配器已启动并完成首轮网关握手")
             logTaskStates("启动后")
         } catch (throwable: Throwable) {
             started.set(false)
@@ -164,7 +165,7 @@ internal class QQOfficialAdapter(
      */
     override suspend fun stop() {
         if (!started.compareAndSet(true, false)) {
-            logger.info("QQ 官方适配器未运行，忽略停止请求")
+            logger.debug("QQ 官方适配器未运行，忽略停止请求")
             return
         }
         logger.info("正在停止 QQ 官方适配器")
@@ -195,7 +196,7 @@ internal class QQOfficialAdapter(
 
         return runCatching {
             val sendPlan = buildSendPlan(message)
-            logger.info(
+            logger.debug(
                 "QQ 官方准备发送消息：联系人={}，聊天类型={}，{}",
                 contact.toSubject(),
                 chatTypeLabel(contact.type),
@@ -227,7 +228,7 @@ internal class QQOfficialAdapter(
                     replyId = sendPlan.replyId,
                 )
                 if (sent) {
-                    logger.info("QQ 官方文本消息发送完成：联系人={}", contact.toSubject())
+                    logger.debug("QQ 官方文本消息发送完成：联系人={}", contact.toSubject())
                 }
                 return sent
             }
@@ -248,7 +249,7 @@ internal class QQOfficialAdapter(
                     replyId = sendPlan.replyId,
                 )
                 if (sent) {
-                    logger.info("QQ 官方降级文本消息发送完成：联系人={}", contact.toSubject())
+                    logger.debug("QQ 官方降级文本消息发送完成：联系人={}", contact.toSubject())
                 }
                 return sent
             }
@@ -266,7 +267,7 @@ internal class QQOfficialAdapter(
                 )
                 if (!sent) return false
             }
-            logger.info("QQ 官方富媒体消息发送完成：联系人={}，图片数量={}", contact.toSubject(), mediaUploads.size)
+            logger.debug("QQ 官方富媒体消息发送完成：联系人={}，图片数量={}", contact.toSubject(), mediaUploads.size)
             true
         }.onFailure {
             logger.error("QQ 官方发送失败：联系人={}，原因={}", contact.toSubject(), it.message, it)
@@ -354,7 +355,7 @@ internal class QQOfficialAdapter(
      * 启动时输出 QQ 官方配置摘要，只报告配置状态与运行约束，不记录密钥或访问令牌原文。
      */
     private fun logStartupConfiguration() {
-        logger.info(
+        logger.debug(
             "QQ 官方适配器启动参数：应用编号={}，应用密钥={}，机器人令牌={}，联系人缓存有效期={}毫秒，联系人缓存上限={}，机器人每分钟发送上限={}，单群每分钟发送上限={}，群聊被动回复窗口={}毫秒，私聊被动回复窗口={}毫秒，声明能力={}",
             credentialState(config.appId),
             credentialState(config.appSecret),
@@ -368,7 +369,7 @@ internal class QQOfficialAdapter(
             declaredCapabilities().joinToString("、") { capabilityLabel(it) },
         )
         if (config.botToken.isNotBlank()) {
-            logger.info("QQ 官方机器人令牌已配置；当前适配器仍使用应用编号和应用密钥获取访问令牌")
+            logger.debug("QQ 官方机器人令牌已配置；当前适配器仍使用应用编号和应用密钥获取访问令牌")
         }
     }
 
@@ -376,7 +377,7 @@ internal class QQOfficialAdapter(
      * 统一记录 QQ 官方内部协程任务状态，便于排查收帧、关闭监听、心跳和重连是否仍在运行。
      */
     private fun logTaskStates(stage: String) {
-        logger.info(
+        logger.debug(
             "QQ 官方任务状态[{}]：网关收帧={}，关闭监听={}，心跳={}，重连={}",
             stage,
             taskStateLabel(gatewayCollectJob),
@@ -484,12 +485,12 @@ internal class QQOfficialAdapter(
      */
     private suspend fun connectGateway(initialBootstrap: Boolean) {
         if (gatewayReconnectDisabled.get()) return
-        logger.info("QQ 官方正在建立网关连接：首次启动={}", booleanText(initialBootstrap))
+        logger.debug("QQ 官方正在建立网关连接：首次启动={}", booleanText(initialBootstrap))
         val gateway = fetchGateway()
         val token = currentAccessToken(forceRefresh = false)
         val newReadySignal = CompletableDeferred<Unit>()
         readySignal = newReadySignal
-        logger.info(
+        logger.debug(
             "QQ 官方正在打开网关会话：地址={}，分片数={}，剩余会话数={}，重置时间={}毫秒，并发上限={}",
             gateway.url,
             gateway.shards,
@@ -505,12 +506,12 @@ internal class QQOfficialAdapter(
         gatewaySession = session
         gatewayCollectJob?.cancelAndJoin()
         gatewayCollectJob = scope.launch {
-            logger.info("QQ 官方网关收帧任务已启动")
+            logger.debug("QQ 官方网关收帧任务已启动")
             try {
                 session.incoming.collect { text ->
                     handleGatewayFrame(text)
                 }
-                logger.info("QQ 官方网关收帧任务已结束：入站流已关闭")
+                logger.debug("QQ 官方网关收帧任务已结束：入站流已关闭")
             } catch (cancellation: CancellationException) {
                 logger.debug("QQ 官方网关收帧任务已取消")
                 throw cancellation
@@ -519,42 +520,47 @@ internal class QQOfficialAdapter(
                 logger.error("QQ 官方网关收帧任务异常退出，准备触发重连：{}", throwable.message, throwable)
                 requestReconnect()
             } finally {
-                logger.info("QQ 官方网关收帧任务已退出")
+                logger.debug("QQ 官方网关收帧任务已退出")
             }
         }
         gatewayCloseWatchJob?.cancelAndJoin()
         gatewayCloseWatchJob = scope.launch {
-            logger.info("QQ 官方网关关闭监听任务已启动")
+            logger.debug("QQ 官方网关关闭监听任务已启动")
             try {
                 val closeEvent = session.closeSignal.await()
                 if (!started.get()) return@launch
                 connected.set(false)
+                // 主动重连或停机造成的协程取消只保留 debug，避免把内部切换误报成连接异常。
+                if (closeEvent.failure is CancellationException) {
+                    logger.debug("QQ 官方网关会话已因内部切换关闭：{}", closeEvent.failure.message)
+                    return@launch
+                }
                 if (closeEvent.failure != null) {
                     logger.warn("QQ 官方网关连接异常断开：{}", closeEvent.failure.message, closeEvent.failure)
                 } else if (closeEvent.code != null) {
                     logger.warn("QQ 官方网关收到关闭帧：关闭码={}，原因={}", closeEvent.code, closeEvent.reason.orEmpty())
                 } else {
-                    logger.info("QQ 官方网关连接已关闭")
+                    logger.debug("QQ 官方网关连接已关闭")
                 }
                 handleGatewayClose(closeEvent)
             } catch (cancellation: CancellationException) {
                 logger.debug("QQ 官方网关关闭监听任务已取消")
                 throw cancellation
             } finally {
-                logger.info("QQ 官方网关关闭监听任务已退出")
+                logger.debug("QQ 官方网关关闭监听任务已退出")
             }
         }
         logTaskStates("网关会话已创建")
 
         try {
-            logger.info("QQ 官方网关握手等待中：超时=15000毫秒")
+            logger.debug("QQ 官方网关握手等待中：超时=15000毫秒")
             withTimeout(15_000) {
                 // 首轮或重连都必须等 READY/RESUMED，避免外层拿到一个尚未完成鉴权的会话。
                 newReadySignal.await()
             }
             reconnectAttempts.set(0)
             reconnectGuard.set(false)
-            logger.info("QQ 官方网关握手完成")
+            logger.debug("QQ 官方网关握手完成")
         } catch (throwable: Throwable) {
             session.close("网关握手超时")
             if (initialBootstrap) {
@@ -572,12 +578,15 @@ internal class QQOfficialAdapter(
      */
     private suspend fun handleGatewayFrame(text: String) {
         val frame = QQOfficialJson.decodeFromString<QQOfficialGatewayFrame>(text)
-        logger.debug(
-            "QQ 官方收到网关帧：操作码={}，事件类型={}，序号={}",
-            frame.op,
-            frame.t ?: "无",
-            frame.s ?: "无",
-        )
+        // 心跳 ACK 在 recordHeartbeatAck 中采样记录，避免 debug 模式下每轮心跳产生多条重复日志。
+        if (frame.op != QQ_OFFICIAL_GATEWAY_OP_HEARTBEAT_ACK) {
+            logger.debug(
+                "QQ 官方收到网关事件：操作码={}，事件类型={}，序号={}",
+                frame.op,
+                frame.t ?: "无",
+                frame.s ?: "无",
+            )
+        }
         when (frame.op) {
             0 -> {
                 if (handleDispatchFrame(frame)) {
@@ -594,7 +603,7 @@ internal class QQOfficialAdapter(
                 requestReconnect()
             }
             10 -> handleHelloFrame(frame.d)
-            11 -> recordHeartbeatAck()
+            QQ_OFFICIAL_GATEWAY_OP_HEARTBEAT_ACK -> recordHeartbeatAck()
             else -> logger.debug("忽略未处理的 QQ 官方网关操作码={}", frame.op)
         }
     }
@@ -605,7 +614,7 @@ internal class QQOfficialAdapter(
     private suspend fun handleHelloFrame(payload: JsonElement?) {
         val hello = payload?.let { QQOfficialJson.decodeFromJsonElement<QQOfficialHelloData>(it) } ?: QQOfficialHelloData()
         gatewayHeartbeatIntervalMillis = hello.heartbeatInterval.coerceAtLeast(1)
-        logger.info(
+        logger.debug(
             "QQ 官方收到网关问候：心跳间隔={}毫秒，后续动作={}",
             gatewayHeartbeatIntervalMillis,
             if (sessionId.isNullOrBlank()) "首次鉴权" else "会话续传",
@@ -783,7 +792,7 @@ internal class QQOfficialAdapter(
         if (shouldForwardInboundMessage(inbound)) {
             return recordInboundEvent(inbound)
         }
-        logger.debug(
+        logger.trace(
             "QQ 官方入站消息已在适配器层阻断：联系人={}，事件编号={}，消息编号={}",
             inbound.chatContact.toSubject(),
             inbound.eventId ?: "无",
@@ -846,7 +855,7 @@ internal class QQOfficialAdapter(
         val event = frame.d?.let { QQOfficialJson.decodeFromJsonElement<QQOfficialGroupManageEvent>(it) } ?: return false
         val groupOpenId = event.groupOpenId ?: return false
         val memberOpenId = event.memberOpenId ?: event.opMemberOpenId ?: return false
-        logger.info(
+        logger.debug(
             "QQ 官方群成员事件已处理：类型={}，群={}，成员={}，操作时间={}",
             frame.t ?: "无",
             groupOpenId,
@@ -863,7 +872,7 @@ internal class QQOfficialAdapter(
         val event = frame.d?.let {
             QQOfficialJson.decodeFromJsonElement<QQOfficialSubscribeMessageStatusEvent>(it)
         } ?: QQOfficialSubscribeMessageStatusEvent()
-        logger.info(
+        logger.debug(
             "QQ 官方订阅消息授权状态事件已记录：事件编号={}，用户={}，群={}，订阅={}，状态={}，操作时间={}",
             frame.id ?: "无",
             event.openid ?: event.userOpenId ?: "无",
@@ -892,8 +901,10 @@ internal class QQOfficialAdapter(
         heartbeatInFlight.set(false)
         lastHeartbeatAckAtMillis.set(currentTimeMillis())
         lastHeartbeatSentAtMillis.set(0L)
+        // 新会话的心跳采样从 0 重新计算，避免重连后第一轮健康状态被旧计数吞掉。
+        heartbeatAckLogCounter.set(0)
         heartbeatJob = scope.launch {
-            logger.info("QQ 官方心跳任务已启动：间隔={}毫秒", effectiveIntervalMillis)
+            logger.debug("QQ 官方心跳任务已启动：间隔={}毫秒", effectiveIntervalMillis)
             try {
                 while (started.get() && !gatewayReconnectDisabled.get()) {
                     val now = currentTimeMillis()
@@ -927,14 +938,13 @@ internal class QQOfficialAdapter(
                         requestReconnect()
                         return@launch
                     }
-                    logger.debug("QQ 官方心跳已发送：序号={}", lastSeq ?: "无")
                     delay(effectiveIntervalMillis.toLong())
                 }
             } catch (cancellation: CancellationException) {
                 logger.debug("QQ 官方心跳任务已取消")
                 throw cancellation
             } finally {
-                logger.info("QQ 官方心跳任务已退出")
+                logger.debug("QQ 官方心跳任务已退出")
             }
         }
         logTaskStates("心跳任务已启动")
@@ -945,7 +955,7 @@ internal class QQOfficialAdapter(
      */
     private suspend fun sendIdentify() {
         val token = currentAccessToken(forceRefresh = false)
-        logger.info("QQ 官方正在发送网关鉴权帧：监听意图=公域消息+群成员事件，分片=0/1")
+        logger.debug("QQ 官方正在发送网关鉴权帧：监听意图=公域消息+群成员事件，分片=0/1")
         val payload = buildJsonObject {
             put("op", 2)
             put("d", buildJsonObject {
@@ -970,7 +980,7 @@ internal class QQOfficialAdapter(
      */
     private suspend fun sendResume() {
         val token = currentAccessToken(forceRefresh = false)
-        logger.info("QQ 官方正在发送网关续传帧：会话标识已配置={}，序号={}", booleanText(!sessionId.isNullOrBlank()), lastSeq ?: "无")
+        logger.debug("QQ 官方正在发送网关续传帧：会话标识已配置={}，序号={}", booleanText(!sessionId.isNullOrBlank()), lastSeq ?: "无")
         val payload = buildJsonObject {
             put("op", 6)
             put("d", buildJsonObject {
@@ -989,11 +999,11 @@ internal class QQOfficialAdapter(
         val now = currentTimeMillis()
         val cached = accessToken
         if (!forceRefresh && cached != null && now < accessTokenExpireAtMillis) {
-            logger.debug("QQ 官方复用缓存访问令牌：距离刷新还有{}毫秒", accessTokenExpireAtMillis - now)
+            logger.trace("QQ 官方复用缓存访问令牌：距离刷新还有{}毫秒", accessTokenExpireAtMillis - now)
             return cached
         }
 
-        logger.info("QQ 官方正在刷新访问令牌：原因={}", if (forceRefresh) "强制刷新" else "首次获取或即将过期")
+        logger.debug("QQ 官方正在刷新访问令牌：原因={}", if (forceRefresh) "强制刷新" else "首次获取或即将过期")
         val response = transport.postJson(
             url = QQ_OFFICIAL_TOKEN_URL,
             body = buildJsonObject {
@@ -1021,11 +1031,11 @@ internal class QQOfficialAdapter(
      * 读取网关接入点，确保启动时能明确知道握手目标而不是静默降级。
      */
     private suspend fun fetchGateway(): QQOfficialGatewayResponse {
-        logger.info("QQ 官方正在获取网关接入信息")
+        logger.debug("QQ 官方正在获取网关接入信息")
         val response = authenticatedGetJson("$QQ_OFFICIAL_API_BASE/gateway/bot")
         val gateway = QQOfficialJson.decodeFromJsonElement<QQOfficialGatewayResponse>(response)
         check(gateway.url.isNotBlank()) { "QQ 官方网关接入信息返回为空" }
-        logger.info(
+        logger.debug(
             "QQ 官方网关接入信息已获取：地址={}，分片数={}，剩余会话数={}，重置时间={}毫秒，并发上限={}",
             gateway.url,
             gateway.shards,
@@ -1067,7 +1077,7 @@ internal class QQOfficialAdapter(
      */
     private suspend fun resolveMediaUploads(images: List<ImageSource>): List<QQOfficialMediaUploadSource> {
         val uploads = images.mapNotNull { source -> resolveMediaUpload(source) }
-        logger.debug("QQ 官方图片上传来源解析完成：请求数量={}，可上传数量={}", images.size, uploads.size)
+        logger.trace("QQ 官方图片上传来源解析完成：请求数量={}，可上传数量={}", images.size, uploads.size)
         return uploads
     }
 
@@ -1116,7 +1126,7 @@ internal class QQOfficialAdapter(
             },
         )
         val media = QQOfficialJson.decodeFromJsonElement<QQOfficialMedia>(response)
-        logger.info(
+        logger.debug(
             "QQ 官方富媒体上传完成：联系人={}，文件信息已返回={}，有效期={}秒",
             contact.toSubject(),
             booleanText(media.fileInfo.isNotBlank()),
@@ -1289,7 +1299,7 @@ internal class QQOfficialAdapter(
             reachableContacts[subject] = now
             enforceReachableContactLimitLocked()
         }
-        logger.info("QQ 官方联系人已标记为可达：联系人={}，聊天类型={}", subject, chatTypeLabel(contact.type))
+        logger.debug("QQ 官方联系人已标记为可达：联系人={}，聊天类型={}", subject, chatTypeLabel(contact.type))
     }
 
     /**
@@ -1308,7 +1318,7 @@ internal class QQOfficialAdapter(
             passiveReplyDeadlines[subject] = now + windowMillis
             enforceReachableContactLimitLocked()
         }
-        logger.debug("QQ 官方被动回复窗口已刷新：联系人={}，有效期={}毫秒", subject, windowMillis)
+        logger.trace("QQ 官方被动回复窗口已刷新：联系人={}，有效期={}毫秒", subject, windowMillis)
     }
 
     /**
@@ -1334,7 +1344,7 @@ internal class QQOfficialAdapter(
             reachableContacts.clear()
             passiveReplyDeadlines.clear()
             groupRateLimiters.clear()
-            logger.info(
+            logger.debug(
                 "QQ 官方联系人运行态缓存已清空：可达联系人={}，被动回复窗口={}，群限流器={}",
                 reachableCount,
                 passiveWindowCount,
@@ -1454,7 +1464,7 @@ internal class QQOfficialAdapter(
             }
             botRateLimiter.acquire(now)
             groupLimiter?.acquire(now)
-            logger.debug("QQ 官方发送限额已消耗：联系人={}，聊天类型={}", contact.toSubject(), chatTypeLabel(contact.type))
+            logger.trace("QQ 官方发送限额已消耗：联系人={}，聊天类型={}", contact.toSubject(), chatTypeLabel(contact.type))
             true
         }
     }
@@ -1470,7 +1480,7 @@ internal class QQOfficialAdapter(
             val oldestMessageId = replyMsgSeqByMessageId.entries.firstOrNull()?.key ?: break
             replyMsgSeqByMessageId.remove(oldestMessageId)
         }
-        logger.debug("QQ 官方回复序号已分配：消息编号={}，序号={}", messageId, next)
+        logger.trace("QQ 官方回复序号已分配：消息编号={}，序号={}", messageId, next)
         next
     }
 
@@ -1481,7 +1491,7 @@ internal class QQOfficialAdapter(
         replyMsgSeqMutex.withLock {
             val cachedCount = replyMsgSeqByMessageId.size
             replyMsgSeqByMessageId.clear()
-            logger.info("QQ 官方回复序号缓存已清空：条目数={}", cachedCount)
+            logger.debug("QQ 官方回复序号缓存已清空：条目数={}", cachedCount)
         }
     }
 
@@ -1491,7 +1501,7 @@ internal class QQOfficialAdapter(
     private fun recordInboundEvent(inbound: PlatformInboundMessage): Boolean {
         if (_eventFlow.tryEmit(inbound)) {
             inboundPressureActive.set(false)
-            logger.debug(
+            logger.trace(
                 "QQ 官方入站事件已投递：联系人={}，发送者={}，事件编号={}，消息编号={}",
                 inbound.chatContact.toSubject(),
                 inbound.senderContact.toSubject(),
@@ -1512,24 +1522,27 @@ internal class QQOfficialAdapter(
     private fun commitSeq(frame: QQOfficialGatewayFrame) {
         frame.s?.let {
             lastSeq = it
-            logger.debug("QQ 官方网关序号已提交：序号={}", it)
+            logger.trace("QQ 官方网关序号已提交：序号={}", it)
         }
     }
 
     /**
-     * 收到 op=11 后确认上一轮心跳健康，供下一轮心跳继续发送。
+     * 收到 op=11 后确认上一轮心跳健康，供下一轮心跳继续发送，并只采样记录健康日志。
      */
     private fun recordHeartbeatAck() {
         heartbeatInFlight.set(false)
         lastHeartbeatAckAtMillis.set(currentTimeMillis())
-        logger.debug("QQ 官方已收到心跳确认")
+        val ackCount = heartbeatAckLogCounter.incrementAndGet()
+        if (ackCount == 1 || ackCount % HEARTBEAT_ACK_DEBUG_SAMPLE_INTERVAL == 0) {
+            logger.debug("QQ 官方心跳保持正常：已确认次数={}，当前序号={}", ackCount, lastSeq ?: "无")
+        }
     }
 
     /**
      * 按 QQ 官方 close code 区分 resume、identify 与不可恢复的停止重连状态。
      */
     private fun handleGatewayClose(closeEvent: QQOfficialGatewayClose) {
-        logger.info(
+        logger.debug(
             "QQ 官方正在处理网关关闭事件：关闭码={}，原因={}，异常={}",
             closeEvent.code ?: "无",
             closeEvent.reason ?: "无",
@@ -1592,16 +1605,16 @@ internal class QQOfficialAdapter(
             logger.debug("QQ 官方跳过重连调度：重连任务已在运行")
             return
         }
-        logger.info("QQ 官方已调度网关重连任务")
+        logger.debug("QQ 官方已调度网关重连任务")
         reconnectJob = scope.launch {
-            logger.info("QQ 官方网关重连任务已启动")
+            logger.debug("QQ 官方网关重连任务已启动")
             try {
                 runReconnectLoop()
             } catch (cancellation: CancellationException) {
                 logger.debug("QQ 官方网关重连任务已取消")
                 throw cancellation
             } finally {
-                logger.info("QQ 官方网关重连任务已退出")
+                logger.debug("QQ 官方网关重连任务已退出")
             }
         }
         logTaskStates("重连任务已调度")
@@ -1613,14 +1626,13 @@ internal class QQOfficialAdapter(
     private suspend fun runReconnectLoop() {
         while (started.get() && reconnectGuard.get() && !gatewayReconnectDisabled.get()) {
             val attempt = reconnectAttempts.incrementAndGet()
-            // 先停掉旧代际的心跳和收帧协程，避免新旧连接并发写同一份 session 状态。
-            logger.info("QQ 官方网关准备第{}次重连", attempt)
+            val backoffDelay = reconnectBackoffPolicy.nextDelayMillis(attempt)
+            logger.info("QQ 官方网关准备重连：尝试次数={}，等待={}毫秒", attempt, backoffDelay)
             logTaskStates("重连前")
+            // 先停掉旧代际的心跳和收帧协程，避免新旧连接并发写同一份 session 状态。
             heartbeatJob?.cancelAndJoin()
             gatewayCollectJob?.cancelAndJoin()
             gatewaySession?.close("重连")
-            val backoffDelay = reconnectBackoffPolicy.nextDelayMillis(attempt)
-            logger.info("QQ 官方网关将在{}毫秒后重连", backoffDelay)
             delay(backoffDelay)
             val connectedNow = runCatching {
                 connectGateway(initialBootstrap = false)
@@ -1636,7 +1648,7 @@ internal class QQOfficialAdapter(
                 return
             }
         }
-        logger.info(
+        logger.debug(
             "QQ 官方网关重连循环已结束：适配器运行={}，需要重连={}，自动重连禁用={}",
             booleanText(started.get()),
             booleanText(reconnectGuard.get()),
@@ -1672,6 +1684,9 @@ internal class QQOfficialAdapter(
         internal const val DEFAULT_GROUP_PASSIVE_REPLY_WINDOW_MILLIS: Long = 5L * 60L * 1000L
         internal const val DEFAULT_PRIVATE_PASSIVE_REPLY_WINDOW_MILLIS: Long = 60L * 60L * 1000L
         internal const val ACCESS_TOKEN_REFRESH_LEEWAY_MILLIS: Long = 60L * 1000L
+        // 高频心跳 ACK 只按固定间隔采样写 debug，保留健康证据但避免 debug 日志刷屏。
+        private const val QQ_OFFICIAL_GATEWAY_OP_HEARTBEAT_ACK: Int = 11
+        private const val HEARTBEAT_ACK_DEBUG_SAMPLE_INTERVAL: Int = 10
         private const val QQ_OFFICIAL_TEXT_MESSAGE_TYPE: Int = 0
         private const val QQ_OFFICIAL_MEDIA_MESSAGE_TYPE: Int = 7
         private const val QQ_OFFICIAL_IMAGE_FILE_TYPE: Int = 1

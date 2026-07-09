@@ -731,29 +731,37 @@ class QQOfficialAdapterTest {
     }
 
     // 回归保护 QQ 官方关键日志覆盖点，避免后续改动只保留故障日志而丢失任务状态。
+    // 同时约束高频路径保留采样或 trace 诊断，不再回到逐帧 debug 或内部任务 INFO。
     @Test
-    fun `qq official adapter should keep Chinese logs for platform and task states`() {
+    fun `qq official adapter should keep Chinese diagnostics without noisy heartbeat logs`() {
         val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
 
         listOf(
             "QQ 官方适配器启动参数",
             "QQ 官方任务状态",
-            "QQ 官方网关收帧任务已启动",
-            "QQ 官方网关关闭监听任务已启动",
-            "QQ 官方心跳任务已启动",
-            "QQ 官方网关重连任务已启动",
+            "QQ 官方网关就绪",
+            "QQ 官方网关已恢复会话",
+            "QQ 官方心跳保持正常",
+            "QQ 官方网关准备重连",
+            "QQ 官方网关重连成功",
             "QQ 官方准备发送消息",
+            "QQ 官方发送失败",
             "QQ 官方访问令牌已刷新",
             "QQ 官方开放接口鉴权失败，已刷新访问令牌后重试",
             "QQ 官方联系人已标记为可达",
             "QQ 官方发送限额不足",
-            "QQ 官方入站事件已投递",
+            "QQ 官方入站事件背压触发",
             "QQ 官方群成员事件已处理",
             "QQ 官方订阅消息授权状态事件已记录",
         ).forEach { expectedLog ->
             assertTrue(source.contains(expectedLog), "missing QQ Official Chinese log: $expectedLog")
         }
         listOf(
+            "QQ 官方收到网关帧",
+            "QQ 官方心跳已发送",
+            "QQ 官方已收到心跳确认",
+            "QQ 官方网关将在",
+            "QQ 官方网关准备第",
             "QQ Official does not support @全体",
             "qpm guard",
             "READY: self",
@@ -762,6 +770,16 @@ class QQOfficialAdapterTest {
             "app_id 或 app_secret",
         ).forEach { legacyLog ->
             assertFalse(source.contains(legacyLog), "legacy QQ Official log should stay replaced: $legacyLog")
+        }
+        listOf(
+            Regex("""logger\.info\(\s*"QQ 官方任务状态"""),
+            Regex("""logger\.info\(\s*"QQ 官方准备发送消息"""),
+            Regex("""logger\.info\(\s*"QQ 官方网关收帧任务已启动"""),
+            Regex("""logger\.info\(\s*"QQ 官方网关关闭监听任务已启动"""),
+            Regex("""logger\.info\(\s*"QQ 官方心跳任务已启动"""),
+            Regex("""logger\.info\(\s*"QQ 官方网关重连任务已启动"""),
+        ).forEach { noisyInfoLog ->
+            assertFalse(noisyInfoLog.containsMatchIn(source), "noisy QQ Official log should not stay at info: $noisyInfoLog")
         }
     }
 
@@ -1330,7 +1348,11 @@ class QQOfficialAdapterTest {
     ) : QQOfficialGatewaySession {
         private val incomingFlow = MutableSharedFlow<String>(replay = 16, extraBufferCapacity = 16)
         private val closed = CompletableDeferred<QQOfficialGatewayClose>()
-        val sentTexts = mutableListOf<JsonElement>()
+        private val sentTextLock = Any()
+        private val sentTextBuffer = mutableListOf<JsonElement>()
+        val sentTexts: List<JsonElement>
+            // 测试会在心跳协程追加出站帧时轮询读取，暴露快照可避免遍历期间并发修改。
+            get() = synchronized(sentTextLock) { sentTextBuffer.toList() }
 
         init {
             bootstrapFrames.forEach { frame ->
@@ -1343,7 +1365,9 @@ class QQOfficialAdapterTest {
 
         override suspend fun sendText(text: String) {
             val payload = json.parseToJsonElement(text)
-            sentTexts += payload
+            synchronized(sentTextLock) {
+                sentTextBuffer += payload
+            }
             // 在 sendText 返回前注入 ACK，复现真实网关快速响应时的状态顺序。
             if (ackHeartbeatDuringSend && payload.jsonObject["op"]?.jsonPrimitive?.content == "1") {
                 incomingFlow.emit(heartbeatAckFrame())
