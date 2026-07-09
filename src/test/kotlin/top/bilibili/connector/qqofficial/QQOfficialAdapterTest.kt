@@ -308,6 +308,70 @@ class QQOfficialAdapterTest {
         }
     }
 
+    // 验证群聊图片-only 富媒体会补齐官方必需的 content 字段。
+    @Test
+    fun `group rich media without text should include official content placeholder`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+
+            assertTrue(
+                adapter.sendMessage(
+                    groupContact,
+                    listOf(OutgoingPart.image("https://example.com/only-image.png")),
+                ),
+            )
+
+            val sendRequest = transport.requests.last { it.url.endsWith("/v2/groups/group_openid_demo/messages") }
+
+            assertEquals(7, sendRequest.body!!.jsonObject["msg_type"]!!.jsonPrimitive.content.toInt())
+            assertEquals(" ", sendRequest.body!!.jsonObject["content"]!!.jsonPrimitive.content)
+            assertEquals("file-info-demo", sendRequest.body!!.jsonObject["media"]!!.jsonObject["file_info"]!!.jsonPrimitive.content)
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    // 验证 OneBot 风格图片来源在 QQ 官方 adapter 内转换为 file_data 上传。
+    @Test
+    fun `onebot style file and base64 image sources should upload as file data`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+        val tempImage = Files.createTempFile("qq-official-onebot-style", ".png")
+        val localBytes = byteArrayOf(9, 8, 7, 6)
+        val base64Payload = Base64.getEncoder().encodeToString(byteArrayOf(5, 4, 3, 2))
+        Files.write(tempImage, localBytes)
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+
+            assertTrue(
+                adapter.sendMessage(
+                    groupContact,
+                    listOf(
+                        OutgoingPart.image(tempImage.toUri().toString()),
+                        OutgoingPart.image("base64://$base64Payload"),
+                    ),
+                ),
+            )
+
+            val uploadRequests = transport.requests.filter { it.url.endsWith("/v2/groups/group_openid_demo/files") }
+
+            assertEquals(2, uploadRequests.size)
+            assertEquals(Base64.getEncoder().encodeToString(localBytes), uploadRequests[0].body!!.jsonObject["file_data"]!!.jsonPrimitive.content)
+            assertEquals(base64Payload, uploadRequests[1].body!!.jsonObject["file_data"]!!.jsonPrimitive.content)
+        } finally {
+            Files.deleteIfExists(tempImage)
+            stopAdapter(adapter)
+        }
+    }
+
     @Test
     fun `capability query should expose direct send image reply and atall support`() = runBlocking {
         val transport = FakeTransport()

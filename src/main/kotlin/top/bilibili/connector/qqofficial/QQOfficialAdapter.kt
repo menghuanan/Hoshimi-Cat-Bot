@@ -219,7 +219,13 @@ internal class QQOfficialAdapter(
                     logger.warn("QQ 官方发送计划为空，跳过发送：联系人={}", contact.toSubject())
                     return false
                 }
-                val sent = postMessage(contact, msgType = 0, content = sendPlan.content, media = null, replyId = sendPlan.replyId)
+                val sent = postMessage(
+                    contact,
+                    msgType = QQ_OFFICIAL_TEXT_MESSAGE_TYPE,
+                    content = sendPlan.content,
+                    media = null,
+                    replyId = sendPlan.replyId,
+                )
                 if (sent) {
                     logger.info("QQ 官方文本消息发送完成：联系人={}", contact.toSubject())
                 }
@@ -234,7 +240,13 @@ internal class QQOfficialAdapter(
                 }
                 // 图片上传前解析失败时只降级为文本，避免构造缺少 media 的富媒体请求。
                 logger.warn("QQ 官方平台图片解析失败，已降级为纯文本发送：{}", contact.toSubject())
-                val sent = postMessage(contact, msgType = 0, content = sendPlan.content, media = null, replyId = sendPlan.replyId)
+                val sent = postMessage(
+                    contact,
+                    msgType = QQ_OFFICIAL_TEXT_MESSAGE_TYPE,
+                    content = sendPlan.content,
+                    media = null,
+                    replyId = sendPlan.replyId,
+                )
                 if (sent) {
                     logger.info("QQ 官方降级文本消息发送完成：联系人={}", contact.toSubject())
                 }
@@ -247,7 +259,7 @@ internal class QQOfficialAdapter(
                 val content = if (index == 0) sendPlan.content else ""
                 val sent = postMessage(
                     contact = contact,
-                    msgType = 7,
+                    msgType = QQ_OFFICIAL_MEDIA_MESSAGE_TYPE,
                     content = content,
                     media = media,
                     replyId = if (index == 0) sendPlan.replyId else null,
@@ -1017,6 +1029,12 @@ internal class QQOfficialAdapter(
         if (resolvedUrl.startsWith("http://") || resolvedUrl.startsWith("https://")) {
             return QQOfficialMediaUploadSource.Url(resolvedUrl)
         }
+        extractBase64SchemePayload(resolvedUrl)?.let { payload ->
+            return QQOfficialMediaUploadSource.FileData(payload)
+        }
+        if (resolvedUrl.startsWith("file://", ignoreCase = true)) {
+            return encodeLocalFileAsBase64(resolvedUrl)?.let(QQOfficialMediaUploadSource::FileData)
+        }
         return when (source) {
             is ImageSource.RemoteUrl -> {
                 logger.warn("QQ 官方远程图片地址无法用于上传：地址不是公网 HTTP/HTTPS")
@@ -1039,7 +1057,7 @@ internal class QQOfficialAdapter(
         val response = authenticatedPostJson(
             url = filesUrl(contact),
             body = buildJsonObject {
-                put("file_type", 1)
+                put("file_type", QQ_OFFICIAL_IMAGE_FILE_TYPE)
                 when (source) {
                     is QQOfficialMediaUploadSource.Url -> put("url", source.url)
                     is QQOfficialMediaUploadSource.FileData -> put("file_data", source.fileData)
@@ -1072,11 +1090,12 @@ internal class QQOfficialAdapter(
             return false
         }
         val replySeq = replyId?.takeIf { it.isNotBlank() }?.let { nextReplyMsgSeq(it) }
+        val officialContent = resolveOfficialMessageContent(contact, msgType, content)
         logger.debug(
             "QQ 官方正在提交消息请求：联系人={}，消息类型={}，文本长度={}，回复={}，富媒体={}",
             contact.toSubject(),
             messageTypeLabel(msgType),
-            content.length,
+            officialContent?.length ?: 0,
             booleanText(!replyId.isNullOrBlank()),
             booleanText(media != null),
         )
@@ -1084,8 +1103,8 @@ internal class QQOfficialAdapter(
             url = messagesUrl(contact),
             body = buildJsonObject {
                 put("msg_type", msgType)
-                if (content.isNotBlank()) {
-                    put("content", content)
+                if (!officialContent.isNullOrEmpty()) {
+                    put("content", officialContent)
                 }
                 if (!replyId.isNullOrBlank()) {
                     put("msg_id", replyId)
@@ -1098,6 +1117,17 @@ internal class QQOfficialAdapter(
         )
         logger.debug("QQ 官方消息请求提交成功：联系人={}，消息类型={}", contact.toSubject(), messageTypeLabel(msgType))
         return true
+    }
+
+    /**
+     * 群聊富媒体接口要求 content 字段存在，图片-only 消息用单个空白字符满足协议而不污染业务模型。
+     */
+    private fun resolveOfficialMessageContent(contact: PlatformContact, msgType: Int, content: String): String? {
+        if (content.isNotBlank()) return content
+        if (contact.type == PlatformChatType.GROUP && msgType == QQ_OFFICIAL_MEDIA_MESSAGE_TYPE) {
+            return QQ_OFFICIAL_GROUP_MEDIA_EMPTY_CONTENT
+        }
+        return null
     }
 
     /**
@@ -1161,11 +1191,21 @@ internal class QQOfficialAdapter(
      * 兼容普通本地路径与 file:// URL，避免调用方需要先自行转换路径格式。
      */
     private fun resolveLocalImagePath(path: String): Path {
-        return if (path.startsWith("file://")) {
+        return if (path.startsWith("file://", ignoreCase = true)) {
             Path.of(URI(path))
         } else {
             Path.of(path)
         }
+    }
+
+    /**
+     * 兼容 OneBot 风格 base64:// 图片来源，在 QQ 官方 adapter 内部直接转为 file_data。
+     */
+    private fun extractBase64SchemePayload(value: String): String? {
+        val schemeSeparator = value.indexOf("://")
+        if (schemeSeparator <= 0) return null
+        if (!value.substring(0, schemeSeparator).equals("base64", ignoreCase = true)) return null
+        return value.substring(schemeSeparator + 3).takeIf { it.isNotBlank() }
     }
 
     /**
@@ -1582,6 +1622,10 @@ internal class QQOfficialAdapter(
         internal const val DEFAULT_GROUP_PASSIVE_REPLY_WINDOW_MILLIS: Long = 5L * 60L * 1000L
         internal const val DEFAULT_PRIVATE_PASSIVE_REPLY_WINDOW_MILLIS: Long = 60L * 60L * 1000L
         internal const val ACCESS_TOKEN_REFRESH_LEEWAY_MILLIS: Long = 60L * 1000L
+        private const val QQ_OFFICIAL_TEXT_MESSAGE_TYPE: Int = 0
+        private const val QQ_OFFICIAL_MEDIA_MESSAGE_TYPE: Int = 7
+        private const val QQ_OFFICIAL_IMAGE_FILE_TYPE: Int = 1
+        private const val QQ_OFFICIAL_GROUP_MEDIA_EMPTY_CONTENT: String = " "
         private const val DEFAULT_REPLY_SEQ_CACHE_MAX_SIZE: Int = 10_000
     }
 }
