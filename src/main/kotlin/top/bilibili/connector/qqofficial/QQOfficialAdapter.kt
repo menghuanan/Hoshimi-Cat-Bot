@@ -802,11 +802,14 @@ internal class QQOfficialAdapter(
     }
 
     /**
-     * 先保留精确 `/login`，再阻断其他斜杠命令；非命令文本只有命中 B 站链接预筛时才继续下传。
+     * 精确 `/login` 仅在私聊或群 AT 场景下放行；其他斜杠命令继续阻断，非命令文本只有命中 B 站链接预筛时才继续下传。
      */
     private fun shouldForwardInboundMessage(inbound: PlatformInboundMessage): Boolean {
         val normalizedText = inbound.messageText.trim()
-        if (normalizedText == QQ_OFFICIAL_ALLOWED_LOGIN_COMMAND) return true
+        if (normalizedText == QQ_OFFICIAL_ALLOWED_LOGIN_COMMAND) {
+            // 群聊登录命令必须来自 AT 事件；私聊没有 AT 语义，保留直接登录入口。
+            return inbound.chatType == PlatformChatType.PRIVATE || inbound.hasMention
+        }
         if (normalizedText.startsWith("/")) return false
         return inbound.searchTexts.any(::containsBilibiliLinkCandidate)
     }

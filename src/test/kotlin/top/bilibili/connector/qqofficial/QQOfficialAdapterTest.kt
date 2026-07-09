@@ -103,7 +103,12 @@ class QQOfficialAdapterTest {
 
             // 让 SharedFlow 收集协程先完成订阅，避免测试线程比收集线程更早发出事件。
             delay(10)
-            transport.emitGatewayText(groupMessageFrame(eventType = "GROUP_MESSAGE_CREATE", content = "/login"))
+            transport.emitGatewayText(
+                groupMessageFrame(
+                    eventType = "GROUP_MESSAGE_CREATE",
+                    content = "看这个 https://www.bilibili.com/video/BV1xx411c7mD",
+                ),
+            )
             transport.emitGatewayText(
                 groupMessageFrame(
                     eventType = "GROUP_AT_MESSAGE_CREATE",
@@ -129,8 +134,8 @@ class QQOfficialAdapterTest {
             assertEquals("group_openid_demo", groupEvent.metadata["group_openid"])
             assertEquals("member_openid_demo", groupEvent.metadata["member_openid"])
             assertFalse(groupEvent.metadata.containsKey("user_openid"))
-            assertEquals("/login", groupEvent.messageText)
-            assertEquals(listOf("/login"), groupEvent.searchTexts)
+            assertEquals("看这个 https://www.bilibili.com/video/BV1xx411c7mD", groupEvent.messageText)
+            assertEquals(listOf("看这个 https://www.bilibili.com/video/BV1xx411c7mD"), groupEvent.searchTexts)
             assertFalse(groupEvent.hasMention)
 
             val groupAtEvent = events[1]
@@ -165,7 +170,7 @@ class QQOfficialAdapterTest {
                 adapter.eventFlow.take(2).toList(events)
             }
 
-            // 先投递应被适配层拦截的命令，再投递允许进入底层的登录与链接消息。
+            // 先投递应被适配层拦截的命令，再投递允许进入底层的群 AT 登录与链接消息。
             delay(10)
             transport.emitGatewayText(groupMessageFrame(seq = 8, eventId = "evt-add", messageId = "msg-add", content = "/add 123"))
             waitForReachable(adapter, groupContact)
@@ -173,7 +178,16 @@ class QQOfficialAdapterTest {
             transport.emitGatewayText(groupMessageFrame(seq = 10, eventId = "evt-login", messageId = "msg-login", content = "/login"))
             transport.emitGatewayText(
                 groupMessageFrame(
+                    eventType = "GROUP_AT_MESSAGE_CREATE",
                     seq = 11,
+                    eventId = "evt-login-at",
+                    messageId = "msg-login-at",
+                    content = "<@bot_openid_demo> /login",
+                ),
+            )
+            transport.emitGatewayText(
+                groupMessageFrame(
+                    seq = 12,
                     eventId = "evt-bili-link",
                     messageId = "msg-bili-link",
                     content = "看这个 https://www.bilibili.com/video/BV1xx411c7mD",
@@ -185,7 +199,7 @@ class QQOfficialAdapterTest {
             }
 
             assertEquals(listOf("/login", "看这个 https://www.bilibili.com/video/BV1xx411c7mD"), events.map { it.messageText })
-            assertEquals(listOf("msg-login", "msg-bili-link"), events.map { it.messageId })
+            assertEquals(listOf("msg-login-at", "msg-bili-link"), events.map { it.messageId })
         } finally {
             stopAdapter(adapter)
         }
