@@ -1,6 +1,7 @@
 package top.bilibili.connector
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -156,13 +157,16 @@ class PlatformConnectorManagerTest {
         manager.initialize()
         manager.start()
         val managerFlow = manager.eventFlow
-        val collected = async { managerFlow.first() }
+        val collected = async(start = CoroutineStart.UNDISPATCHED) { managerFlow.first() }
 
         val prepared = requireNotNull(manager.prepareReload(BotConfig(), adapterFactory = { newAdapter }).prepared)
         val result = manager.commitReload(prepared)
+        assertTrue(result.success)
+
+        // commitReload 只负责切换代际，测试需等待异步事件桥真正订阅候选 adapter。
+        newAdapter.waitForEventSubscriberCount(1)
         newAdapter.emitEvent(inboundMessage("candidate-event"))
 
-        assertTrue(result.success)
         assertEquals("candidate-event", withTimeout(1_000) { collected.await().messageText })
     }
 
@@ -203,6 +207,13 @@ class PlatformConnectorManagerTest {
 
         suspend fun emitEvent(message: PlatformInboundMessage) {
             mutableEvents.emit(message)
+        }
+
+        // 等待 manager 事件桥订阅此 adapter，避免无 replay 的测试事件在订阅前被丢弃。
+        suspend fun waitForEventSubscriberCount(expectedCount: Int) {
+            withTimeout(1_000) {
+                mutableEvents.subscriptionCount.first { it >= expectedCount }
+            }
         }
 
         override fun declaredCapabilities(): Set<PlatformCapability> = emptySet()
