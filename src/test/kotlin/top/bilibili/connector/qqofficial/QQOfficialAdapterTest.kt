@@ -2,6 +2,7 @@ package top.bilibili.connector.qqofficial
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -152,14 +154,54 @@ class QQOfficialAdapterTest {
     }
 
     @Test
-    fun `media attachment urls should not be forwarded into searchable texts`() = runBlocking {
+    fun `websocket dispatch should block non login commands and forward bilibili links`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            val events = mutableListOf<top.bilibili.connector.PlatformInboundMessage>()
+            val collectJob = launch {
+                adapter.eventFlow.take(2).toList(events)
+            }
+
+            // 先投递应被适配层拦截的命令，再投递允许进入底层的登录与链接消息。
+            delay(10)
+            transport.emitGatewayText(groupMessageFrame(seq = 8, eventId = "evt-add", messageId = "msg-add", content = "/add 123"))
+            waitForReachable(adapter, groupContact)
+            transport.emitGatewayText(groupMessageFrame(seq = 9, eventId = "evt-login-alias", messageId = "msg-login-alias", content = "登录"))
+            transport.emitGatewayText(groupMessageFrame(seq = 10, eventId = "evt-login", messageId = "msg-login", content = "/login"))
+            transport.emitGatewayText(
+                groupMessageFrame(
+                    seq = 11,
+                    eventId = "evt-bili-link",
+                    messageId = "msg-bili-link",
+                    content = "看这个 https://www.bilibili.com/video/BV1xx411c7mD",
+                ),
+            )
+
+            withTimeout(1_000) {
+                collectJob.join()
+            }
+
+            assertEquals(listOf("/login", "看这个 https://www.bilibili.com/video/BV1xx411c7mD"), events.map { it.messageText })
+            assertEquals(listOf("msg-login", "msg-bili-link"), events.map { it.messageId })
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `media attachment urls should be blocked before event flow`() = runBlocking {
         val transport = FakeTransport()
         val adapter = createStartedAdapter(transport)
 
         try {
             val events = mutableListOf<top.bilibili.connector.PlatformInboundMessage>()
-            val collectJob = launch {
-                adapter.eventFlow.take(1).toList(events)
+            val collectJob = async {
+                withTimeoutOrNull(200) {
+                    adapter.eventFlow.take(1).toList(events)
+                }
             }
 
             // 让事件收集先订阅，再投递带官方媒体附件的表情消息。
@@ -175,14 +217,9 @@ class QQOfficialAdapterTest {
                 ),
             )
 
-            withTimeout(1_000) {
-                collectJob.join()
-            }
+            assertEquals(null, collectJob.await())
+            assertTrue(events.isEmpty(), "face-only media messages should not be forwarded into business event flow")
 
-            val mediaEvent = events.single()
-            assertTrue(mediaEvent.searchTexts.isEmpty(), "face-only media messages should not enter link resolution search texts")
-            assertFalse(mediaEvent.searchTexts.any { it.contains("multimedia.nt.qq.com.cn") })
-            assertFalse(mediaEvent.searchTexts.any { it.contains("BVVL_L01ffaZ") })
         } finally {
             stopAdapter(adapter)
         }

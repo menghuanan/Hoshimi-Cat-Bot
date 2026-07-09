@@ -640,19 +640,19 @@ internal class QQOfficialAdapter(
                 true
             }
             "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE" -> {
-                // 群普通消息与 AT 消息都进入业务链，mention 标记只按事件类型区分。
+                // 群普通消息与 AT 消息都先归一化并刷新运行态，是否下传业务链由适配器门禁决定。
                 val inbound = normalizeMessage(
                     frame = frame,
                     chatType = PlatformChatType.GROUP,
                     hasMention = frame.t == "GROUP_AT_MESSAGE_CREATE",
                 ) ?: return false
                 markPassiveReplyWindow(inbound.chatContact)
-                recordInboundEvent(inbound)
+                recordInboundEventIfAllowed(inbound)
             }
             "C2C_MESSAGE_CREATE" -> {
                 val inbound = normalizeMessage(frame, PlatformChatType.PRIVATE, hasMention = false) ?: return false
                 markPassiveReplyWindow(inbound.chatContact)
-                recordInboundEvent(inbound)
+                recordInboundEventIfAllowed(inbound)
             }
             "GROUP_ADD_ROBOT", "GROUP_MSG_RECEIVE" -> {
                 val event = frame.d?.let { QQOfficialJson.decodeFromJsonElement<QQOfficialGroupManageEvent>(it) } ?: return false
@@ -774,6 +774,41 @@ internal class QQOfficialAdapter(
         val normalized = text.trim()
         if (normalized.isEmpty()) return false
         return !QQ_OFFICIAL_FACE_ONLY_CONTENT_REGEX.matches(normalized)
+    }
+
+    /**
+     * QQ 官方适配层只向业务层投递登录入口和 B 站链接消息，其他命令在这里完成截断。
+     */
+    private fun recordInboundEventIfAllowed(inbound: PlatformInboundMessage): Boolean {
+        if (shouldForwardInboundMessage(inbound)) {
+            return recordInboundEvent(inbound)
+        }
+        logger.debug(
+            "QQ 官方入站消息已在适配器层阻断：联系人={}，事件编号={}，消息编号={}",
+            inbound.chatContact.toSubject(),
+            inbound.eventId ?: "无",
+            inbound.messageId ?: "无",
+        )
+        return true
+    }
+
+    /**
+     * 先保留精确 `/login`，再阻断其他斜杠命令；非命令文本只有命中 B 站链接预筛时才继续下传。
+     */
+    private fun shouldForwardInboundMessage(inbound: PlatformInboundMessage): Boolean {
+        val normalizedText = inbound.messageText.trim()
+        if (normalizedText == QQ_OFFICIAL_ALLOWED_LOGIN_COMMAND) return true
+        if (normalizedText.startsWith("/")) return false
+        return inbound.searchTexts.any(::containsBilibiliLinkCandidate)
+    }
+
+    /**
+     * 仅做轻量链接候选预筛，真正解析、去重、限流仍交给 service 层的统一链接解析链路。
+     */
+    private fun containsBilibiliLinkCandidate(text: String): Boolean {
+        return QQ_OFFICIAL_BILIBILI_LINK_PRECHECK_REGEXES.any { regex ->
+            regex.containsMatchIn(text)
+        }
     }
 
     /**
@@ -1642,8 +1677,23 @@ internal class QQOfficialAdapter(
         private const val QQ_OFFICIAL_IMAGE_FILE_TYPE: Int = 1
         private const val QQ_OFFICIAL_GROUP_MEDIA_EMPTY_CONTENT: String = " "
         private const val DEFAULT_REPLY_SEQ_CACHE_MAX_SIZE: Int = 10_000
+        private const val QQ_OFFICIAL_ALLOWED_LOGIN_COMMAND: String = "/login"
         // QQ 官方表情消息的 content 可能只有平台占位 token，不能当作用户输入文本解析链接。
         private val QQ_OFFICIAL_FACE_ONLY_CONTENT_REGEX = Regex("""(?:<faceType=[^>]+>\s*)+""")
+        // 这里保持为 QQ 官方 adapter 私有预筛，避免 connector 反向依赖 service 层链接解析实现。
+        private val QQ_OFFICIAL_BILIBILI_LINK_PRECHECK_REGEXES = listOf(
+            """(?:https?://)?(?:www\.)?bilibili\.com/video/(?:BV[0-9A-Za-z]{10}|av\d{1,20})""",
+            """(?<![0-9A-Za-z])(?:BV[0-9A-Za-z]{10}|av\d{1,20})(?![0-9A-Za-z])""",
+            """(?:https?://)?(?:www\.)?bilibili\.com/read/(?:mobile/)?(?:cv)?\d{1,10}""",
+            """(?<![0-9A-Za-z])cv\d{1,10}(?![0-9A-Za-z])""",
+            """(?:https?://)?[tm]\.bilibili\.com/(?:dynamic/)?\d+""",
+            """(?:https?://)?(?:www|m)\.bilibili\.com/opus/\d+""",
+            """(?:https?://)?live\.bilibili\.com/(?:h5/)?\d+""",
+            """(?:https?://)?space\.bilibili\.com/\d+""",
+            """(?:https?://)?(?:www|m)\.bilibili\.com/bangumi/(?:play|media)/(?:ss|ep|md)\d+""",
+            """(?<![0-9A-Za-z])(?:ss|ep|md)\d+(?![0-9A-Za-z])""",
+            """(?:https?://)?(?:b23\.tv|bili2233\.cn)/[0-9A-Za-z]+""",
+        ).map { pattern -> Regex(pattern, RegexOption.IGNORE_CASE) }
     }
 }
 
