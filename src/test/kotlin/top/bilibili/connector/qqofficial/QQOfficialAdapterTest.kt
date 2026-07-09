@@ -152,6 +152,43 @@ class QQOfficialAdapterTest {
     }
 
     @Test
+    fun `media attachment urls should not be forwarded into searchable texts`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+
+        try {
+            val events = mutableListOf<top.bilibili.connector.PlatformInboundMessage>()
+            val collectJob = launch {
+                adapter.eventFlow.take(1).toList(events)
+            }
+
+            // 让事件收集先订阅，再投递带官方媒体附件的表情消息。
+            delay(10)
+            val attachmentUrl = "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=BVVL_L01ffaZ-demo&spec=0"
+            transport.emitGatewayText(
+                groupMessageFrame(
+                    seq = 8,
+                    eventId = "evt-group-media",
+                    messageId = "msg-group-media",
+                    content = "<faceType=66>",
+                    attachmentUrl = attachmentUrl,
+                ),
+            )
+
+            withTimeout(1_000) {
+                collectJob.join()
+            }
+
+            val mediaEvent = events.single()
+            assertTrue(mediaEvent.searchTexts.isEmpty(), "face-only media messages should not enter link resolution search texts")
+            assertFalse(mediaEvent.searchTexts.any { it.contains("multimedia.nt.qq.com.cn") })
+            assertFalse(mediaEvent.searchTexts.any { it.contains("BVVL_L01ffaZ") })
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
     fun `access token should refresh at official sixty second window`() = runBlocking {
         var now = 0L
         val transport = FakeTransport().apply {
@@ -978,6 +1015,7 @@ class QQOfficialAdapterTest {
         eventId: String = "evt-group-1",
         messageId: String = "msg-group-1",
         content: String = "/bili list",
+        attachmentUrl: String? = null,
     ): String {
         return buildJsonObject {
             put("op", 0)
@@ -991,6 +1029,14 @@ class QQOfficialAdapterTest {
                 put("author", buildJsonObject {
                     put("member_openid", "member_openid_demo")
                 })
+                attachmentUrl?.let { mediaUrl ->
+                    // QQ 官方附件 URL 模拟平台媒体资源地址，不应被适配层当作用户正文。
+                    put("attachments", buildJsonArray {
+                        add(buildJsonObject {
+                            put("url", mediaUrl)
+                        })
+                    })
+                }
             })
         }.toString()
     }

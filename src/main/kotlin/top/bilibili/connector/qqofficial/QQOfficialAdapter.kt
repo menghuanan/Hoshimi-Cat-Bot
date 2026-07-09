@@ -726,15 +726,7 @@ internal class QQOfficialAdapter(
             }
         }
         val messageText = normalizeInboundMessageText(message.content)
-        val searchTexts = buildList {
-            messageText.trim().takeIf { it.isNotEmpty() }?.let(::add)
-            message.content.trim()
-                .takeIf { it.isNotEmpty() && it != messageText.trim() }
-                ?.let(::add)
-            message.attachments.mapNotNullTo(this) { attachment ->
-                attachment.url?.trim()?.takeIf { it.isNotEmpty() }
-            }
-        }.distinct()
+        val searchTexts = buildInboundSearchTexts(messageText, message.content)
 
         return PlatformInboundMessage(
             platform = PlatformType.QQ_OFFICIAL,
@@ -759,6 +751,29 @@ internal class QQOfficialAdapter(
     private fun normalizeInboundMessageText(rawContent: String): String {
         val normalized = stripLeadingSelfMention(rawContent)
         return normalized
+    }
+
+    /**
+     * 只把用户可见正文放入链接解析搜索词；QQ 官方 attachments.url 是平台媒体资源地址，不代表用户显式发送的文本链接。
+     */
+    private fun buildInboundSearchTexts(messageText: String, rawContent: String): List<String> {
+        val normalizedText = messageText.trim()
+        val normalizedRawContent = rawContent.trim()
+        return buildList {
+            normalizedText.takeIf(::shouldUseInboundTextForSearch)?.let(::add)
+            normalizedRawContent
+                .takeIf { it != normalizedText && shouldUseInboundTextForSearch(it) }
+                ?.let(::add)
+        }.distinct()
+    }
+
+    /**
+     * 过滤 QQ 官方表情占位等非正文 token，避免平台标记像用户文本一样进入链接解析入口。
+     */
+    private fun shouldUseInboundTextForSearch(text: String): Boolean {
+        val normalized = text.trim()
+        if (normalized.isEmpty()) return false
+        return !QQ_OFFICIAL_FACE_ONLY_CONTENT_REGEX.matches(normalized)
     }
 
     /**
@@ -1627,6 +1642,8 @@ internal class QQOfficialAdapter(
         private const val QQ_OFFICIAL_IMAGE_FILE_TYPE: Int = 1
         private const val QQ_OFFICIAL_GROUP_MEDIA_EMPTY_CONTENT: String = " "
         private const val DEFAULT_REPLY_SEQ_CACHE_MAX_SIZE: Int = 10_000
+        // QQ 官方表情消息的 content 可能只有平台占位 token，不能当作用户输入文本解析链接。
+        private val QQ_OFFICIAL_FACE_ONLY_CONTENT_REGEX = Regex("""(?:<faceType=[^>]+>\s*)+""")
     }
 }
 
