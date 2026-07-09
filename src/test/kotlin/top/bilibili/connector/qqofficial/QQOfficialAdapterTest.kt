@@ -815,7 +815,8 @@ class QQOfficialAdapterTest {
             waitForGatewayOpenCount(transport, 2)
             val secondSession = transport.lastGatewaySession
 
-            assertTrue(secondSession.sentTexts.any { it.jsonObject["op"]?.jsonPrimitive?.content == "2" })
+            // 等待 Hello 被收帧协程处理完成，避免只等到会话创建就读取出站帧。
+            waitForSentOp(secondSession, 2)
             assertFalse(secondSession.sentTexts.any { it.jsonObject["op"]?.jsonPrimitive?.content == "6" })
         } finally {
             stopAdapter(adapter)
