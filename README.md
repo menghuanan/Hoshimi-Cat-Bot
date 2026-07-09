@@ -6,7 +6,7 @@
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
 代码部分由 [claude](https://github.com/claude) 主刀构建改造后的主体框架， GPT-5系列模型（GPT-5.2-Codex、GPT-5.3-Codex、GPT-5.4、GPT-5.5） 协助完善功能细则与日常修复bug。  
-这是一个支持多平台连接器的 QQ 机器人，当前默认推荐使用 NapCat / llbot / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理（尚未测试，不建议使用），同时内置了本机 WebUI 管理界面。
+这是一个独立运行的 QQ 动态机器人，当前推荐通过 OneBot11 连接 NapCat / llbot / 通用 OneBot11 实现，同时内置本机 WebUI 管理界面。
 
 ## 文档目录
 
@@ -86,32 +86,29 @@ hoshimi-cat-bot/
 
 ## 当前支持的协议
 
-当前版本采用 `platform.type` 与 `platform.adapter` 的两级选择结构：
+当前 README 对外说明 OneBot11 接入路径。`platform.type` 固定为 `onebot11`，实际实现由 `platform.adapter` 选择：
 
 ```yaml
 platform:
-  type: onebot11   # 可选: onebot11 / qq_official
-  adapter: napcat  # 仅当 type=onebot11 时填写: napcat / llbot / onebot11
+  type: onebot11
+  adapter: napcat  # 可选: napcat / llbot / onebot11
 ```
 
-| 平台类型 | `adapter` | 当前定位 | 适用场景 | 能力边界 | 配置要求 |
+| 平台类型 | `adapter` | <nobr>当前定位</nobr> | 适用场景 | 能力边界 | 配置要求 |
 | --- | --- | --- | --- | --- | --- |
-| `onebot11` | `napcat` | 默认推荐 | 当前最完整、最稳妥的接入方案 | 支持基础发送、图片发送、回复、链接解析；额外支持群可达性探测与 `@全体` 能力判断 | `type: onebot11` 时必须显式填写 `adapter: napcat`，并配置 `platform.onebot11` |
-| `onebot11` | `llbot` | 已适配 | 适用于 LuckyLilliaBot 接入场景 | 支持基础发送、图片发送、回复、链接解析；额外支持群可达性探测与 `@全体` 能力判断 | `type: onebot11` 时必须显式填写 `adapter: llbot`，并配置 `platform.onebot11` |
-| `onebot11` | `onebot11` | 通用兼容 | 适用于其他标准 OneBot11 实现或兼容场景 | 支持基础发送、图片发送、回复、链接解析；不默认声明 `@全体`，未覆盖能力会显式降级并输出日志 | `type: onebot11` 时必须显式填写 `adapter: onebot11`，并配置 `platform.onebot11` |
-| `qq_official` | 不需要 | 基础可用 | 适用于 QQ 官方开放平台接入 | 支持基础文本、公网图片、回复、链接解析；不支持 `@全体`；本地/二进制图片会显式降级；主动发送依赖已建立会话的联系人可达性 | `type: qq_official` 时无需填写 `adapter`，改为配置 `platform.qq_official` |
+| `onebot11` | `napcat` | <nobr>默认推荐</nobr> | NapCat WebSocket 接入 | 文本、图片、回复、链接解析；支持群可达性与 `@全体` 运行时探测 | 配置 `platform.onebot11`，图片建议使用 `send_mode: base64` |
+| `onebot11` | `llbot` | <nobr>已适配</nobr> | LuckyLilliaBot 接入 | 文本、图片、回复、链接解析；支持群可达性与 `@全体` 运行时探测 | 配置 `platform.onebot11`，图片建议使用 `send_mode: base64` |
+| `onebot11` | `onebot11` | <nobr>通用兼容</nobr> | 标准 OneBot11 或兼容实现 | 文本、远程图片、回复、链接解析；`@全体` 默认不声明，本地/二进制图片按能力 guard 降级 | 配置 `platform.onebot11`，未覆盖能力会显式降级 |
 
 ### 选型建议
 
 - 优先选择 `onebot11 + napcat`：这是当前默认推荐方案，现有能力验证最完整。
 - 如果你的上游就是 LuckyLilliaBot，选择 `onebot11 + llbot` 更合适。
 - 如果你接的是其他 OneBot11 实现，先用 `onebot11 + onebot11`，再按实际能力决定是否需要 vendor 适配。
-- 只有在明确需要 QQ 官方开放平台链路时再使用 `qq_official`，因为该链路会对 `@全体`、本地图片等能力做显式降级。
 
 ### 配置约束
 
-- 当 `platform.type: onebot11` 时，`adapter` 是必填项，取值仅支持 `napcat`、`llbot`、`onebot11`。
-- 当 `platform.type: qq_official` 时，不需要 `adapter`，需要改填 `app_id`、`app_secret`、`bot_token`。
+- `adapter` 建议显式填写，取值仅支持 `napcat`、`llbot`、`onebot11`；未知值会按当前实现归一到通用 `onebot11`。
 - 三种 OneBot11 适配器共用 `platform.onebot11` 配置块，差异主要体现在运行时能力声明与探测行为。
 
 
@@ -185,6 +182,7 @@ docker pull menghuanan/hoshimi-cat-bot:latest
 
 # 启动容器
 docker run -d --name hoshimi-cat-bot \
+  --restart unless-stopped \
   --network bridge \
   -v ./config:/app/config \
   -v ./data:/app/data \
@@ -223,7 +221,7 @@ logs/
 ```
 #### 注意！以下是必须修改的配置项：
 - 首次后需要在运行目录配置 `/config/bot.yml` 与 `/config/BiliConfig.yml` 文件后再重新启动bot。
-- `/config/bot.yml` 通过平台化结构配置连接器；默认 `type: onebot11` 走 NapCat / llbot / OneBot11 三类适配器，切到 `type: qq_official` 时需补齐 QQ 官方凭据。
+- `/config/bot.yml` 通过平台化结构配置连接器；`type: onebot11` 下可选择 `napcat`、`llbot` 或通用 `onebot11`。
 ```bash
 docker-compose down
 ```
@@ -232,25 +230,27 @@ docker-compose down
 
 ```yaml
 platform:
-  type: onebot11  # 可选: onebot11 / qq_official
-  adapter: onebot11  # required for onebot11: onebot11, llbot or napcat
+  type: onebot11
+  adapter: napcat  # 可选: napcat / llbot / onebot11
   onebot11:
     host: "NapCat / llbot / OneBot11 WebSocket 服务器地址"
     port: 3001
     token: ""
+    use_tls: false
     send_mode: "base64"  # 图片发送模式：file 或 base64
-  qq_official:
-    app_id: ""
-    app_secret: ""
-    bot_token: ""
+    heartbeat_interval: 30000
+    reconnect_interval: 5000
+    message_format: "array"
+    max_reconnect_attempts: -1
+    connect_timeout: 10000
 ```
 #### 如果不清楚两种图片发送模式的区别，建议直接使用 `base64`，兼容性更好，也能避免路径或权限问题。
 
-> QQ 官方适配器当前支持基础文本/公网图片收发与链接解析，但 `@全体` 不支持，本地/二进制图片会按能力 guard 显式降级。
-
 - `/config/BiliConfig.yml` 配置管理员信息
 ```yaml
-admin: "管理员QQ号"
+admin: 123456789
+# 可选：显式使用平台联系人格式；填写后优先于 admin
+admin_contact: "onebot11:private:123456789"
 ```
 ### 4. onebot平台 配置
 
@@ -279,21 +279,22 @@ admin: "管理员QQ号"
 ## 主要功能
 
 ### 1. 链接解析
-- 自动解析群消息中的 B站链接
-- 支持视频、动态、直播、番剧、专栏等多种类型
-- 支持 QQ 小程序分享的 B站链接
-- 生成精美的图文卡片
-- 返回标准的 BV 号链接
+- 在群聊中按 `At` / `Always` / `Never` 策略响应 B 站链接
+- 支持视频 BV/av、专栏 cv、动态/opus、直播间、用户空间、番剧 ss/md/ep 与 `b23.tv` / `bili2233.cn` 短链
+- 支持从 OneBot11 文本、JSON 小程序/卡片片段中提取 B 站跳转链接
+- 可生成图文卡片；关闭链接解析绘图后会回退为标准链接文本
+- 内置去重与限流：同一消息最多处理 3 个链接，同一用户每分钟最多 3 次解析
 
 ### 2. 动态订阅
 - 订阅 B站用户的动态
 - 自动检测新动态并推送到群聊/私聊
 - 支持按联系人 / 分组配置 UID 多模板策略与随机模板切换
 - 支持直播开播/关播通知
+- 支持番剧订阅、按动态类型或正则过滤、主题色绑定和 `@全体` 策略
 
 ### 3. 管理命令（按权限划分）
 
-`BiliConfig.yml` 中的 `admin` 为超级管理员。群普通管理员需要由超级管理员使用 `/bili admin add <QQ号>` 添加，仅能在对应群使用部分 `/bili` 命令。
+`BiliConfig.yml` 中的 `admin` / `admin_contact` 为超级管理员。群普通管理员需要由超级管理员使用 `/bili admin add <联系人>` 添加，仅能在对应群使用部分 `/bili` 命令。
 
 #### 基础命令
 - `/login` 或 `登录` - B站扫码登录（仅超管，群聊/私聊均可）
@@ -304,8 +305,8 @@ admin: "管理员QQ号"
 - `/add <UID>` - 快速订阅当前群聊或当前私聊
 - `/del <UID>` - 快速取消当前群聊或当前私聊中的订阅
 - `/list` - 查看当前群聊或当前私聊的订阅列表
-- `/black <QQ号>` - 快速将用户加入链接解析黑名单（仅群聊）
-- `/unblock <QQ号>` - 快速将用户移出链接解析黑名单（仅群聊）
+- `/black <联系人>` - 快速将用户加入链接解析黑名单（仅群聊）
+- `/unblock <联系人>` - 快速将用户移出链接解析黑名单（仅群聊）
 - `/black list` - 查看链接解析黑名单（仅群聊）
 
 #### 高级命令（/bili）
@@ -327,8 +328,8 @@ admin: "管理员QQ号"
     /bili blacklist = /bili bl
 
     订阅管理（超管 / 群普通管理员）:
-    /bili add <UID|ss|md|ep> [群号] - 添加订阅；[群号] 仅超管可用
-    /bili remove|rm <UID|ss|md|ep> [群号] - 移除订阅；[群号] 仅超管可用
+    /bili add <UID|ss|md|ep> [群聊联系人] - 添加订阅；[群聊联系人] 仅超管可用
+    /bili remove|rm <UID|ss|md|ep> [群聊联系人] - 移除订阅；[群聊联系人] 仅超管可用
     /bili list|ls - 查看当前会话的订阅
     /bili list|ls <UID|ss|md|ep> - 查看某个订阅推送到哪些群（仅超管）
 
@@ -336,8 +337,8 @@ admin: "管理员QQ号"
     /bili groups - 查看所有分组
     /bili group create <分组名> - 创建分组
     /bili group delete|del <分组名> - 删除分组
-    /bili group add <分组名> <群号> - 将群加入分组
-    /bili group remove|rm <分组名> <群号> - 从分组移除群
+    /bili group add <分组名> <群聊联系人> - 将群加入分组
+    /bili group remove|rm <分组名> <群聊联系人> - 从分组移除群
     /bili group list|ls [分组名] - 查看全部分组或单个分组详情
     /bili group subscribe|sub <分组名> <UID|ss|md|ep> - 为分组批量添加订阅
     /bili group unsubscribe|unsub <分组名> <UID|ss|md|ep> - 为分组批量取消订阅
@@ -373,14 +374,14 @@ admin: "管理员QQ号"
     /bili config|cfg color <uid|用户名> <HEX颜色> - 通过 config 入口设置主题色（仅超管）
 
     群普通管理员管理（仅超管）:
-    /bili admin add <QQ号> - 添加本群普通管理员（仅群聊）
-    /bili admin remove|rm <QQ号> - 移除本群普通管理员（仅群聊）
+    /bili admin add <联系人> - 添加本群普通管理员（仅群聊）
+    /bili admin remove|rm <联系人> - 移除本群普通管理员（仅群聊）
     /bili admin list|ls - 查看本群普通管理员（仅群聊）
     /bili admin all - 查看全部群的普通管理员
 
     链接解析黑名单（仅超管）:
-    /bili blacklist|bl add <QQ号> - 添加到链接解析黑名单
-    /bili blacklist|bl remove|rm|del <QQ号> - 从黑名单移除
+    /bili blacklist|bl add <联系人> - 添加到链接解析黑名单
+    /bili blacklist|bl remove|rm|del <联系人> - 从黑名单移除
     /bili blacklist|bl list|ls - 查看黑名单列表
 
     其他:
@@ -395,8 +396,8 @@ admin: "管理员QQ号"
 
 ```yaml
 platform:
-  type: onebot11             # 可选: onebot11 / qq_official
-  adapter: onebot11  # required for onebot11: onebot11, llbot or napcat
+  type: onebot11
+  adapter: napcat            # 可选: napcat / llbot / onebot11
   onebot11:
     host: "127.0.0.1"        # NapCat / llbot / OneBot11 WebSocket 主机地址
     port: 3001               # NapCat / llbot / OneBot11 WebSocket 端口
@@ -408,16 +409,13 @@ platform:
     message_format: "array"
     max_reconnect_attempts: -1
     connect_timeout: 10000
-  qq_official:
-    app_id: ""
-    app_secret: ""
-    bot_token: ""
 webui:
   enabled: false
   host: "127.0.0.1"
   port: 18080
   credential_file: "webui-credentials.json"
   token_ttl_seconds: 3600
+  static_dir: ""
 targets: []                  # 预留字段，当前版本未启用
 admins: []                   # 群普通管理员配置
 first_run_flag: 0            # 首次运行标记，程序自动维护
@@ -425,16 +423,29 @@ first_run_flag: 0            # 首次运行标记，程序自动维护
 
 ### WebUI 配置
 
-WebUI 默认只监听本机 `127.0.0.1:18080`。如果要启用界面，请打开 `config/bot.yml`，把 `webui.enabled` 改成 `true`，并保留默认的主机和端口。
+WebUI 默认只监听本机 `127.0.0.1:18080`。如果要启用界面，请打开 `config/bot.yml`，把 `webui.enabled` 改成 `true`，并优先保留默认的主机和端口。
 
 ```yaml
 webui:
   enabled: true
   host: "127.0.0.1"
   port: 18080
+  credential_file: "webui-credentials.json"
+  token_ttl_seconds: 3600
+  static_dir: ""
 ```
 
-保存后重启程序，然后在本机浏览器访问 `http://127.0.0.1:18080/`。
+保存后重启程序，然后在本机浏览器访问 `http://127.0.0.1:18080/`。首次启用时程序会在日志中输出一次初始密码，并要求登录后修改密码；凭据默认保存到 `config/webui-credentials.json`。
+
+当前 WebUI 提供：
+
+- 首页运行态概览：生命周期、账号、平台连接、推送统计、宿主资源与最近推送记录。
+- 系统配置：读取并批量保存 `BiliConfig.yml`、`BiliData.yml`、`bot.yml`，保存写操作需要当前密码确认，并通过热重载 job 应用。
+- 订阅管理：编辑动态、分组、番剧卡片，支持推送群、过滤器、模板、随机模板、`@全体` 和主题色子项。
+- 日志：查看、导出和清空固定白名单日志源；清空日志需要当前密码确认。
+- 账号：修改 WebUI 密码和退出登录。
+
+如果必须把 WebUI 暴露到非本机地址，优先放在反向代理、内网穿透或 VPN 后面；直接把 `host` 改为 `0.0.0.0` 属于高风险配置，WebUI 保存时会要求额外确认。
 
 ### BiliData.yml 示例
 
@@ -475,10 +486,12 @@ dynamicTemplatePolicyByScope:
 ### BiliConfig.yml 示例
 
 ```yaml
-admin: 0                        # 管理员 QQ 号
+admin: 0                        # 管理员 QQ 号（旧字段，默认映射到 onebot11:private:<QQ号>）
+admin_contact: ""               # 可选：平台联系人格式，如 onebot11:private:123456789
 enableConfig:                   # 启用配置
   debugMode: false              # 启用调试模式
   drawEnable: true              # 启用绘制功能
+  pushDrawEnable: true          # 启用推送绘图；关闭后推送会走文本回退
   notifyEnable: true            # 启用通知功能
   liveCloseNotifyEnable: true   # 启用直播关播通知
   lowSpeedEnable: true          # 启用低速模式
@@ -490,8 +503,6 @@ accountConfig:                  # 账号配置
   autoFollow: true              # 自动关注用户
   followGroup: "Bot关注"        # 自动关注分组
 checkConfig:                    # 检查配置
-  interval: 15                  # 检查间隔（秒）
-  liveInterval: 15              # 直播检查间隔（秒）
   lowSpeedTime: "22-8"          # 低速模式时间范围（24小时格式）
   lowSpeedRange: "60-240"       # 低速模式范围（秒）
   normalRange: "30-120"         # 正常模式范围（秒）
@@ -507,6 +518,7 @@ imageConfig:
   font: ""
   defaultColor: "#d3edfa"
   cardOrnament: "FanCard"
+  timeDisplayMode: "ABSOLUTE"   # ABSOLUTE / RELATIVE
   colorGenerator:
     hueStep: 30
     lockSB: true
@@ -553,6 +565,7 @@ translateConfig:               # 翻译配置
     SECURITY_KEY: ""           # 百度翻译 SECURITY_KEY
 linkResolveConfig:             # 链接解析配置
   triggerMode: "At"            # 触发模式：At/Always/Never
+  drawEnable: true             # 链接解析是否生成图片卡片
   returnLink: false            # 是否返回链接
 
 ```
@@ -597,11 +610,10 @@ docker run -d \
 创建 `docker-compose.yml` 文件：
 
 ```yaml
-version: '3.8'
-
 services:
   hoshimi-cat-bot:
     image: menghuanan/hoshimi-cat-bot:latest
+    pull_policy: always
     container_name: hoshimi-cat-bot
     restart: unless-stopped
     environment:
@@ -612,11 +624,20 @@ services:
       - ./temp:/app/temp
       - ./logs:/app/logs
     network_mode: "bridge"  # 使用 bridge 网络模式
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512m
+        reservations:
+          cpus: '0.5'
+    mem_limit: 512m
+    shm_size: 256m
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "100m"
+        max-file: "5"
 ```
 
 启动容器：
@@ -639,18 +660,26 @@ docker-compose up -d
 首次运行后，编辑 `config/bot.yml`：
 
 ```yaml
-onebot11:
-  host: "onebot11 WebSocket 主机地址"
-  port: 3001    #默认3001
-  token: ""     #如果有则填入，没有不填
-  send_mode: "base64"  # 图片发送模式：file 或 base64
+platform:
+  type: onebot11
+  adapter: napcat  # napcat / llbot / onebot11
+  onebot11:
+    host: "onebot11 WebSocket 主机地址"
+    port: 3001
+    token: ""
+    use_tls: false
+    send_mode: "base64"
+    heartbeat_interval: 30000
+    reconnect_interval: 5000
+    message_format: "array"
+    max_reconnect_attempts: -1
+    connect_timeout: 10000
 ```
 
 重启容器：
 
 ```bash
 docker-compose down
-# 或
 docker-compose up -d
 ```
 
@@ -699,7 +728,7 @@ docker logs -f hoshimi-cat-bot
 
 - **运行时基础镜像**: eclipse-temurin:17-jdk
 - **源码构建环境**: JDK 17 及以上版本
-- **内存分配器**: jemalloc（5秒自动归还内存）
+- **内存分配器**: jemalloc（默认 `dirty_decay_ms=2000`、`muzzy_decay_ms=2000`，约 2 秒加速归还内存）
 - **JVM 启动参数**: 默认 `-Xms64m -Xmx160m`，其余 GC/Netty/Skiko 优化参数由 `JAVA_TOOL_OPTIONS` 注入
 - **Netty 分配器**: unpooled（低并发场景优先降低池化管理开销）
 - **AWT 模式**: headless=true（纯软件渲染，不依赖容器内 display 服务）
@@ -741,17 +770,27 @@ docker logs -f hoshimi-cat-bot
 
 ## 与原项目的区别
 
-1. **移除了以下内容**：
-   - Mirai 框架相关代码和测试
-   - 编译输出（build/、.gradle/）
-   - IDE 配置文件（.idea/、.kotlin/）
-   - 临时文件和运行时数据
+本项目由原版 Mirai 插件演进而来，但当前实现已经不是 Mirai Console 插件：
 
-2. **保留了以下内容**：
-   - 完整的源代码
-   - Gradle 构建配置
-   - Docker 部署文件
-   - 文档和示例配置
+1. **运行形态不同**
+   - 原版通过 Mirai / MCL 安装为插件，并依赖 mirai-skia-plugin、chat-command 与 Mirai 权限系统。
+   - 当前项目是独立 Kotlin/JVM 应用，主类为 `top.bilibili.MainKt`，可通过平台发行包、Docker 或源码构建运行。
+
+2. **平台接入不同**
+   - 原版直接运行在 Mirai 的 QQ 联系人、权限和消息模型上。
+   - 当前项目使用平台中立的 Connector 层，对外推荐 OneBot11 接入 NapCat / llbot / 通用 OneBot11，并通过能力 guard 处理图片、回复、`@全体` 和链接解析能力差异。
+
+3. **配置与数据路径不同**
+   - 原版配置位于 Mirai 插件目录，包含 `BiliConfig.yml`、`ImageQuality.yml`、`ImageTheme.yml` 等插件配置。
+   - 当前项目使用运行目录下的 `config/BiliConfig.yml`、`config/BiliData.yml`、`config/bot.yml`，并将订阅联系人统一为 `onebot11:group:<id>` / `onebot11:private:<id>` 这类 subject。
+
+4. **保留并扩展的核心能力**
+   - 保留动态/直播检测、番剧订阅、扫码登录、自动关注、过滤器、模板、主题色、缓存清理和 Skia/Skiko 绘图。
+   - 扩展了联系人/分组作用域模板策略、随机模板、链接解析限流、运行态观测、资源生命周期管理和平台能力降级。
+
+5. **新增 WebUI 与部署能力**
+   - 当前项目内置 React + Ktor WebUI，可管理运行态、配置、订阅和日志，写操作使用 session、CSRF 与确认密码保护。
+   - 当前项目提供 Dockerfile、docker-compose、Windows/Linux jlink 发行包和持久化运行方式，不再要求用户先部署 Mirai 环境。
 
 ## 故障排查
 
