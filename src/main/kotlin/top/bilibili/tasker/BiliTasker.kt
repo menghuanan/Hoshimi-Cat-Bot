@@ -2,6 +2,7 @@ package top.bilibili.tasker
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableJob
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.InternalForInheritanceCoroutinesApi
@@ -145,6 +146,7 @@ abstract class BiliTasker(
     }
 
     private var job: Job? = null
+    private var initializationResult = CompletableDeferred<Boolean>()
     private val managedWorkers = ConcurrentHashMap<String, ManagedWorkerState>()
     private val managedWorkerDefinitions = ConcurrentHashMap<String, ManagedWorkerDefinition>()
 
@@ -313,8 +315,10 @@ abstract class BiliTasker(
 
             try {
                 init()
+                initializationResult.complete(true)
             } catch (e: Exception) {
                 BiliBiliBot.logger.error("任务 ${this::class.simpleName} 初始化失败", e)
+                initializationResult.complete(false)
                 return@launch
             }
 
@@ -368,6 +372,28 @@ abstract class BiliTasker(
         taskJob.start()
 
         return taskers.add(this)
+    }
+
+    /**
+     * 提交任务并等待 init 阶段给出明确结果，避免启动入口把仅创建协程误报为任务可用。
+     *
+     * @param timeoutMs 等待 init 完成的最大毫秒数。
+     * @return init 成功且任务主协程仍活跃时返回 true。
+     */
+    suspend fun startAndAwaitInitialization(timeoutMs: Long): Boolean {
+        initializationResult = CompletableDeferred()
+        if (!start()) return false
+        val initialized = try {
+            withTimeout(timeoutMs) { initializationResult.await() }
+        } catch (_: TimeoutCancellationException) {
+            BiliBiliBot.logger.error("任务 {} 初始化确认超时: {}ms", taskDisplayName, timeoutMs)
+            false
+        }
+        if (!initialized) {
+            cancel()
+            return false
+        }
+        return healthSnapshot().active
     }
 
     /**

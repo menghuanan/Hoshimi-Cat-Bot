@@ -56,7 +56,7 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 
 ## 关键流程
 
-启动阶段由 `TaskBootstrapService` 按固定顺序创建并启动 tasker，每个 tasker 启动前必须能从 `TaskResourcePolicyRegistry` 查到资源策略。长生命周期循环通过 `launchManagedWorker` 接入自愈和退避；停机时由 `ResourceSupervisor` 按资源分区回收，tasker 不能自行绕过分区顺序。
+启动阶段由 `TaskBootstrapService` 按固定顺序创建 tasker，并通过 `startAndAwaitInitialization()` 等待每个 `init()` 明确成功；提交协程、初始化拒绝、异常或超时都不能被报告为整体启动成功。每个 tasker 启动前必须能从 `TaskResourcePolicyRegistry` 查到资源策略。长生命周期循环通过 `launchManagedWorker` 接入自愈和退避；停机时由 `ResourceSupervisor` 按资源分区回收，tasker 不能自行绕过分区顺序。
 
 ## 生命周期规则
 

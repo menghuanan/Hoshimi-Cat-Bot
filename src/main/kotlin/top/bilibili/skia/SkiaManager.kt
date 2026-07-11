@@ -28,8 +28,8 @@ object SkiaManager {
 
     // 统计信息
     private val totalDrawingCount = AtomicLong(0)
-    private val totalCleanupCount = AtomicLong(0)
-    private val lastEmergencyCleanupAt = AtomicLong(0)
+    private var cleanupState = SkiaCleanupState()
+    private val emergencyCleanupInProgress = java.util.concurrent.atomic.AtomicBoolean(false)
     private val startTime = System.currentTimeMillis()
 
     /**
@@ -56,8 +56,7 @@ object SkiaManager {
     /**
      * 执行清理
      */
-    suspend fun performCleanup() {
-        totalCleanupCount.incrementAndGet()
+    suspend fun performCleanup(): SkiaCleanupResult {
         logger.debug("开始执行 Skia 清理...")
 
         // 清理 block 必须完整处于闸门内；超时则跳过 purge，避免与新绘图并发访问全局缓存。
@@ -66,7 +65,6 @@ object SkiaManager {
                 DrawingQueueManager.runExclusiveCleanup {
                     clearGlobalCaches(forcePurgeAllSkiaCaches = false)
                 }
-                true
             } ?: false
         }.onFailure { e ->
             logger.warn("等待活动任务并清理全局缓存时发生异常，本轮跳过 purge", e)
@@ -81,58 +79,66 @@ object SkiaManager {
             delay(100)
         }
 
-        logger.debug("Skia 清理完成")
+        val result = if (cleaned) SkiaCleanupResult.COMPLETED else SkiaCleanupResult.SKIPPED
+        recordCleanupAttempt(result)
+        logger.debug(if (result.completed) "Skia 清理完成" else "Skia 清理未执行")
+        return result
     }
 
     /**
      * 在内存临界时执行紧急清理，优先回收可清理的 Skia 全局缓存并提高 GC 强度。
      */
-    suspend fun performEmergencyCleanup() {
+    suspend fun performEmergencyCleanup(): SkiaCleanupResult {
         val now = System.currentTimeMillis()
-        val last = lastEmergencyCleanupAt.get()
+        val last = cleanupStateSnapshot().lastEmergencyCleanupAt
         if (now - last < SkiaConfig.emergencyCleanupCooldownMs) {
             logger.debug(
                 "距离上次紧急清理仅 {}ms，未达到冷却时间 {}ms，跳过本次紧急清理",
                 now - last,
                 SkiaConfig.emergencyCleanupCooldownMs,
             )
-            return
+            return SkiaCleanupResult.SKIPPED
         }
-        if (!lastEmergencyCleanupAt.compareAndSet(last, now)) {
-            // 使用 CAS 保证并发场景只有一个调用方真正执行紧急清理。
-            return
+        if (!emergencyCleanupInProgress.compareAndSet(false, true)) {
+            // 独立的执行中标记只排除并发清理；失败尝试不会提前占用下一轮冷却时间。
+            return SkiaCleanupResult.SKIPPED
         }
 
-        totalCleanupCount.incrementAndGet()
-        logger.warn("触发 Skia 紧急清理：开始尝试回收全局缓存并加速归还 native 内存")
+        try {
+            logger.warn("触发 Skia 紧急清理：开始尝试回收全局缓存并加速归还 native 内存")
 
         // 紧急 purge 同样保持在完整闸门内；互斥无法建立时宁可跳过，不能冒险并发清理。
-        val cleaned = runCatching {
-            withTimeoutOrNull(15_000L) {
-                DrawingQueueManager.runExclusiveCleanup {
-                    clearGlobalCaches(forcePurgeAllSkiaCaches = true)
-                }
-                true
-            } ?: false
-        }.onFailure { e ->
-            logger.warn("紧急清理等待活动任务时发生异常，本轮跳过 purge", e)
-        }.getOrDefault(false)
-        if (!cleaned) logger.warn("紧急清理等待活动任务完成超时，本轮跳过 Skia 全局缓存清理")
+            val cleaned = runCatching {
+                withTimeoutOrNull(15_000L) {
+                    DrawingQueueManager.runExclusiveCleanup {
+                        clearGlobalCaches(forcePurgeAllSkiaCaches = true)
+                    }
+                } ?: false
+            }.onFailure { e ->
+                logger.warn("紧急清理等待活动任务时发生异常，本轮跳过 purge", e)
+            }.getOrDefault(false)
+            if (!cleaned) logger.warn("紧急清理等待活动任务完成超时，本轮跳过 Skia 全局缓存清理")
 
-        repeat(5) {
-            // 连续执行更多轮 GC/finalization，尽量促使已标记对象及时释放 native 包装。
-            System.gc()
-            System.runFinalization()
-            delay(120)
+            repeat(5) {
+                // 连续执行更多轮 GC/finalization，尽量促使已标记对象及时释放 native 包装。
+                System.gc()
+                System.runFinalization()
+                delay(120)
+            }
+
+            val result = if (cleaned) SkiaCleanupResult.COMPLETED else SkiaCleanupResult.SKIPPED
+            recordCleanupAttempt(result, emergencyAttemptAt = now)
+            logger.warn(if (result.completed) "Skia 紧急清理完成" else "Skia 紧急清理未执行")
+            return result
+        } finally {
+            emergencyCleanupInProgress.set(false)
         }
-
-        logger.warn("Skia 紧急清理完成")
     }
 
     /**
      * 清理全局缓存
      */
-    private fun clearGlobalCaches(forcePurgeAllSkiaCaches: Boolean) {
+    private fun clearGlobalCaches(forcePurgeAllSkiaCaches: Boolean): Boolean {
         // 段落缓存会随不同文本内容持续增长，空闲清理时需要显式重置。
         runCatching {
             FontUtils.resetParagraphCache()
@@ -142,7 +148,7 @@ object SkiaManager {
         }
 
         // 通过 Graphics API 主动清理 Skia 资源缓存，避免仅依赖被动淘汰导致长期高水位。
-        runCatching {
+        val skiaCachePurged = runCatching {
             val beforeResourceCacheUsed = Graphics.resourceCacheTotalUsed
             if (forcePurgeAllSkiaCaches) {
                 Graphics.purgeAllCaches()
@@ -156,9 +162,10 @@ object SkiaManager {
                 beforeResourceCacheUsed,
                 afterResourceCacheUsed,
             )
+            true
         }.onFailure { e ->
             logger.warn("Failed to purge Skia resource cache via Graphics API", e)
-        }
+        }.getOrDefault(false)
 
         // 清理图片缓存
         runCatching {
@@ -167,6 +174,8 @@ object SkiaManager {
         }.onFailure { e ->
             logger.warn("Failed to clear ImageCache", e)
         }
+
+        return skiaCachePurged
     }
 
     /**
@@ -188,7 +197,7 @@ object SkiaManager {
             memoryUsage = getMemoryUsage(),
             resourceCacheBytes = runCatching { Graphics.resourceCacheTotalUsed.toLong() }.getOrDefault(-1L),
             totalDrawingCount = totalDrawingCount.get(),
-            totalCleanupCount = totalCleanupCount.get(),
+            totalCleanupCount = cleanupStateSnapshot().successfulCleanupCount,
             queueStatus = DrawingQueueManager.getQueueStatus(),
             uptimeMs = System.currentTimeMillis() - startTime
         )
@@ -211,6 +220,47 @@ object SkiaManager {
         } catch (e: Exception) {
             logger.error("关闭 FontManager 时出错: ${e.message}", e)
         }
+    }
+
+    /**
+     * 原子更新清理成功次数与紧急冷却时间，跳过的尝试不会改变成功状态。
+     */
+    @Synchronized
+    private fun recordCleanupAttempt(result: SkiaCleanupResult, emergencyAttemptAt: Long? = null) {
+        cleanupState = cleanupState.afterAttempt(result, emergencyAttemptAt)
+    }
+
+    /**
+     * 返回一致的清理状态快照，避免监控读取到计数与冷却时间的中间状态。
+     */
+    @Synchronized
+    private fun cleanupStateSnapshot(): SkiaCleanupState = cleanupState
+}
+
+/**
+ * 单次 Skia 清理的真实执行结果；只有 COMPLETED 表示 purge 已在互斥闸门内执行。
+ */
+enum class SkiaCleanupResult(val completed: Boolean) {
+    COMPLETED(true),
+    SKIPPED(false),
+}
+
+/**
+ * Skia 清理成功状态；冷却时间只记录最近一次真正完成的紧急清理。
+ */
+data class SkiaCleanupState(
+    val successfulCleanupCount: Long = 0L,
+    val lastEmergencyCleanupAt: Long = 0L,
+) {
+    /**
+     * 根据真实执行结果生成下一状态，跳过的尝试保持原状态不变。
+     */
+    fun afterAttempt(result: SkiaCleanupResult, emergencyAttemptAt: Long? = null): SkiaCleanupState {
+        if (!result.completed) return this
+        return copy(
+            successfulCleanupCount = successfulCleanupCount + 1L,
+            lastEmergencyCleanupAt = emergencyAttemptAt ?: lastEmergencyCleanupAt,
+        )
     }
 }
 

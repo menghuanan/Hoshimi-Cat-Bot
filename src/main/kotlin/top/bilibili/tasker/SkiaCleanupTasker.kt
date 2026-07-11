@@ -43,13 +43,15 @@ object SkiaCleanupTasker : BiliTasker() {
                 status = SkiaManager.getStatus()
             } else if (DrawingQueueManager.isIdleTimeout()) {
                 logger.debug("Skia 空闲超时，执行清理")
-                SkiaManager.performCleanup()
-                lastPeriodicCleanupAt = now
+                val cleanupResult = SkiaManager.performCleanup()
+                // 周期基准只在 purge 实际完成后推进，跳过时保留下一轮立即重试资格。
+                if (cleanupResult.completed) lastPeriodicCleanupAt = now
                 status = SkiaManager.getStatus()
             } else if (periodicCleanupDue) {
                 logger.debug("Skia 达到周期清理间隔，执行清理")
-                SkiaManager.performCleanup()
-                lastPeriodicCleanupAt = now
+                val cleanupResult = SkiaManager.performCleanup()
+                // 周期基准只在 purge 实际完成后推进，跳过时保留下一轮立即重试资格。
+                if (cleanupResult.completed) lastPeriodicCleanupAt = now
                 status = SkiaManager.getStatus()
             }
         } catch (e: Exception) {

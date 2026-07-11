@@ -40,7 +40,7 @@ Skia 模块负责图片绘制的并发控制、会话级 native 资源管理、�
 | `drawingTimeoutMs` | `60_000` | 生效中 | 必须 `> 0`；单次绘图超时 |
 | `memoryWarningThreshold` | `0.70` | 生效中 | 必须在 `0.0..1.0`；比较的是当前 JVM heap 比例，达到后只记录警告 |
 | `memoryCriticalThreshold` | `0.85` | 生效中 | 必须在 `0.0..1.0` 且大于 warning；比较的是当前 JVM heap 比例，达到后触发紧急清理 |
-| `emergencyCleanupCooldownMs` | `180_000` | 生效中 | 必须 `> 0`；限制紧急清理触发频率 |
+| `emergencyCleanupCooldownMs` | `180_000` | 生效中 | 必须 `> 0`；只从最近一次真正完成 purge 的紧急清理开始计算，跳过或失败不占用冷却时间 |
 维护要求：
 
 - `validate()` 是唯一的参数合法性守卫；新增参数时必须同步补校验。
@@ -110,7 +110,7 @@ Skia 读取 `SkiaConfig` 和绘图相关运行参数，不写业务数据。新�
 
 紧急清理：
 
-1. 冷却时间内跳过。
+1. 最近一次成功 purge 仍在冷却时间内时跳过；未取得闸门或 purge 失败时保留下一轮重试资格。
 2. 通过 `runExclusiveCleanup()` 设置清理闸门并等待活动绘图完成，最长 15 秒。
 3. 在同一个互斥 block 内重置 paragraph cache、执行 `Graphics.purgeAllCaches()` 并清理 `ImageCache`。
 4. 等待超时时跳过本轮 purge。

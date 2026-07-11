@@ -78,6 +78,44 @@ enum class BotStartResult {
 }
 
 /**
+ * 单个必需启动阶段；阶段只有明确返回 true 才视为完成。
+ */
+data class RequiredStartupStage(
+    val name: String,
+    val execute: suspend () -> Boolean,
+)
+
+/**
+ * 必需启动阶段的执行结果，用于把失败阶段和异常原样交给启动入口处理。
+ */
+data class RequiredStartupResult(
+    val success: Boolean,
+    val failedStage: String? = null,
+    val cause: Throwable? = null,
+)
+
+/**
+ * 严格按顺序执行启动硬依赖，任一阶段失败后不再执行后续阶段。
+ */
+object RequiredStartupSequence {
+    /**
+     * 执行全部必需阶段，并把 false 返回值或异常统一转换为失败结果。
+     */
+    suspend fun run(stages: List<RequiredStartupStage>): RequiredStartupResult {
+        stages.forEach { stage ->
+            val result = runCatching { stage.execute() }
+            if (result.getOrDefault(false)) return@forEach
+            return RequiredStartupResult(
+                success = false,
+                failedStage = stage.name,
+                cause = result.exceptionOrNull(),
+            )
+        }
+        return RequiredStartupResult(success = true)
+    }
+}
+
+/**
  * Bot 运行期入口，负责启动、停机与公共资源管理。
  */
 object BiliBiliBot : CoroutineScope {
@@ -113,7 +151,6 @@ object BiliBiliBot : CoroutineScope {
         private set
 
     private var eventCollectorJob: Job? = null
-    private var startupDataInitJob: Job? = null
     private var startupTaskBootstrapJob: Job? = null
     private val resourceSupervisor = ResourceSupervisor()
 
@@ -509,41 +546,54 @@ object BiliBiliBot : CoroutineScope {
 
             registerResourcePartitions()
 
-            startupDataInitJob = launch {
-                try {
-                    withTimeout(60_000) {
-                        // 适当延迟能给平台连接和基础资源留出稳定时间，避免冷启动时初始化链路相互争抢。
-                        delay(3_000)
-                        StartupDataInitService.initBiliData()
-                    }
-                } catch (_: TimeoutCancellationException) {
-                    logger.error("启动数据初始化超时")
-                    stop("startup-data-timeout")
-                } finally {
-                    startupDataInitJob = null
-                }
+            val requiredStartupResult = runBlocking {
+                RequiredStartupSequence.run(
+                    listOf(
+                        RequiredStartupStage("startup-data") {
+                            withTimeout(60_000) {
+                                // 平台连接完成后再初始化业务数据，并等待结果后才允许启动消费这些数据的 Tasker。
+                                StartupDataInitService.initBiliData()
+                            }
+                            true
+                        },
+                        RequiredStartupStage("task-bootstrap") {
+                            withTimeout(120_000) {
+                                // 任务启动严格位于基础数据之后，任何启动拒绝或异常都必须使本次启动失败。
+                                TaskBootstrapService.startTasks()
+                            }
+                        },
+                    ),
+                )
             }
+            if (!requiredStartupResult.success) {
+                val failure = requiredStartupResult.cause
+                logger.error(
+                    "必需启动阶段失败: {}{}",
+                    requiredStartupResult.failedStage,
+                    failure?.message?.let { ", reason=$it" }.orEmpty(),
+                    failure,
+                )
+                stop("required-startup-failure:${requiredStartupResult.failedStage}")
+                return BotStartResult.FAILED
+            }
+
+            lifecycleState.set(BotLifecycleState.RUNNING)
+            logger.info("Bot 启动成功")
 
             startupTaskBootstrapJob = launch {
                 try {
                     withTimeout(120_000) {
-                        // 任务启动放到连接与基础数据之后，可以减少首屏启动时的并发峰值。
-                        delay(5_000)
-                        TaskBootstrapService.startTasks()
-                        // 在正式流量前预热运行热点，减少首小时内 CodeCache/Metaspace 的持续补增长。
+                        // 在正式流量后预热运行热点，预热失败可以降级，不得把已启动的核心任务误判为启动失败。
                         RuntimeWarmupService.warmupOnceAfterStartup()
                         delay(1_000)
                         FirstRunService.checkFirstRun(config)
                     }
                 } catch (_: TimeoutCancellationException) {
-                    logger.error("任务启动超时")
+                    logger.warn("启动后预热与首次运行检查超时，核心服务继续运行")
                 } finally {
                     startupTaskBootstrapJob = null
                 }
             }
-
-            lifecycleState.set(BotLifecycleState.RUNNING)
-            logger.info("Bot 启动成功")
             return BotStartResult.STARTED
         } catch (e: Exception) {
             logger.error("Bot 启动失败: ${e.message}", e)
@@ -655,13 +705,11 @@ object BiliBiliBot : CoroutineScope {
         resourceSupervisor.register(
             LambdaResourcePartition(
                 id = "startup-delayed-jobs",
-                owns = listOf("startupDataInitJob", "startupTaskBootstrapJob"),
+                owns = listOf("startupTaskBootstrapJob"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
                 shutdownPhase = ShutdownPhase.INGRESS,
                 stopAction = {
                     // 停机阶段先取消延迟启动协程，避免出现“边关边起”导致的资源回收竞态。
-                    startupDataInitJob?.cancelAndJoin()
-                    startupDataInitJob = null
                     startupTaskBootstrapJob?.cancelAndJoin()
                     startupTaskBootstrapJob = null
                 },
@@ -853,8 +901,6 @@ object BiliBiliBot : CoroutineScope {
     private suspend fun fallbackStopResources() {
         runCatching {
             // 兜底路径同样要先取消启动延迟协程，避免停机后又触发初始化/拉起任务器。
-            startupDataInitJob?.cancelAndJoin()
-            startupDataInitJob = null
             startupTaskBootstrapJob?.cancelAndJoin()
             startupTaskBootstrapJob = null
         }.onFailure {

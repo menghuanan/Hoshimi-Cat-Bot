@@ -93,7 +93,7 @@ object DrawingQueueManager {
     /**
      * 清理全局 Skia/字体资源时暂停新绘图并等待活动绘图完成，调用方的 close 块在暂停窗口内执行。
      */
-    suspend fun runExclusiveCleanup(block: () -> Unit) {
+    suspend fun <T> runExclusiveCleanup(block: () -> T): T {
         synchronized(cleaningLock) {
             isCleaning.set(true)
         }
@@ -102,7 +102,7 @@ object DrawingQueueManager {
             while (activeCount.get() > 0) {
                 delay(100)
             }
-            block()
+            return block()
         } finally {
             synchronized(cleaningLock) {
                 isCleaning.set(false)

@@ -114,7 +114,7 @@
 
 | 分区 ID | ShutdownPhase | owns | strictness | 当前 stopAction 语义 |
 | --- | --- | --- | --- | --- |
-| `startup-delayed-jobs` | `INGRESS` | `startupDataInitJob`、`startupTaskBootstrapJob` | `RELAXED_LONG_RUNNING` | 取消延迟初始化与延迟启动任务，避免停机期间“边关边起” |
+| `startup-delayed-jobs` | `INGRESS` | `startupTaskBootstrapJob` | `RELAXED_LONG_RUNNING` | 取消启动后的预热与首次运行检查，避免停机期间仍执行可降级启动后任务 |
 | `gateway-platform` | `INGRESS` | `PlatformConnectorManager`、`MessageGatewayProvider` | `RELAXED_LONG_RUNNING` | 停平台入口、清空 connector manager、注销消息网关 |
 | `webui-manager` | `INGRESS` | `WebUiManager` | `RELAXED_LONG_RUNNING` | 取消 WebUI reload job，并关闭当前和待停止的本地 WebUI manager，避免停机期间继续接收新的 HTTP 请求 |
 | `webui-config-hot-reload` | `INGRESS` | `WebUiConfigHotReloadCoordinator` | `RELAXED_LONG_RUNNING` | 拒收新保存，等待或取消当前 worker，并把未终态 job 收敛为失败 |

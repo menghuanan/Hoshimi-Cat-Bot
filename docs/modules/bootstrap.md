@@ -35,9 +35,10 @@ Bootstrap 模块负责进程启动、运行目录初始化、Skiko 初始化、�
 3. `BiliBiliBot.start()` 加载主配置，再准备运行目录并加载 `bot.yml`。
 4. 按配置启动可选 WebUI，装配 connector、message gateway 和事件收集器。
 5. 启动平台连接并注册 `ResourceSupervisor` 分区。
-6. 延迟初始化业务数据，再按固定顺序启动 Tasker 和运行期预热。
+6. 同步完成业务数据初始化，并逐个等待 Tasker 的 `init()` 确认；全部硬依赖成功后才进入运行态。
+7. 运行态建立后异步执行可降级的运行期预热与首次运行检查。
 
-`BiliBiliBot.start()` 通过 `BotStartResult` 同步返回启动结论。`Main.main()` 只在 `STARTED` 时等待当前线程；配置、平台或 connector 初始化失败返回 `FAILED`，主入口以状态码 1 退出，外部守护可据此识别启动失败。
+`BiliBiliBot.start()` 通过 `BotStartResult` 同步返回启动结论。`Main.main()` 只在 `STARTED` 时等待当前线程；配置、平台、connector、业务数据或 Tasker 初始化失败都返回 `FAILED`，主入口以状态码 1 退出。运行期预热和首次提示属于可降级步骤，不阻断已经完成的核心启动。
 
 修改启动流程时必须同步核对 [`modules/core.md`](core.md)、[`modules/config.md`](config.md)、[`modules/connector.md`](connector.md)、[`modules/tasker.md`](tasker.md) 和 [`operations/deployment.md`](../operations/deployment.md)。
 

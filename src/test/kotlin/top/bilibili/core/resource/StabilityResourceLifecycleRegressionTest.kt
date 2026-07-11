@@ -31,10 +31,11 @@ class StabilityResourceLifecycleRegressionTest {
     }
 
     @Test
-    fun `bot should track and cancel startup delayed jobs in ingress phase`() {
+    fun `bot should track startup followup job and complete required data before running`() {
         val source = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
 
-        assertTrue(source.contains("startupDataInitJob"))
+        // 数据初始化已经成为同步硬门槛，只有可降级的预热与首次运行检查仍由 ingress 分区追踪。
+        assertTrue(source.indexOf("StartupDataInitService.initBiliData()") < source.indexOf("lifecycleState.set(BotLifecycleState.RUNNING)"))
         assertTrue(source.contains("startupTaskBootstrapJob"))
         assertTrue(source.contains("id = \"startup-delayed-jobs\""))
         assertTrue(source.contains("shutdownPhase = ShutdownPhase.INGRESS"))
