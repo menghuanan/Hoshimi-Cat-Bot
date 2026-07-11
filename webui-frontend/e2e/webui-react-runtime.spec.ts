@@ -82,7 +82,7 @@ test('keeps dark theme hover states on dark surfaces', async ({page}) => {
   await page.getByRole('button', {name: '登录'}).click()
   await expect(page.getByRole('heading', {name: '运行概览'})).toBeVisible()
 
-  await page.goto('/settings')
+  await page.getByRole('button', {name: '系统配置'}).click()
   const homeNavButton = page.getByRole('button', {name: '首页'})
   await homeNavButton.hover()
   await expect.poll(() => homeNavButton.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(30, 41, 59)')
@@ -170,10 +170,9 @@ test('saves visible settings through one hot reload batch job', async ({page}) =
   await page.getByLabel('链接解析黑名单').fill('onebot11:group:1001\n\nonebot11:private:2002')
 
   await page.getByRole('button', {name: '保存'}).click()
-  await page.getByLabel('确认密码').fill('secret-password')
-  await page.getByRole('button', {name: '确认'}).click()
 
   await expect(page.getByText(/保存成功/)).toBeVisible()
+  await expect(page.getByLabel('确认密码')).toHaveCount(0)
   expect(batchBodies).toHaveLength(1)
   expect(batchBodies[0]).toMatchObject({
     biliConfig: expect.objectContaining({messageInterval: 250}),
@@ -198,7 +197,7 @@ test('keeps API and static asset routes out of the React fallback', async ({page
   expect(scriptResponse.text).toContain('createRoot')
 })
 
-test('shows mobile navigation, high-risk confirmation, and page content under a narrow viewport', async ({page}) => {
+test('saves from mobile navigation without a password confirmation dialog', async ({page}) => {
   await page.setViewportSize({width: 390, height: 844})
   await page.goto('/login')
   await page.getByLabel('WebUI 密码').fill('secret-password')
@@ -209,6 +208,6 @@ test('shows mobile navigation, high-risk confirmation, and page content under a 
   await expect(page.getByRole('heading', {name: '系统配置'}).first()).toBeVisible()
   await page.getByLabel('OneBot11 主机').fill('127.0.0.2')
   await page.getByRole('button', {name: '保存'}).click()
-  await expect(page.getByRole('dialog', {name: '密码确认'})).toBeVisible()
-  await expect(page.getByLabel('确认密码')).toBeVisible()
+  await expect(page.getByText(/保存成功/)).toBeVisible()
+  await expect(page.getByLabel('确认密码')).toHaveCount(0)
 })

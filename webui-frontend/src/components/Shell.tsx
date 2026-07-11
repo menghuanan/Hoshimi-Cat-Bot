@@ -3,6 +3,7 @@ import { changePassword, logout } from '../api/auth'
 import { useThemePreference } from '../hooks/useThemePreference'
 import type { WebUiPageName } from '../router/webuiRouter'
 import { formatPasswordErrorMessage } from '../utils/errorMessages'
+import { clearSessionPassword } from '../auth/sessionCredential'
 
 type ShellProps = {
   page: Exclude<WebUiPageName, 'login'>
@@ -77,6 +78,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
     setAccountMessage('')
     try {
       await changePassword(currentPassword, newPassword)
+      clearSessionPassword()
       window.location.assign('/login')
     } catch (error) {
       setAccountMessage(formatPasswordErrorMessage(error, '修改密码失败'))
@@ -94,6 +96,7 @@ export function Shell({page, onNavigate, children}: ShellProps) {
     try {
       await logout()
     } finally {
+      clearSessionPassword()
       window.location.assign('/login')
     }
   }

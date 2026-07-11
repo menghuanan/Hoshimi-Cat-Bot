@@ -2,12 +2,15 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { changePassword, loginWithPassword, restoreSession } from '../api/auth'
 import { useThemePreference } from '../hooks/useThemePreference'
 import { formatLoginErrorMessage } from '../utils/errorMessages'
+import { rememberSessionPassword } from '../auth/sessionCredential'
+import { useWebUiNavigation } from '../hooks/useWebUiNavigation'
 
 /**
  * 登录页直接调用认证 API，首次登录需要改密时留在同一 React 路由内完成流程。
  */
 export function LoginPage() {
   useThemePreference()
+  const {navigate} = useWebUiNavigation()
   const [password, setPassword] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -53,7 +56,8 @@ export function LoginPage() {
         setMustChangePassword(true)
         setMessage('请先修改初始密码')
       } else {
-        window.location.assign('/')
+        rememberSessionPassword(password)
+        navigate('home')
       }
     } catch (error) {
       setMessage(formatLoginErrorMessage(error))

@@ -22,7 +22,7 @@ export function SubscriptionsPage() {
   const subscriptionItems = items as SubscriptionItem[]
 
   /**
-   * 新增订阅提交后刷新列表，确认密码由 hook 统一弹窗获取。
+   * 新增订阅提交后刷新列表，后端确认字段由 hook 透明复用当前登录凭据。
    */
   const submitSubscription = async (payload: Record<string, unknown>) => {
     setPending(true)

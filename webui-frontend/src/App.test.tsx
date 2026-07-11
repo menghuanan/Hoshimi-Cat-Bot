@@ -336,8 +336,6 @@ describe('webui shell routing', () => {
     await user.type(followGroup, '新分组')
     await user.click(screen.getByRole('button', {name: '保存'}))
 
-    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     await waitFor(() => expect(screen.getByLabelText('关注分组')).toHaveValue('新分组'))
     const toast = (await screen.findByText(/保存成功/)).closest('[data-toast]')
@@ -347,7 +345,7 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * 字段改回原值后不应进入高风险确认或批量保存，避免无有效变更也触发热重载。
+   * 字段改回原值后不应批量保存，避免无有效变更也触发热重载。
    */
   it('skips settings save when edited values return to their original snapshot value', async () => {
     const batchBodies: Array<Record<string, Record<string, unknown>>> = []
@@ -446,17 +444,15 @@ describe('webui shell routing', () => {
     await user.type(followGroup, '新分组')
     await user.click(screen.getByRole('button', {name: '保存'}))
 
-    await user.type(await screen.findByLabelText('确认密码'), 'wrong-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     expect(await screen.findByText('密码错误')).toBeInTheDocument()
     expect(screen.queryByText('HTTP 401')).not.toBeInTheDocument()
   })
 
   /**
-   * 设置保存必须先拦截明显非法输入，避免用户先输确认密码才看到字段错误。
+   * 设置保存必须先拦截明显非法输入，避免错误值进入后端写入链路。
    */
-  it('validates settings before opening the high-risk password dialog', async () => {
+  it('validates settings before sending a save request', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/api/config/bili-config') && (!init || init.method === 'GET')) {
@@ -733,11 +729,16 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * WebUI 主机设为 0.0.0.0 时，页面必须明确显示对外暴露警告，并在保存前再次确认风险。
+   * WebUI 主机设为 0.0.0.0 时仍显示暴露警告，但保存不得再打开密码确认框。
    */
-  it('warns when webui.host is set to 0.0.0.0 and mirrors the risk in the confirmation dialog', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+  it('warns when webui.host is set to 0.0.0.0 without opening a password dialog', async () => {
+    const batchBodies: Array<Record<string, Record<string, unknown>>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {onBatchBody: (body) => batchBodies.push(body)})
+      if (settingsResponse) {
+        return settingsResponse
+      }
       if (url.includes('/api/config/bili-config')) {
         return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: 'bili-token', fields: []})}
       }
@@ -770,7 +771,8 @@ describe('webui shell routing', () => {
     await user.clear(screen.getByLabelText('WebUI 端口'))
     await user.type(screen.getByLabelText('WebUI 端口'), '18081')
     await user.click(screen.getByRole('button', {name: '保存'}))
-    expect(await screen.findByRole('dialog', {name: '密码确认'})).toHaveTextContent(/0\.0\.0\.0/)
+    await waitFor(() => expect(batchBodies).toHaveLength(1))
+    expect(screen.queryByLabelText('确认密码')).not.toBeInTheDocument()
   })
 
   /**
@@ -856,8 +858,6 @@ describe('webui shell routing', () => {
 
     await user.click(screen.getAllByRole('button', {name: '删除'})[0])
     await user.click(screen.getByRole('button', {name: '保存'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     await waitFor(() => expect(botPostBodies).toHaveLength(1))
     expect(botPostBodies[0].admins).toEqual([
@@ -925,8 +925,6 @@ describe('webui shell routing', () => {
     expect(batchBodies).toHaveLength(0)
 
     await user.click(screen.getByRole('button', {name: '保存'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     await waitFor(() => expect(batchBodies).toHaveLength(1))
     const botPost = batchBodies[0].botConfig
     expect(botPost?.admins).toEqual([
@@ -986,8 +984,6 @@ describe('webui shell routing', () => {
     await user.type(screen.getByLabelText('个人QQ号'), '654321')
     await user.click(screen.getByRole('button', {name: '暂存'}))
     await user.click(screen.getByRole('button', {name: '保存'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     await waitFor(() => expect(botPostBodies).toHaveLength(1))
     await waitFor(() => expect(screen.getByRole('button', {name: '保存'})).toBeEnabled())
 
@@ -997,8 +993,6 @@ describe('webui shell routing', () => {
     await user.type(screen.getByLabelText('个人QQ号'), '333333')
     await user.click(screen.getByRole('button', {name: '暂存'}))
     await user.click(screen.getByRole('button', {name: '保存'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     await waitFor(() => expect(botPostBodies).toHaveLength(2))
 
     expect(botPostBodies[0].snapshotToken).toBe('bot-token-1')
@@ -1062,8 +1056,6 @@ describe('webui shell routing', () => {
     await user.clear(await screen.findByLabelText('OneBot11 主机'))
     await user.type(screen.getByLabelText('OneBot11 主机'), '10.0.0.2')
     await user.click(screen.getByRole('button', {name: '保存'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     await waitFor(() => expect(botPostBody).not.toBeNull())
     expect(botPostBody).not.toHaveProperty('admins')
@@ -1120,8 +1112,6 @@ describe('webui shell routing', () => {
     await user.type(screen.getByLabelText('个人QQ号'), '654321')
     await user.click(screen.getByRole('button', {name: '暂存'}))
     await user.click(screen.getByRole('button', {name: '保存'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'settings-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     await waitFor(() => expect(batchBodies).toHaveLength(1))
     expect(batchBodies[0].botConfig).toBeDefined()
@@ -1218,6 +1208,29 @@ describe('webui shell routing', () => {
     expect(logWindow).toHaveClass('log-container')
     expect(logWindow?.parentElement?.querySelector('[data-log-filter-bar]')).not.toBeNull()
     await waitFor(() => expect((logWindow as HTMLPreElement).scrollTop).toBe(640))
+  })
+
+  /**
+   * 登录成功后必须在当前 React 生命周期内进入主界面，供后续保存复用本次登录凭据。
+   */
+  it('enters the shell without reloading after login', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/auth/session')) {
+        return {ok: true, status: 200, json: async () => ({authenticated: false})}
+      }
+      if (url.includes('/api/auth/login')) {
+        return {ok: true, status: 200, json: async () => ({authenticated: true, mustChangePassword: false})}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+    renderAtPath('/login')
+
+    await user.type(screen.getByLabelText('WebUI 密码'), 'secret-password')
+    await user.click(screen.getByRole('button', {name: '登录'}))
+
+    expect(await screen.findByRole('button', {name: '管理员'})).toBeInTheDocument()
   })
 
   /**
@@ -1369,13 +1382,11 @@ describe('webui shell routing', () => {
     expect(within(editorDialog).getByRole('alert')).toHaveTextContent('目标群聊必须至少选择一个')
     await user.click(screen.getByLabelText('onebot11:group:1072150397'))
     await user.click(screen.getByRole('button', {name: '保存过滤器'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     expect(await screen.findByText('过滤器已保存')).toBeInTheDocument()
     expect(JSON.parse(filterPostBodies.at(-1) || '{}')).toMatchObject({
       content: '广告',
       targetGroups: ['onebot11:group:1072150397'],
-      confirmationPassword: 'filter-password',
+      confirmationPassword: 'secret-password',
     })
 
     await user.click(screen.getByRole('button', {name: '编辑模板'}))
@@ -1401,14 +1412,12 @@ describe('webui shell routing', () => {
     expect(within(editorDialog).getByRole('alert')).toHaveTextContent('目标群聊必须至少选择一个')
     await user.click(screen.getByLabelText('onebot11:group:1072150397'))
     await user.click(screen.getByRole('button', {name: '保存模板'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'template-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     expect(await screen.findByText('模板已保存')).toBeInTheDocument()
     expect(JSON.parse(templatePostBodies.at(-1) || '{}')).toMatchObject({
       name: '默认模板',
       content: '{{title}}',
       targetGroups: ['onebot11:group:1072150397'],
-      confirmationPassword: 'template-password',
+      confirmationPassword: 'secret-password',
     })
 
     await user.click(screen.getByRole('button', {name: '编辑at全体'}))
@@ -1419,8 +1428,6 @@ describe('webui shell routing', () => {
     expect(screen.getByLabelText('onebot11:group:1072150397')).toBeInTheDocument()
     expect(screen.getByLabelText('onebot11:group:1245551')).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '保存at全体'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'atall-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     expect(await screen.findByText('@全体已保存')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '编辑主题色'}))
@@ -1435,13 +1442,11 @@ describe('webui shell routing', () => {
     await user.type(screen.getByLabelText('主题颜色'), '#33aaff')
     await user.click(screen.getByLabelText('onebot11:group:1245551'))
     await user.click(screen.getByRole('button', {name: '保存主题色'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'theme-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     expect(await screen.findByText('主题色已保存')).toBeInTheDocument()
     expect(JSON.parse(themePostBodies.at(-1) || '{}')).toMatchObject({
       color: '#33aaff',
       targetGroups: ['onebot11:group:1072150397'],
-      confirmationPassword: 'theme-password',
+      confirmationPassword: 'secret-password',
     })
   }, 10_000)
 
@@ -1501,7 +1506,7 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * 推送群聊编辑器位于过滤器上方，新增输入必须是正整数并携带确认密码写入后端。
+   * 推送群聊编辑器位于过滤器上方，新增输入必须是正整数并携带当前登录凭据写入后端。
    */
   it('edits subscription target groups from the nested editor', async () => {
     const targetPostBodies: string[] = []
@@ -1551,20 +1556,18 @@ describe('webui shell routing', () => {
     await user.clear(screen.getByLabelText('推送群聊'))
     await user.type(screen.getByLabelText('推送群聊'), '10001')
     await user.click(screen.getByRole('button', {name: '保存推送群聊'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'target-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     expect(await screen.findByText('推送群聊已保存')).toBeInTheDocument()
     expect(JSON.parse(targetPostBodies.at(-1) || '{}')).toMatchObject({
       targetGroup: '10001',
-      confirmationPassword: 'target-password',
+      confirmationPassword: 'secret-password',
     })
   })
 
   /**
-   * 新增订阅在打开高风险确认前必须先校验当前类型的必填项和数字格式。
+   * 新增订阅在写入前必须先校验当前类型的必填项和数字格式。
    */
-  it('validates new subscription input before opening the high-risk password dialog', async () => {
+  it('validates new subscription input before sending a write request', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
@@ -1609,8 +1612,6 @@ describe('webui shell routing', () => {
     await user.type(screen.getByLabelText('UID'), '12345')
     await user.type(screen.getByLabelText('目标群聊'), '10001')
     await user.click(screen.getByRole('button', {name: '确认新增'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'subscription-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     const toast = (await screen.findByText('订阅已提交')).closest('[data-toast]')
     expect(toast).not.toBeNull()
@@ -1671,13 +1672,11 @@ describe('webui shell routing', () => {
     await user.clear(screen.getByLabelText('订阅ID'))
     await user.type(screen.getByLabelText('订阅ID'), 'MD12345')
     await user.click(screen.getByRole('button', {name: '保存订阅ID'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'uid-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     expect(await screen.findByText('订阅ID已保存')).toBeInTheDocument()
     expect(JSON.parse(uidPostBodies.at(-1) || '{}')).toMatchObject({
       uid: 'md12345',
-      confirmationPassword: 'uid-password',
+      confirmationPassword: 'secret-password',
     })
   })
 
@@ -1737,8 +1736,6 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('目标群聊必须至少选择一个')
     await user.click(screen.getByLabelText('onebot11:group:1072150397'))
     await user.click(screen.getByRole('button', {name: '保存过滤器'}))
-    await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     await waitFor(() => expect(filterPostBodies).toHaveLength(1))
     expect(JSON.parse(filterPostBodies[0])).toMatchObject({
@@ -1746,7 +1743,7 @@ describe('webui shell routing', () => {
       mode: 'black',
       content: '视频',
       targetGroups: ['onebot11:group:1072150397'],
-      confirmationPassword: 'filter-password',
+      confirmationPassword: 'secret-password',
     })
   })
 
@@ -1914,7 +1911,6 @@ describe('webui shell routing', () => {
     const sourceFiles = [
       'src/App.tsx',
       'src/components/Shell.tsx',
-      'src/contexts/ConfirmationContext.tsx',
       'src/pages/SubscriptionsPage.tsx',
       'src/pages/SettingsPage.tsx',
       'src/pages/LogsPage.tsx',

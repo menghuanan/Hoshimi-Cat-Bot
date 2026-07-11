@@ -24,8 +24,8 @@ import {
   setSubscriptionTemplateRandom,
 } from '../api/subscriptions'
 import type { WebUiJsonRequestOptions } from '../api/http'
-import { useHighRiskConfirmation } from './useHighRiskConfirmation'
 import { normalizeVisibleMessage } from '../utils/errorMessages'
+import { readSessionPassword } from '../auth/sessionCredential'
 
 type UseSubscriptionsOptions = WebUiJsonRequestOptions
 type SubscriptionFilterDraft = {
@@ -69,7 +69,7 @@ function ensureSubscriptionWriteSucceeded(result: unknown, fallbackMessage: stri
 }
 
 /**
- * 订阅页把加载和高风险写操作封成一个 hook，页面只拿结果和命令。
+ * 订阅页把加载和写操作封成一个 hook，页面只拿结果和命令。
  */
 export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   const {fetchImpl, redirectToLogin} = options
@@ -77,7 +77,6 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
     fetchImpl,
     redirectToLogin,
   }), [fetchImpl, redirectToLogin])
-  const {requestHighRiskConfirmation} = useHighRiskConfirmation()
   const [items, setItems] = useState<unknown[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -97,10 +96,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [reload])
 
   const saveSubscription = useCallback(async (payload: Record<string, unknown>) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认新增订阅')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     // 新增表单使用分类型显示字段，提交前统一转换成后端订阅写入 DTO。
     const result = await createSubscription(buildSubscriptionCreatePayload({
       type: String(payload.type || 'dynamic'),
@@ -114,15 +110,12 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
       confirmationPassword,
     }), requestOptions)
     return ensureSubscriptionWriteSucceeded(result, '新增订阅失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   const removeSubscription = useCallback(async (itemId: string) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认删除订阅')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await deleteSubscription(itemId, confirmationPassword, requestOptions), '删除订阅失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
    * 嵌套过滤器列表保持只读加载，页面拿到原始 DTO 后再决定如何渲染。
@@ -167,79 +160,58 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [requestOptions])
 
   /**
-   * 保存过滤器前统一获取 WebUI 密码，调用方不能绕过高风险确认。
+   * 保存过滤器透明复用当前登录凭据，页面无需再次索取密码。
    */
   const saveFilter = useCallback(async (itemId: string, draft: SubscriptionFilterDraft) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存过滤器')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await saveSubscriptionFilter(itemId, {...draft, confirmationPassword}, requestOptions), '保存过滤器失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
-   * 保存模板时只让页面提供业务字段，确认密码由 hook 注入。
+   * 保存模板时只让页面提供业务字段，登录凭据由 hook 注入。
    */
   const saveTemplate = useCallback(async (itemId: string, draft: SubscriptionTemplateDraft) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存模板')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await saveSubscriptionTemplate(itemId, {...draft, confirmationPassword}, requestOptions), '保存模板失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
    * 保存 @全体配置时保持多目标列表原样传给后端。
    */
   const saveAtAll = useCallback(async (itemId: string, draft: SubscriptionAtAllDraft) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存at全体')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await saveSubscriptionAtAll(itemId, {...draft, confirmationPassword}, requestOptions), '保存at全体失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
-   * 保存主题色时由 hook 补确认密码，页面只负责提交颜色和可选目标群聊。
+   * 保存主题色时由 hook 补登录凭据，页面只负责提交颜色和可选目标群聊。
    */
   const saveTheme = useCallback(async (itemId: string, draft: SubscriptionThemeDraft) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存主题色')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await saveSubscriptionTheme(itemId, draft.color, draft.targetGroups, confirmationPassword, requestOptions), '保存主题色失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
-   * 保存推送群聊前统一获取确认密码，页面只负责正整数输入校验。
+   * 保存推送群聊复用登录凭据，页面只负责正整数输入校验。
    */
   const saveTarget = useCallback(async (itemId: string, draft: SubscriptionTargetDraft) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存推送群聊')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await saveSubscriptionTarget(itemId, {...draft, confirmationPassword}, requestOptions), '保存推送群聊失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
-   * 保存分组订阅 ID 前统一获取确认密码，新增后由后端默认绑定全部推送群聊。
+   * 保存分组订阅 ID 复用登录凭据，新增后由后端默认绑定全部推送群聊。
    */
   const saveUid = useCallback(async (itemId: string, draft: SubscriptionUidDraft) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认保存订阅ID')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await saveSubscriptionUid(itemId, {...draft, confirmationPassword}, requestOptions), '保存订阅ID失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
-   * 配置项删除按编辑器类型分发到对应端点，确认密码仍走同一弹窗。
+   * 配置项删除按编辑器类型分发到对应端点，并透明复用当前登录凭据。
    */
   const removeConfig = useCallback(async (itemId: string, kind: 'filter' | 'template' | 'atall', key: string) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认删除配置项')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     if (kind === 'filter') {
       return ensureSubscriptionWriteSucceeded(await deleteSubscriptionFilter(itemId, key, confirmationPassword, requestOptions), '删除过滤器失败')
     }
@@ -247,40 +219,31 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
       return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTemplate(itemId, key, confirmationPassword, requestOptions), '删除模板失败')
     }
     return ensureSubscriptionWriteSucceeded(await deleteSubscriptionAtAll(itemId, key, confirmationPassword, requestOptions), '删除at全体失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
    * 删除推送群聊是高风险写操作，后端会按订阅类型清理关联配置。
    */
   const removeTarget = useCallback(async (itemId: string, key: string) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认删除推送群聊')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTarget(itemId, key, confirmationPassword, requestOptions), '删除推送群聊失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
    * 删除分组订阅 ID 必须经过确认，后端会走对应取消订阅链路。
    */
   const removeUid = useCallback(async (itemId: string, key: string) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认删除订阅ID')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await deleteSubscriptionUid(itemId, key, confirmationPassword, requestOptions), '删除订阅ID失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
-   * 随机模板开关是即时写入，hook 负责在切换前拿到确认密码。
+   * 随机模板开关是即时写入，hook 负责注入当前登录凭据。
    */
   const toggleRandomTemplate = useCallback(async (itemId: string, enabled: boolean) => {
-    const confirmationPassword = await requestHighRiskConfirmation('请输入 WebUI 密码确认切换随机模板')
-    if (!confirmationPassword) {
-      return null
-    }
+    const confirmationPassword = readSessionPassword()
     return ensureSubscriptionWriteSucceeded(await setSubscriptionTemplateRandom(itemId, enabled, confirmationPassword, requestOptions), '切换随机模板失败')
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   return {
     items,

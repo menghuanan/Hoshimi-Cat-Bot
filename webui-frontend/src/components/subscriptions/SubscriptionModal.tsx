@@ -27,7 +27,7 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
   }
 
   /**
-   * 表单提交只返回当前模式需要的字段，确认密码由 useSubscriptions 统一补充。
+   * 表单提交只返回当前模式需要的字段，登录凭据由 useSubscriptions 统一补充。
    */
   const submitForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -149,7 +149,7 @@ type SubscriptionDraftValues = {
 }
 
 /**
- * 新增订阅先做浏览器侧格式检查，避免明显错误值进入密码确认和后端写入链路。
+ * 新增订阅先做浏览器侧格式检查，避免明显错误值进入后端写入链路。
  */
 function validateSubscriptionDraft(draft: SubscriptionDraftValues): string[] {
   if (draft.type === 'group') {

@@ -1,5 +1,4 @@
 import { Shell } from './components/Shell'
-import { ConfirmationProvider } from './contexts/ConfirmationContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { WebUiNavigationProvider } from './contexts/WebUiNavigationContext'
 import { useWebUiNavigation } from './hooks/useWebUiNavigation'
@@ -30,16 +29,14 @@ function AppContent() {
 }
 
 /**
- * 入口保留一个 provider，后续高风险确认和主题上下文都可以在这里继续堆叠。
+ * 入口只装配全局反馈与导航上下文，写操作不再挂载二次密码确认弹窗。
  */
 function App() {
   return (
     <ToastProvider>
-      <ConfirmationProvider>
-        <WebUiNavigationProvider>
-          <AppContent />
-        </WebUiNavigationProvider>
-      </ConfirmationProvider>
+      <WebUiNavigationProvider>
+        <AppContent />
+      </WebUiNavigationProvider>
     </ToastProvider>
   )
 }

@@ -12,8 +12,8 @@ import {
   type WebUiSettingsBatchSaveInput,
 } from '../api/settings'
 import type { WebUiJsonRequestOptions } from '../api/http'
-import { useHighRiskConfirmation } from './useHighRiskConfirmation'
 import type { WebUiConfigHotReloadJob } from '../types/settings'
+import { readSessionPassword } from '../auth/sessionCredential'
 
 type UseSettingsFilesOptions = WebUiJsonRequestOptions
 
@@ -23,7 +23,7 @@ type ConfigSnapshotField = {
 }
 
 /**
- * 系统配置页把读取、保存和确认逻辑收敛到一个 hook，避免页面再散落 fetch。
+ * 系统配置页把读取和保存逻辑收敛到一个 hook，避免页面再散落 fetch。
  */
 export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
   const {fetchImpl, redirectToLogin} = options
@@ -31,7 +31,6 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
     fetchImpl,
     redirectToLogin,
   }), [fetchImpl, redirectToLogin])
-  const {requestHighRiskConfirmation} = useHighRiskConfirmation()
   const [biliConfig, setBiliConfig] = useState<Record<string, unknown> | null>(null)
   const [biliData, setBiliData] = useState<Record<string, unknown> | null>(null)
   const [botConfig, setBotConfig] = useState<Record<string, unknown> | null>(null)
@@ -59,38 +58,26 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
   }, [reload])
 
   /**
-   * 保存前的高风险确认文案由调用方传入，默认仍然保持简短密码确认。
+   * 单文件保存透明复用当前登录凭据，不再向用户索取二次确认密码。
    */
-  const saveBili = useCallback(async (input: Omit<WebUiBiliConfigSaveInput, 'confirmationPassword'>, confirmationMessage = '请输入 WebUI 密码确认保存') => {
-    const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
-    if (!confirmationPassword) {
-      return null
-    }
-    return saveBiliConfig({...input, confirmationPassword}, requestOptions)
-  }, [requestHighRiskConfirmation, requestOptions])
+  const saveBili = useCallback(async (input: Omit<WebUiBiliConfigSaveInput, 'confirmationPassword'>) => {
+    return saveBiliConfig({...input, confirmationPassword: readSessionPassword()}, requestOptions)
+  }, [requestOptions])
 
   /**
-   * bot.yml 保存也复用同一套确认入口，必要时由页面层替换成更具体的风险文案。
+   * bot.yml 保存复用当前登录凭据并保持原后端字段契约。
    */
-  const saveBot = useCallback(async (input: Omit<WebUiBotConfigSaveInput, 'confirmationPassword'>, confirmationMessage = '请输入 WebUI 密码确认保存') => {
-    const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
-    if (!confirmationPassword) {
-      return null
-    }
-    return saveBotConfig({...input, confirmationPassword}, requestOptions)
-  }, [requestHighRiskConfirmation, requestOptions])
+  const saveBot = useCallback(async (input: Omit<WebUiBotConfigSaveInput, 'confirmationPassword'>) => {
+    return saveBotConfig({...input, confirmationPassword: readSessionPassword()}, requestOptions)
+  }, [requestOptions])
 
   /**
    * 批量保存会轮询热重载任务直到成功或失败，避免页面在仅入队时误报已生效。
    */
-  const saveBatch = useCallback(async (input: WebUiSettingsBatchSaveInput, confirmationMessage = '请输入 WebUI 密码确认保存') => {
-    const confirmationPassword = await requestHighRiskConfirmation(confirmationMessage)
-    if (!confirmationPassword) {
-      return null
-    }
-    const accepted = await saveSettingsBatch(attachConfirmationPassword(input, confirmationPassword), requestOptions)
+  const saveBatch = useCallback(async (input: WebUiSettingsBatchSaveInput) => {
+    const accepted = await saveSettingsBatch(attachConfirmationPassword(input, readSessionPassword()), requestOptions)
     return waitForSettingsSaveJob(accepted, requestOptions)
-  }, [requestHighRiskConfirmation, requestOptions])
+  }, [requestOptions])
 
   /**
    * 保存成功后把最新字段值合并回本地快照，避免页面重新读取旧快照把输入刷回旧值。
@@ -129,7 +116,7 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
 }
 
 /**
- * 同一次确认密码复制到所有子 payload，保持后端 batch guard 只校验一个用户意图。
+ * 当前登录凭据复制到所有子 payload，保持后端 batch guard 和 API 契约不变。
  */
 function attachConfirmationPassword(
   input: WebUiSettingsBatchSaveInput,

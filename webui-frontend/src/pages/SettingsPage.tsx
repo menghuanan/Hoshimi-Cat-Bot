@@ -111,11 +111,10 @@ export function SettingsPage() {
       const biliToken = String(biliConfig?.snapshotToken || '')
       const biliDataToken = String(biliData?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
-      const confirmationMessage = buildSettingsConfirmationMessage(completeValues)
       const shouldSaveBili = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'biliConfig')
       const shouldSaveBiliData = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'biliData')
       const shouldSaveBot = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'botConfig')
-      // 没有有效差异时不进入高风险确认，也不向后端提交 batch，避免空保存触发热重载或写盘。
+      // 没有有效差异时不向后端提交 batch，避免空保存触发热重载或写盘。
       if (!shouldSaveBili && !shouldSaveBiliData && !shouldSaveBot) {
         showToast('warning', '没有检测到配置变更')
         return
@@ -148,7 +147,7 @@ export function SettingsPage() {
         })
       }
 
-      const job = await saveBatch(batchPayload, confirmationMessage)
+      const job = await saveBatch(batchPayload)
       if (!job) {
         showToast('warning', formatSaveResultMessage([]))
         return
@@ -372,17 +371,6 @@ function GroupAdminField({value, onChange}: {value: string, onChange: (value: st
       </div>
     </div>
   )
-}
-
-/**
- * WebUI 主机绑定到 0.0.0.0 时，确认文案必须明确提醒它会对外暴露管理界面。
- */
-function buildSettingsConfirmationMessage(values: SettingsFormValues): string {
-  const publicHost = String(values['webui.host'] || '').trim()
-  if (publicHost === '0.0.0.0') {
-    return 'WebUI 主机设置为 0.0.0.0，会把管理界面对外暴露，请确认继续保存'
-  }
-  return '请输入 WebUI 密码确认保存'
 }
 
 /**

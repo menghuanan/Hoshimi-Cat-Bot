@@ -1,7 +1,6 @@
-import { renderHook, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { ConfirmationProvider } from '../contexts/ConfirmationContext'
+import { rememberSessionPassword } from '../auth/sessionCredential'
 import { useLogs } from './useLogs'
 import { useRuntimeSummary } from './useRuntimeSummary'
 import { useSettingsFiles } from './useSettingsFiles'
@@ -14,11 +13,7 @@ const createJsonResponse = (status: number, payload: unknown) => ({
   json: async () => payload,
 })
 
-const renderWithConfirmationProvider = (callback: Parameters<typeof renderHook>[0]) => {
-  return renderHook(callback, {
-    wrapper: ({children}) => <ConfirmationProvider>{children}</ConfirmationProvider>,
-  })
-}
+const renderDomainHook = (callback: Parameters<typeof renderHook>[0]) => renderHook(callback)
 
 describe('webui domain hooks', () => {
   it('useRuntimeSummary should call the runtime summary endpoint', async () => {
@@ -182,22 +177,17 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const user = userEvent.setup()
-    const {result} = renderWithConfirmationProvider(() => useSettingsFiles({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useSettingsFiles({fetchImpl})) as {
       result: {current: ReturnType<typeof useSettingsFiles>}
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/config/bot', expect.any(Object)))
+    rememberSessionPassword('secret-password')
     const savePromise = result.current.saveBili({
       snapshotToken: 'bili-snapshot',
       proxyText: 'http://proxy.example:8080',
       currentProxies: ['http://old.example:8080'],
     })
-
-    const dialog = await screen.findByRole('dialog')
-    expect(dialog).toHaveTextContent('密码确认')
-    await user.type(screen.getByLabelText('确认密码'), 'secret-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     await savePromise
 
@@ -244,20 +234,17 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const user = userEvent.setup()
-    const {result} = renderWithConfirmationProvider(() => useSettingsFiles({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useSettingsFiles({fetchImpl})) as {
       result: {current: ReturnType<typeof useSettingsFiles>}
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/config/bili-data', expect.any(Object)))
+    rememberSessionPassword('batch-password')
     const savePromise = result.current.saveBatch({
       biliConfig: {snapshotToken: 'bili-snapshot'},
       biliData: {snapshotToken: 'data-snapshot', linkParseBlacklistContacts: ['onebot11:group:1001']},
       botConfig: {snapshotToken: 'bot-snapshot'},
     })
-
-    await user.type(await screen.findByLabelText('确认密码'), 'batch-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     const job = await savePromise
 
@@ -287,20 +274,17 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const user = userEvent.setup()
-    const {result} = renderWithConfirmationProvider(() => useSubscriptions({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useSubscriptions({fetchImpl})) as {
       result: {current: ReturnType<typeof useSubscriptions>}
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions', expect.any(Object)))
+    rememberSessionPassword('create-password')
     const createPromise = result.current.saveSubscription({
       type: 'dynamic',
       uid: '123',
       targetGroup: '456',
     })
-
-    await user.type(await screen.findByLabelText('确认密码'), 'create-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     await createPromise
 
@@ -328,21 +312,18 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const user = userEvent.setup()
-    const {result} = renderWithConfirmationProvider(() => useSubscriptions({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useSubscriptions({fetchImpl})) as {
       result: {current: ReturnType<typeof useSubscriptions>}
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions', expect.any(Object)))
+    rememberSessionPassword('group-password')
     const createPromise = result.current.saveSubscription({
       type: 'group',
       groupName: '测试分组',
       groupUid: '1001',
       groupTarget: '2001',
     })
-
-    await user.type(await screen.findByLabelText('确认密码'), 'group-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
 
     await createPromise
 
@@ -371,12 +352,12 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const user = userEvent.setup()
-    const {result} = renderWithConfirmationProvider(() => useSubscriptions({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useSubscriptions({fetchImpl})) as {
       result: {current: ReturnType<typeof useSubscriptions>}
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions', expect.any(Object)))
+    rememberSessionPassword('filter-password')
     const saveFilterPromise = result.current.saveFilter('sub-1', {
       key: '',
       kind: 'regex',
@@ -384,13 +365,10 @@ describe('webui domain hooks', () => {
       content: '广告',
     })
 
-    await user.type(await screen.findByLabelText('确认密码'), 'filter-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     await saveFilterPromise
 
+    rememberSessionPassword('random-password')
     const togglePromise = result.current.toggleRandomTemplate('sub-1', true)
-    await user.type(await screen.findByLabelText('确认密码'), 'random-password')
-    await user.click(screen.getByRole('button', {name: '确认'}))
     await togglePromise
 
     const filterCall = fetchImpl.mock.calls.find(([url, init]) => String(url).endsWith('/api/subscriptions/sub-1/filters') && init?.method === 'POST')
@@ -420,7 +398,7 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const {result} = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useLogs({fetchImpl})) as {
       result: {current: ReturnType<typeof useLogs>}
     }
 
@@ -448,7 +426,7 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
     document.cookie = 'hoshimi_cat_bot_webui_logs_auto_refresh=; Max-Age=0; path=/'
-    const first = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+    const first = renderDomainHook(() => useLogs({fetchImpl})) as {
       result: {current: ReturnType<typeof useLogs>}
       unmount: () => void
     }
@@ -458,7 +436,7 @@ describe('webui domain hooks', () => {
     expect(document.cookie).toContain('hoshimi_cat_bot_webui_logs_auto_refresh=true')
     first.unmount()
 
-    const second = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+    const second = renderDomainHook(() => useLogs({fetchImpl})) as {
       result: {current: ReturnType<typeof useLogs>}
     }
     expect(second.result.current.autoRefresh).toBe(true)
@@ -479,7 +457,7 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const {result} = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useLogs({fetchImpl})) as {
       result: {current: ReturnType<typeof useLogs>}
     }
 
@@ -512,7 +490,7 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const {result} = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useLogs({fetchImpl})) as {
       result: {current: ReturnType<typeof useLogs>}
     }
 
@@ -542,7 +520,7 @@ describe('webui domain hooks', () => {
       return Promise.resolve(createJsonResponse(200, {}))
     })
 
-    const {result} = renderWithConfirmationProvider(() => useLogs({fetchImpl})) as {
+    const {result} = renderDomainHook(() => useLogs({fetchImpl})) as {
       result: {current: ReturnType<typeof useLogs>}
     }
 

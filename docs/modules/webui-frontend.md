@@ -38,11 +38,11 @@
 | --- | --- | --- | --- |
 | 登录与改密 | `pages/LoginPage.tsx`、`api/auth.ts`、`types/auth.ts` | `/api/auth/*` | 登录结果只依赖 cookie-backed session，不把 bearer token 存入浏览器状态 |
 | 仪表盘 | `pages/DashboardPage.tsx`、`hooks/useRuntimeSummary.ts`、`types/runtime.ts` | `/api/runtime/summary` | 展示生命周期、账号、平台连接、推送统计、宿主 CPU/内存/磁盘和最近推送记录 |
-| 设置 | `pages/SettingsPage.tsx`、`settings/*`、`api/settings.ts` | `/api/config/*`、`/api/config/save-batch`、`/api/config/save-jobs/{jobId}` | schema 控制字段、分组、校验和 payload，保存需要确认密码并轮询热重载 job |
+| 设置 | `pages/SettingsPage.tsx`、`settings/*`、`api/settings.ts` | `/api/config/*`、`/api/config/save-batch`、`/api/config/save-jobs/{jobId}` | schema 控制字段、分组、校验和 payload，保存直接复用本次登录的内存凭据并轮询热重载 job |
 | 订阅 | `pages/SubscriptionsPage.tsx`、`components/subscriptions/*`、`hooks/useSubscriptions.ts`、`subscriptions/*` | `/api/subscriptions*` | `SubscriptionEditorModal` 统一承载 targets、uids、filters、templates、atall、theme 编辑；弹窗经 `ModalPortal` 挂到 body，避免被页面容器裁剪 |
 | 日志 | `pages/LogsPage.tsx`、`hooks/useLogs.ts`、`api/logs.ts`、`types/logs.ts` | `/api/logs/*` | sourceId 来自后端白名单；当前“清空”只清空 React 窗口，未调用已有服务端 clear helper；“导出”由 hook 下载当前过滤结果，没有服务端 export helper |
 | 页面壳与导航 | `components/Shell.tsx`、`router/webuiRouter.ts`、`contexts/WebUiNavigationContext.tsx` | Ktor 静态路由 | `/login` 是独立路径，其他页面可 hash 切换并支持直接刷新 |
-| 高风险确认 | `contexts/ConfirmationContext.tsx`、`hooks/useHighRiskConfirmation.ts` | 所有写操作 DTO 的 `confirmationPassword` | 确认弹窗是前端交互壳，真正授权只以后端当前密码校验为准 |
+| 写操作凭据 | `auth/sessionCredential.ts`、`hooks/useSettingsFiles.ts`、`hooks/useSubscriptions.ts` | 所有写操作 DTO 的 `confirmationPassword` | 登录密码只保留在当前页面内存并自动注入既有 DTO，不展示二次确认框，也不写入浏览器持久化存储 |
 | 全局反馈 | `contexts/ToastContext.tsx`、`hooks/useToast.ts` | 设置、订阅等已迁移写操作与保存 job 结果 | 已迁移流程优先进入 Toast；登录、账户操作和订阅编辑器内部状态仍保留局部反馈，迁移前不要假设所有页面只有一套消息状态 |
 
 ## 请求与 payload 契约
@@ -50,11 +50,12 @@
 - 所有 JSON 请求必须经过 `src/api/http.ts` 的统一入口，unsafe 方法自动携带 CSRF 头。
 - `settings/settingsSchema.ts` 是设置页字段来源；`settings/settingsPayload.ts` 负责把表单值转换为后端 DTO。
 - 设置页一次保存必须把已变更的 `biliConfig`、`biliData` 和 `botConfig` 归并到同一个 batch payload；`BiliData.yml` 的链接解析黑名单按 textarea 非空行转换为 `linkParseBlacklistContacts` 数组。
+- 登录成功后必须在同一 React 页面生命周期进入主壳，`auth/sessionCredential.ts` 只在内存中保留本次登录密码；设置和订阅写操作自动填充既有 `confirmationPassword` 字段，不再要求用户重复输入。该凭据不得写入 `localStorage`、`sessionStorage`、cookie 或 URL，刷新页面导致凭据丢失时应重新登录后再执行写操作。
 - `useSettingsFiles.saveBatch()` 只在 job 到达 `APPLIED` 后清理编辑态；`FAILED` 必须保留用户输入并展示后端 message，`webUiRedirectUrl` 需要作为新 WebUI 地址提示给用户。
 - `subscriptions/subscriptionPayloads.ts` 是订阅写操作 payload 来源；新增订阅子编辑器时必须同步 hook、payload、类型和后端 DTO。
 - `utils/errorMessages.ts` 负责把 HTTP、英文异常和密码策略错误归一成可见文案；页面不应直接展示原始 exception 对象。
 - `utils/storage.ts` 只读取前端所需 cookie，例如 CSRF token；不能尝试读取 HttpOnly session cookie。
-- `ModalPortal` 当前负责把订阅创建和编辑弹窗挂到 `document.body`；高风险确认仍由 `ConfirmationContext` 内联渲染。新增或迁移 modal 时必须保持 Escape、焦点和遮罩层级测试。
+- `ModalPortal` 当前负责把订阅创建和编辑弹窗挂到 `document.body`；保存写操作不再挂载密码确认 modal。新增或迁移 modal 时必须保持 Escape、焦点和遮罩层级测试。
 - `api/logs.ts` 提供服务端 clear helper，但当前 `LogsPage` 未接线；导出逻辑由 `useLogs.ts` 在浏览器内生成 Blob。修改按钮语义前必须同步后端高风险确认、审计和 E2E 契约。
 
 ## 日常开发入口

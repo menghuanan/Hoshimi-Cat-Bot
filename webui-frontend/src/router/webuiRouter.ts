@@ -30,5 +30,10 @@ export function writeWebUiPage(page: WebUiPageName): void {
     window.location.assign('/login')
     return
   }
+  // 登录成功进入主壳时只替换浏览器地址，不触发整页重载或丢失内存中的登录凭据。
+  if (window.location.pathname.endsWith('/login')) {
+    window.history.replaceState({}, '', page === 'home' ? '/' : `/#${page}`)
+    return
+  }
   window.location.hash = page === 'home' ? '' : page
 }
