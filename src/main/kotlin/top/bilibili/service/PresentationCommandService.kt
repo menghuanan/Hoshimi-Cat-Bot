@@ -161,7 +161,6 @@ object PresentationCommandService {
                 val result = TemplateService.addTemplate(
                     args[2], args[3], subject, uid, parseTemplateGroupName(args, 5), allowCrossGroup,
                 )
-                if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }
 
@@ -177,7 +176,6 @@ object PresentationCommandService {
                 val result = TemplateService.deleteTemplate(
                     args[2], args[3], subject, uid, parseTemplateGroupName(args, 5), allowCrossGroup,
                 )
-                if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }
 
@@ -194,7 +192,6 @@ object PresentationCommandService {
                 val result = TemplateService.enableRandom(
                     args[2], subject, uid, parseTemplateGroupName(args, 4), allowCrossGroup,
                 )
-                if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }
 
@@ -210,7 +207,6 @@ object PresentationCommandService {
                 val result = TemplateService.disableRandom(
                     args[2], subject, uid, parseTemplateGroupName(args, 4), allowCrossGroup,
                 )
-                if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }
 

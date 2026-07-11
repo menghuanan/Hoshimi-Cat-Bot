@@ -12,6 +12,7 @@ import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformContact
 import top.bilibili.core.BiliBiliBot
+import top.bilibili.core.deepCopyForRuntimeSnapshot
 import top.bilibili.core.resource.BusinessLifecycleManager
 import top.bilibili.core.resource.ResourceStrictness
 import top.bilibili.draw.loginQrCodeBytes
@@ -36,6 +37,7 @@ object LoginService {
         val startedAtEpochMillis: Long,
         val expiresAtEpochMillis: Long,
         val requester: String,
+        val committing: Boolean = false,
     )
     /**
      * 登录回调解析结果：统一携带 cookie 字符串和可选的 DedeUserID。
@@ -57,7 +59,7 @@ object LoginService {
             requester = contact.toSubject(),
         )
         val existing = activeLogin.get()
-        if (existing != null && existing.expiresAtEpochMillis > now) {
+        if (existing != null && (existing.committing || existing.expiresAtEpochMillis > now)) {
             val remainingSeconds = ((existing.expiresAtEpochMillis - now + 999L) / 1_000L).coerceAtLeast(1L)
             sendMessage(contact, "已有登录流程进行中，请在 ${remainingSeconds} 秒后重试")
             return false
@@ -135,9 +137,8 @@ object LoginService {
                             when (loginInfo?.code) {
                                 0 -> {
                                     val callbackPayload = parseLoginCallback(loginInfo.url!!)
-                                    if (callbackPayload.cookie.isNotEmpty() && activeLogin.get()?.generation == state.generation) {
-                                        BiliConfigManager.config.accountConfig.cookie = callbackPayload.cookie
-                                        if (!BiliConfigManager.saveConfig()) {
+                                    if (callbackPayload.cookie.isNotEmpty()) {
+                                        if (!commitLoginConfigForGeneration(state, callbackPayload.cookie)) {
                                             sendMessage(contact, "登录凭据保存失败，请稍后重试")
                                             logger.error("二维码登录凭据保存失败，未安装运行态 Cookie")
                                             break
@@ -193,7 +194,7 @@ object LoginService {
         return true
         } finally {
             // 只允许当前代际释放占用，旧流程不得清除后来者的 active 状态。
-            activeLogin.compareAndSet(state, null)
+            activeLogin.updateAndGet { current -> if (current?.generation == state.generation) null else current }
         }
     }
 
@@ -221,6 +222,41 @@ object LoginService {
             logger.error("解析登录回调失败", e)
             LoginCallbackPayload(cookie = "", dedeUserId = null)
         }
+    }
+
+    /**
+     * 二维码凭据使用候选配置先落盘后安装，失败时不得污染当前运行配置。
+     *
+     * @param persistCandidate 候选配置持久化边界，测试可注入失败验证原子性
+     * @param installCandidate 持久化成功后的唯一运行态安装入口
+     */
+    internal fun commitLoginConfig(
+        cookie: String,
+        persistCandidate: (top.bilibili.BiliConfig) -> Boolean = BiliConfigManager::persistConfigSnapshot,
+        installCandidate: (top.bilibili.BiliConfig) -> Unit = BiliConfigManager::installConfigRuntimeSnapshot,
+    ): Boolean {
+        val candidate = BiliConfigManager.config.deepCopyForRuntimeSnapshot()
+        candidate.accountConfig.cookie = cookie
+        if (!persistCandidate(candidate)) return false
+        installCandidate(candidate)
+        return true
+    }
+
+    /** 只有仍占用 active 状态的代际能进入不可替换的提交阶段，迟到结果在落盘前被拒绝。 */
+    internal fun commitLoginConfigForGeneration(
+        state: ActiveQrLoginState,
+        cookie: String,
+        persistCandidate: (top.bilibili.BiliConfig) -> Boolean = BiliConfigManager::persistConfigSnapshot,
+        installCandidate: (top.bilibili.BiliConfig) -> Unit = BiliConfigManager::installConfigRuntimeSnapshot,
+    ): Boolean {
+        val committingState = state.copy(committing = true)
+        if (!activeLogin.compareAndSet(state, committingState)) return false
+        return commitLoginConfig(cookie, persistCandidate, installCandidate)
+    }
+
+    /** 测试隔离入口设置活动代际，生产流程只通过 login() 管理该状态。 */
+    internal fun setActiveLoginForTest(state: ActiveQrLoginState?) {
+        activeLogin.set(state)
     }
 
     /**

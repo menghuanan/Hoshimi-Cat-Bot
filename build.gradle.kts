@@ -97,6 +97,7 @@ dependencies {
     testImplementation("io.ktor:ktor-server-test-host:3.0.3") {
         exclude(group = "org.slf4j")
     }
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
 
 tasks.test {

@@ -65,7 +65,11 @@ data class BiliDataWrapper(
         /**
          * 将包装对象中的数据回填到 [BiliData] 单例。
          */
-        fun applyTo(wrapper: BiliDataWrapper, biliData: BiliData) {
+        fun applyTo(
+            wrapper: BiliDataWrapper,
+            biliData: BiliData,
+            preserveUnchangedTemplateRuntimeBindings: Boolean = false,
+        ) {
             biliData.dataVersion = wrapper.dataVersion
             biliData.dynamic = wrapper.dynamic
             biliData.filter = wrapper.filter
@@ -81,6 +85,7 @@ data class BiliDataWrapper(
                 dynamicPolicies = wrapper.dynamicTemplatePolicyByScope,
                 livePolicies = wrapper.liveTemplatePolicyByScope,
                 liveClosePolicies = wrapper.liveCloseTemplatePolicyByScope,
+                preserveUnchangedRuntimeBindings = preserveUnchangedTemplateRuntimeBindings,
             )
             biliData.dynamicColorByUid = wrapper.dynamicColorByUid
             biliData.atAll = wrapper.atAll

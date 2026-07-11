@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
  */
 class DeliveryLedgerStore(
     private val file: File = File("data/delivery-ledger.json"),
+    internal val legacyHistoryFile: File = File(file.parentFile, "dynamic_history.txt"),
 ) {
     private val backupFile = File(file.parentFile, "${file.name}.bak")
     // 账本消息多态判别字段避开 DynamicMessage.type，防止 sealed 序列化字段冲突。

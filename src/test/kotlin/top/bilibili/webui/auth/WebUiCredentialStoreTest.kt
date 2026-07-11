@@ -13,6 +13,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class WebUiCredentialStoreTest {
     private val tempRoot: Path = Files.createTempDirectory("webui-credential-store")
@@ -137,6 +138,18 @@ class WebUiCredentialStoreTest {
         )
         assertTrue(persisted.contains("\"tokenVersion\": 8"))
         assertFalse(persisted.contains(legacySha256(legacyPassword, legacySalt)))
+    }
+
+    /** 已有损坏凭据必须保留原文并拒绝生成新密码。 */
+    @Test
+    fun `corrupt credential file should fail without overwrite or bootstrap`() {
+        val credentialFile = tempRoot.resolve("webui-credentials.json")
+        val original = "{corrupt-json"
+        Files.writeString(credentialFile, original, StandardCharsets.UTF_8)
+        val store = WebUiCredentialStore(credentialFile.toFile())
+
+        assertFailsWith<IllegalStateException> { store.loadOrCreate() }
+        assertEquals(original, Files.readString(credentialFile, StandardCharsets.UTF_8))
     }
 
     /**

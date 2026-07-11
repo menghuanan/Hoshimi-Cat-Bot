@@ -158,14 +158,6 @@ object DynamicService {
     }
 
     /**
-     * 从全部模板策略表中移除指定 UID。
-     * 清理时同时回收空 scope，避免策略树在长期运行中残留无效壳层。
-     */
-    private fun removeUidTemplatePolicies(uid: Long) {
-        TemplateRuntimeCoordinator.removeUidAcrossTypes(uid)
-    }
-
-    /**
      * 在事务外完成远程关注与昵称查询，只返回候选构建所需数据，不修改 live BiliData。
      */
     private suspend fun resolveNewSubscriptionName(uid: Long): Pair<String?, String?> {

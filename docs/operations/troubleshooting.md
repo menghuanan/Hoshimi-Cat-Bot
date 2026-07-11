@@ -30,7 +30,7 @@
 
 ### WebUI 凭据损坏但核心 Bot 正常
 
-检查 `config/webui-credentials.json` 和最新 `.bak`，保留现场后人工恢复；程序不会覆盖损坏文件或生成新密码。该故障只禁用 WebUI。
+检查错误中列出的 `config/webui-credentials.json` 原文件和最新 `.bak` 路径，保留现场后人工恢复；程序不会覆盖损坏文件或生成新密码。该故障只禁用 WebUI。
 
 ### bot.yml 损坏导致核心启动失败
 

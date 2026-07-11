@@ -1,7 +1,6 @@
 package top.bilibili.service
 
 import org.slf4j.LoggerFactory
-import top.bilibili.BiliConfigManager
 import top.bilibili.api.userInfo
 import top.bilibili.connector.PlatformContact
 import top.bilibili.utils.biliClient
@@ -27,7 +26,6 @@ object QuickSubscriptionService {
             }
 
             val result = DynamicService.addSubscribe(uid, contactStr, isSelf = true)
-            BiliConfigManager.saveData()
             sendText(contact, result)
         } catch (e: Exception) {
             logger.error("处理订阅失败: ${e.message}", e)
@@ -42,7 +40,6 @@ object QuickSubscriptionService {
         try {
             val contactStr = contact.toSubject()
             val result = DynamicService.removeSubscribe(uid, contactStr, isSelf = true)
-            BiliConfigManager.saveData()
             sendText(contact, result)
         } catch (e: Exception) {
             logger.error("处理取消订阅失败: ${e.message}", e)

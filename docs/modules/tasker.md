@@ -51,7 +51,7 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 | `CacheClearTasker` | 周期维护 | 清理图片缓存 | `ImageCache` |
 | `LogClearTasker` | 周期维护 | 清理日志文件 | `logs/*` |
 | `SkiaCleanupTasker` | 周期维护 | 触发 Skia 普通或紧急清理 | `SkiaManager`、Skia native cache |
-| `DeliveryRetryTasker` | 周期维护 | 将到期的联系人交付消息快照重新放回发送链 | `DeliveryCoordinator`、`messageChannel` |
+| `DeliveryRetryTasker` | 周期维护 | 将到期的构建输入或消息快照分别放回构建链与发送链 | `DeliveryCoordinator`、三条业务 channel |
 | `ProcessGuardian` | 周期守护 | 汇总健康、资源、平台、NMT/RSS、channel 和 tasker 自愈 | 管理/观测快照，不直接替代资源 owner |
 
 命令和快捷消息由 `BiliBiliBot.eventCollectorJob` 消费同一稳定 `eventFlow`，再交给 `MessageEventDispatchService`；不要把这条分发链误写成 `ListenerTasker` 消费 `messageChannel`。`PushStatistics` 是进程内有界辅助状态，维护当日推送计数和最近 4 条记录，不是独立 Tasker，也不需要单独停机分区。

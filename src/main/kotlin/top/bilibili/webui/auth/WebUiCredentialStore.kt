@@ -204,9 +204,17 @@ class WebUiCredentialStore(
         if (!credentialFile.exists()) {
             return null
         }
-        val content = credentialFile.readText(StandardCharsets.UTF_8)
-        if (content.isBlank()) error("WebUI credential file is blank: ${credentialFile.absolutePath}")
-        return json.decodeFromString(WebUiCredentialState.serializer(), content)
+        return try {
+            val content = credentialFile.readText(StandardCharsets.UTF_8)
+            if (content.isBlank()) error("WebUI credential file is blank")
+            json.decodeFromString(WebUiCredentialState.serializer(), content)
+        } catch (error: Exception) {
+            val backup = File(credentialFile.parentFile, "${credentialFile.name}.bak")
+            throw IllegalStateException(
+                "WebUI credential file is damaged; original preserved at ${credentialFile.absolutePath}; latest backup: ${backup.absolutePath}",
+                error,
+            )
+        }
     }
 
     /**

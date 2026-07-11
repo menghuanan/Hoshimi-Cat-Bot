@@ -167,11 +167,35 @@ object TemplateRuntimeCoordinator {
         dynamicPolicies: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
         livePolicies: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
         liveClosePolicies: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
+        preserveUnchangedRuntimeBindings: Boolean = false,
     ) {
+        val previous = snapshotPolicies()
         BiliData.dynamicTemplatePolicyByScope = copyPolicyMap(dynamicPolicies)
         BiliData.liveTemplatePolicyByScope = copyPolicyMap(livePolicies)
         BiliData.liveCloseTemplatePolicyByScope = copyPolicyMap(liveClosePolicies)
-        clearAllRuntimeState()
+        if (preserveUnchangedRuntimeBindings) {
+            // 候选事务可能只修改单个绑定；按策略差异精确失效缓存，避免无关 UID 丢失批次选择状态。
+            clearChangedRuntimeBindings("dynamic", previous.dynamic, dynamicPolicies)
+            clearChangedRuntimeBindings("live", previous.live, livePolicies)
+            clearChangedRuntimeBindings("liveClose", previous.liveClose, liveClosePolicies)
+        } else {
+            clearAllRuntimeState()
+        }
+    }
+
+    /** 比较旧新策略树，只清理内容发生变化或被删除的 type/scope/uid 绑定。 */
+    private fun clearChangedRuntimeBindings(
+        type: String,
+        previous: Map<String, Map<Long, TemplatePolicy>>,
+        current: Map<String, Map<Long, TemplatePolicy>>,
+    ) {
+        (previous.keys + current.keys).forEach { scope ->
+            val previousByUid = previous[scope].orEmpty()
+            val currentByUid = current[scope].orEmpty()
+            (previousByUid.keys + currentByUid.keys).forEach { uid ->
+                if (previousByUid[uid] != currentByUid[uid]) clearRuntimeBinding(type, scope, uid)
+            }
+        }
     }
 
     /**

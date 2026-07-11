@@ -78,11 +78,21 @@ object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
                 val businessId = "${live.uid}:${live.roomId}:${live.liveTime}"
                 PushFanoutService.liveDetailsForContacts(live, PushFanoutService.resolveLiveContacts(live.uid, dynamic)).mapNotNull { detail ->
                     val contact = detail.contact ?: return@mapNotNull detail
-                    val record = DeliveryCoordinator.discover(DeliveryKind.LIVE_OPEN, businessId, contact)
-                    if (DeliveryCoordinator.isTerminal(record.id)) null else detail.copy(deliveryId = record.id)
+                    val record = DeliveryCoordinator.discoverLiveOpen(businessId, detail)
+                    if (!DeliveryCoordinator.requiresInitialBuild(record.id)) null else detail.copy(deliveryId = record.id)
                 }
             }
-            liveChannel.sendAll(details)
+            // 每个联系人先落账再单条入队，部分成功和取消都能由构建租约独立恢复。
+            details.forEach { detail ->
+                val deliveryId = detail.deliveryId ?: return@forEach
+                try {
+                    DeliveryCoordinator.markBuildQueued(deliveryId)
+                    liveChannel.send(detail)
+                } catch (error: Throwable) {
+                    logger.warn("直播构建输入入队失败，账本将重试: {}", deliveryId, error)
+                    throw error
+                }
+            }
             logger.debug("直播已发送到 liveChannel")
 
             // 下播配对由 SendTasker 的开播成功回执建立，入队不再代表已通知。

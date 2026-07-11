@@ -16,18 +16,6 @@ import top.bilibili.core.BiliDataRuntimeCoordinator
 object FilterService {
     private val mutex = Mutex()
 
-    private fun cleanupEmptyFilter(subject: String, uid: Long) {
-        val bySubject = filter[subject] ?: return
-        val dynamicFilter = bySubject[uid] ?: return
-        val isEmpty = dynamicFilter.typeSelect.list.isEmpty() && dynamicFilter.regularSelect.list.isEmpty()
-        if (!isEmpty) return
-
-        bySubject.remove(uid)
-        if (bySubject.isEmpty()) {
-            filter.remove(subject)
-        }
-    }
-
     /**
      * 在写入过滤器前统一校验目标订阅是否存在，避免留下无效规则。
      */
@@ -76,7 +64,11 @@ object FilterService {
 
         val dynamicFilter = filter[storedSubject]!![uid]!!
         if (dynamicFilter.typeSelect.list.isEmpty() && dynamicFilter.regularSelect.list.isEmpty()) {
-            cleanupEmptyFilter(storedSubject, uid)
+            // 读取路径发现历史空桶时同样通过候选事务清理，保存失败不得改变 live 数据。
+            BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+                candidate.filter[storedSubject]?.remove(uid)
+                if (candidate.filter[storedSubject].isNullOrEmpty()) candidate.filter.remove(storedSubject)
+            }
             return@withLock "当前目标没有过滤器"
         }
 

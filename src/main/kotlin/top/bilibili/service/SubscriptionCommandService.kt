@@ -1,6 +1,5 @@
 package top.bilibili.service
 
-import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.api.getEpisodeInfo
 import top.bilibili.connector.PlatformCapabilityService
@@ -39,7 +38,6 @@ object SubscriptionCommandService {
             DynamicService.addDirectSubscribe(uid, targetContact.toSubject(), isSelf = false)
         }
 
-        BiliConfigManager.saveData()
         sendText(chatContact, result)
     }
 
@@ -66,7 +64,6 @@ object SubscriptionCommandService {
             DynamicService.removeDirectSubscribe(uid, targetContact.toSubject(), isSelf = false)
         }
 
-        BiliConfigManager.saveData()
         sendText(chatContact, result)
     }
 

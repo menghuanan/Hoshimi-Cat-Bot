@@ -129,19 +129,20 @@ class CommandRegressionGuardTest {
     }
 
     @Test
-    fun `color command should notify admin when saveData fails`() {
-        val text = read("src/main/kotlin/top/bilibili/service/SettingsCommandService.kt")
+    fun `color command should delegate persistence result to transactional service`() {
+        val commandText = read("src/main/kotlin/top/bilibili/service/SettingsCommandService.kt")
+        val serviceText = read("src/main/kotlin/top/bilibili/service/ColorBindingService.kt")
         assertTrue(
-            text.contains("val saved = BiliConfigManager.saveData()"),
-            "color command should inspect saveData result",
+            commandText.contains("DynamicService.setColor"),
+            "color command should delegate mutation to the transactional service",
         )
         assertTrue(
-            text.contains("if (!saved)"),
-            "color command should branch on save failure",
+            !commandText.contains("BiliConfigManager.saveData()"),
+            "color command must not perform a second non-transactional save",
         )
         assertTrue(
-            text.contains("actionNotify("),
-            "color command should notify admin when persistence fails",
+            serviceText.contains("BiliDataRuntimeCoordinator.mutateAndPersist"),
+            "color binding service should own candidate persistence",
         )
     }
 

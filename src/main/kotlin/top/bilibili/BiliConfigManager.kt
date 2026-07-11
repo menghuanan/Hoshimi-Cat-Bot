@@ -688,8 +688,15 @@ object BiliConfigManager {
     /**
      * 只安装 `BiliData.yml` 运行态切片，供数据热重载和失败回滚精确替换业务数据缓存。
      */
-    fun installDataRuntimeSnapshot(dataSnapshot: BiliDataWrapper) {
-        BiliDataWrapper.applyTo(dataSnapshot.deepCopy(), BiliData)
+    fun installDataRuntimeSnapshot(
+        dataSnapshot: BiliDataWrapper,
+        preserveUnchangedTemplateRuntimeBindings: Boolean = false,
+    ) {
+        BiliDataWrapper.applyTo(
+            dataSnapshot.deepCopy(),
+            BiliData,
+            preserveUnchangedTemplateRuntimeBindings = preserveUnchangedTemplateRuntimeBindings,
+        )
         data = BiliData
     }
 

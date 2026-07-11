@@ -27,6 +27,44 @@ import top.bilibili.webui.model.WebUiConfigHotReloadPhase
 import top.bilibili.webui.model.WebUiConfigSaveResultDto
 
 class WebUiConfigHotReloadCoordinatorTest {
+    /** 终态容量超过 1000 时淘汰最旧记录，非终态和最新终态保留。 */
+    @Test
+    fun `terminal job history should enforce capacity limit`() {
+        var now = 1L
+        val coordinator = WebUiConfigHotReloadCoordinator(
+            nowMillis = { now++ },
+            delayMillis = {},
+            applyAction = { jobId, _ -> WebUiConfigHotReloadJobDto(jobId = jobId, phase = WebUiConfigHotReloadPhase.APPLIED) },
+        )
+        val first = coordinator.submit(WebUiConfigBatchSaveRequestDto())
+        coordinator.drainForTest()
+        repeat(1_000) {
+            coordinator.submit(WebUiConfigBatchSaveRequestDto())
+            coordinator.drainForTest()
+        }
+
+        assertNull(coordinator.readJob(first.jobId))
+    }
+
+    /** 超过 24 小时的终态在下一次提交清理，新任务不受影响。 */
+    @Test
+    fun `terminal job history should expire after twenty four hours`() {
+        var now = 1L
+        val coordinator = WebUiConfigHotReloadCoordinator(
+            nowMillis = { now },
+            delayMillis = {},
+            applyAction = { jobId, _ -> WebUiConfigHotReloadJobDto(jobId = jobId, phase = WebUiConfigHotReloadPhase.APPLIED) },
+        )
+        val expired = coordinator.submit(WebUiConfigBatchSaveRequestDto())
+        coordinator.drainForTest()
+        now += 24L * 60L * 60L * 1_000L + 1L
+
+        val current = coordinator.submit(WebUiConfigBatchSaveRequestDto())
+
+        assertNull(coordinator.readJob(expired.jobId))
+        assertNotNull(coordinator.readJob(current.jobId))
+    }
+
     /**
      * 热重载任务 DTO 的枚举名称需要保持稳定，前端轮询时只消费这些公开阶段和文件边界。
      */

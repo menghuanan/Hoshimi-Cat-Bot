@@ -73,9 +73,48 @@ object BoundedRemoteResourceDownloader : Closeable {
         }
     }
 
+    /** 测试入口复用完整重定向与流式限额逻辑，但不改变生产共享客户端和 DNS 策略。 */
+    internal suspend fun downloadForTest(
+        url: String,
+        testClient: OkHttpClient,
+        resolveForPolicy: (String) -> List<InetAddress>,
+    ): ByteArray = downloadWith(url, testClient, resolveForPolicy)
+
+    /** 统一执行逐跳下载，生产与集成测试只在传输客户端和策略 DNS 来源上存在差异。 */
+    private fun downloadWith(
+        url: String,
+        requestClient: OkHttpClient,
+        resolveForPolicy: (String) -> List<InetAddress>,
+    ): ByteArray {
+        var current = RemoteResourcePolicy.validateUri(url)
+        for (redirectCount in 0..RemoteResourcePolicy.MAX_REDIRECTS) {
+            validateResolvedHost(current, resolveForPolicy)
+            val response = execute(current, requestClient)
+            response.use {
+                if (it.isRedirect) {
+                    if (redirectCount >= RemoteResourcePolicy.MAX_REDIRECTS) {
+                        throw RemoteResourceRejectedException("远程资源重定向次数超限")
+                    }
+                    val location = it.header("Location")
+                        ?: throw RemoteResourceRejectedException("重定向响应缺少 Location")
+                    current = RemoteResourcePolicy.validateUri(current.resolve(location).toString())
+                } else {
+                    if (!it.isSuccessful) throw RemoteResourceRejectedException("远程资源响应失败: HTTP ${it.code}")
+                    return readBounded(it)
+                }
+            }
+        }
+        throw RemoteResourceRejectedException("远程资源重定向次数超限")
+    }
+
     /** 对 IP 字面量和域名执行请求前校验，连接时的 DNS 仍由 validatingDns 再校验。 */
     private fun validateLiteralOrResolvedHost(uri: URI) {
-        val addresses = InetAddress.getAllByName(uri.host).toList()
+        validateResolvedHost(uri) { host -> InetAddress.getAllByName(host).toList() }
+    }
+
+    /** 校验策略解析出的全部地址，测试 seam 也不得跳过公网分类。 */
+    private fun validateResolvedHost(uri: URI, resolver: (String) -> List<InetAddress>) {
+        val addresses = resolver(uri.host)
         try {
             RemoteResourcePolicy.validateResolvedAddresses(uri.host, addresses)
         } catch (error: IllegalArgumentException) {
@@ -84,9 +123,9 @@ object BoundedRemoteResourceDownloader : Closeable {
     }
 
     /** 创建单次请求，禁用客户端自动重定向后由上层逐跳处理。 */
-    private fun execute(uri: URI): Response {
+    private fun execute(uri: URI, requestClient: OkHttpClient = client): Response {
         val request = Request.Builder().url(uri.toString()).get().build()
-        return client.newCall(request).execute()
+        return requestClient.newCall(request).execute()
     }
 
     /** 实际流式读取响应体，不能信任或仅依赖 Content-Length。 */

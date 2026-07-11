@@ -4,6 +4,8 @@ import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.TemplatePolicy
+import top.bilibili.BiliDataWrapper
+import top.bilibili.core.BiliDataRuntimeCoordinator
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
@@ -125,10 +127,15 @@ object TemplateService {
 
         val scope = resolveScope(type, subject, uid, groupName, allowCrossGroup = allowCrossGroup)
             ?: return scopeError(subject, uid, groupName, allowCrossGroup = allowCrossGroup)
-        if (!TemplateRuntimeCoordinator.appendTemplate(policyType, scope.scopeKey, uid, template)) {
-            return "模板已存在于当前策略中"
+        val snapshotPolicy = candidatePolicyMap(BiliDataRuntimeCoordinator.snapshot(), policyType)[scope.scopeKey]?.get(uid)
+        if (snapshotPolicy?.templates?.contains(template) == true) return "模板已存在于当前策略中"
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidatePolicyMap(candidate, policyType)
+                .getOrPut(scope.scopeKey) { mutableMapOf() }
+                .getOrPut(uid) { TemplatePolicy() }
+                .templates.add(template)
         }
-        return "添加成功"
+        return if (result.committed) "添加成功" else "保存失败，模板策略未生效，请稍后重试"
     }
 
     /**
@@ -150,19 +157,19 @@ object TemplateService {
             ?: return "当前作用域未配置模板策略"
         if (!policy.templates.contains(template)) return "当前策略中不存在模板: $template"
 
-        when (TemplateRuntimeCoordinator.removeTemplate(policyType, scope.scopeKey, uid, template)) {
-            RemoveTemplateResult.POLICY_MISSING -> return "当前作用域未配置模板策略"
-            RemoveTemplateResult.TEMPLATE_MISSING -> return "当前策略中不存在模板: $template"
-            RemoveTemplateResult.REMOVED_UID -> return "删除成功"
-            RemoveTemplateResult.UPDATED -> {
-                val remainingPolicy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
-                    ?: return "删除成功"
-                if (validTemplateCount(type, remainingPolicy) <= 1) {
-                    TemplateRuntimeCoordinator.setRandomEnabled(policyType, scope.scopeKey, uid, false)
-                }
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            val byScope = candidatePolicyMap(candidate, policyType)
+            val byUid = byScope[scope.scopeKey] ?: return@mutateAndPersist
+            val candidatePolicy = byUid[uid] ?: return@mutateAndPersist
+            candidatePolicy.templates.remove(template)
+            if (candidatePolicy.templates.isEmpty()) {
+                byUid.remove(uid)
+                if (byUid.isEmpty()) byScope.remove(scope.scopeKey)
+            } else if (validTemplateCount(type, candidatePolicy) <= 1) {
+                candidatePolicy.randomEnabled = false
             }
         }
-        return "删除成功"
+        return if (result.committed) "删除成功" else "保存失败，模板策略未变更，请稍后重试"
     }
 
     /**
@@ -243,8 +250,10 @@ object TemplateService {
         if (validTemplateCount(type, policy) < 2) {
             return "开启随机至少需要 2 个有效模板"
         }
-        TemplateRuntimeCoordinator.setRandomEnabled(policyType, scope.scopeKey, uid, true)
-        return "开启成功"
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidatePolicyMap(candidate, policyType)[scope.scopeKey]?.get(uid)?.randomEnabled = true
+        }
+        return if (result.committed) "开启成功" else "保存失败，随机模板未开启，请稍后重试"
     }
 
     /**
@@ -264,8 +273,21 @@ object TemplateService {
         val policy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
             ?: return "当前作用域未配置模板策略"
         if (policy.templates.isEmpty()) return "当前作用域未配置模板策略"
-        TemplateRuntimeCoordinator.setRandomEnabled(policyType, scope.scopeKey, uid, false)
-        return "关闭成功"
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidatePolicyMap(candidate, policyType)[scope.scopeKey]?.get(uid)?.randomEnabled = false
+        }
+        return if (result.committed) "关闭成功" else "保存失败，随机模板未关闭，请稍后重试"
+    }
+
+    /** 返回候选快照内指定类型的策略表，模板 mutation 不得直接触碰运行态协调器。 */
+    private fun candidatePolicyMap(
+        candidate: BiliDataWrapper,
+        type: String,
+    ): MutableMap<String, MutableMap<Long, TemplatePolicy>> = when (type) {
+        "dynamic" -> candidate.dynamicTemplatePolicyByScope
+        "live" -> candidate.liveTemplatePolicyByScope
+        "liveClose" -> candidate.liveCloseTemplatePolicyByScope
+        else -> error("未知模板策略类型: $type")
     }
 
     /**

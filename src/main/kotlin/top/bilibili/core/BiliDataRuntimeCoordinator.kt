@@ -36,7 +36,8 @@ object BiliDataRuntimeCoordinator {
         return@withLock try {
             mutate(candidate)
             validate(candidate)?.let { error -> return@withLock BiliDataMutationResult.Rejected(error) }
-            if (BiliConfigManager.saveDataSnapshot(candidate, installAfterSave = true)) {
+            if (BiliConfigManager.saveDataSnapshot(candidate, installAfterSave = false)) {
+                BiliConfigManager.installDataRuntimeSnapshot(candidate, preserveUnchangedTemplateRuntimeBindings = true)
                 BiliDataMutationResult.Committed(candidate.deepCopy())
             } else {
                 BiliDataMutationResult.PersistenceFailed("BiliData.yml 原子保存失败")
@@ -59,7 +60,7 @@ object BiliDataRuntimeCoordinator {
         return@withLock try {
             val value = mutate(candidate)
             if (persistCandidate(candidate.deepCopy())) {
-                BiliConfigManager.installDataRuntimeSnapshot(candidate)
+                BiliConfigManager.installDataRuntimeSnapshot(candidate, preserveUnchangedTemplateRuntimeBindings = true)
                 BiliDataTransactionResult.Committed(value)
             } else {
                 BiliDataTransactionResult.PersistenceFailed("BiliData.yml 原子保存失败")

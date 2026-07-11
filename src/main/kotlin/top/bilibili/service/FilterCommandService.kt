@@ -1,6 +1,5 @@
 package top.bilibili.service
 
-import top.bilibili.BiliConfigManager
 import top.bilibili.FilterMode
 import top.bilibili.FilterType
 import top.bilibili.connector.PlatformChatType
@@ -79,7 +78,6 @@ object FilterCommandService {
         val content = args.drop(5).joinToString(" ")
         val subject = chatContact.toSubject()
         val result = FilterService.addFilter(filterType, mode, content, uid, subject)
-        BiliConfigManager.saveData()
         sendText(chatContact, result)
     }
 
@@ -110,7 +108,6 @@ object FilterCommandService {
         val index = args[3]
         val subject = chatContact.toSubject()
         val result = FilterService.delFilter(index, uid, subject)
-        BiliConfigManager.saveData()
         sendText(chatContact, result)
     }
 }

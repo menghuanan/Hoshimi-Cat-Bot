@@ -56,7 +56,14 @@ object DynamicMessageTasker : BiliTasker() {
                     val message = buildResult.message.copy(deliveryId = dynamicDetail.deliveryId)
                     dynamicDetail.deliveryId?.let { deliveryId -> DeliveryCoordinator.markReady(deliveryId, message) }
                     logger.info("动态消息构建成功，准备发送到 messageChannel")
-                    messageChannel.send(message)
+                    try {
+                        messageChannel.send(message)
+                    } catch (error: Throwable) {
+                        dynamicDetail.deliveryId?.let { deliveryId ->
+                            DeliveryCoordinator.recordReceipt(top.bilibili.delivery.DeliveryReceipt(deliveryId, false, error.message))
+                        }
+                        throw error
+                    }
                     logger.info("动态消息已发送到 messageChannel")
                 }
                 is BuildResult.Invalid -> {
@@ -65,7 +72,7 @@ object DynamicMessageTasker : BiliTasker() {
                 }
                 is BuildResult.RetryableFailure -> {
                     dynamicDetail.deliveryId?.let {
-                        DeliveryCoordinator.recordReceipt(top.bilibili.delivery.DeliveryReceipt(it, false, buildResult.error.message))
+                        DeliveryCoordinator.recordBuildFailure(it, buildResult.error.message)
                     }
                     throw buildResult.error
                 }

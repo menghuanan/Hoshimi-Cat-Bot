@@ -36,24 +36,27 @@ object LiveCloseCheckTasker : BiliCheckTasker("LiveCloseCheckTasker")  {
                         val openMessage = openRecord.message as? top.bilibili.data.LiveMessage ?: return@forEach
                         val liveTime = openMessage.timestamp.toLong()
                         val businessId = "${openRecord.businessId}:close"
-                        val closeRecord = DeliveryCoordinator.discoverLiveClose(openRecord, businessId)
-                        // 已构建、重试中或已完成的下播记录由账本状态机接管，轮询不得重复入队或回退终态。
-                        if (!DeliveryCoordinator.requiresInitialBuild(closeRecord.id)) return@forEach
-                        val message = LiveCloseMessage(
-                            info.roomId,
-                            info.uid,
-                            info.uname,
-                            liveTime.formatRelativeTime,
-                            0,
-                            nowTime.formatTime,
-                            (nowTime - liveTime).formatDuration(),
-                            info.title,
-                            info.area,
-                            LIVE_LINK(info.roomId.toString()),
-                            contact = openRecord.contact,
-                            deliveryId = closeRecord.id,
-                        )
-                        DeliveryCoordinator.markReady(closeRecord.id, message)
+                        // 链接解析可能挂起，先在业务协程完成；账本临界区只负责注入稳定 ID 与原子保存。
+                        val closeLink = LIVE_LINK(info.roomId.toString())
+                        val discovery = DeliveryCoordinator.discoverReadyLiveClose(openRecord, businessId) { deliveryId ->
+                            LiveCloseMessage(
+                                info.roomId,
+                                info.uid,
+                                info.uname,
+                                liveTime.formatRelativeTime,
+                                0,
+                                nowTime.formatTime,
+                                (nowTime - liveTime).formatDuration(),
+                                info.title,
+                                info.area,
+                                closeLink,
+                                contact = openRecord.contact,
+                                deliveryId = deliveryId,
+                            )
+                        }
+                        // 已存在记录由账本租约或终态接管，轮询只发送本轮原子创建的 READY 消息。
+                        if (!discovery.created) return@forEach
+                        val message = discovery.record.message as? LiveCloseMessage ?: return@forEach
                         BiliBiliBot.messageChannel.send(message)
                     }
             }

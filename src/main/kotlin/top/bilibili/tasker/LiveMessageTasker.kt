@@ -40,10 +40,15 @@ object LiveMessageTasker : BiliTasker() {
                 val message = liveInfo.buildMessage(liveDetail.contact).copy(deliveryId = liveDetail.deliveryId)
                 liveDetail.deliveryId?.let { DeliveryCoordinator.markReady(it, message) }
                 logger.info("直播消息构建成功，准备发送到 messageChannel")
-                messageChannel.send(message)
+                try {
+                    messageChannel.send(message)
+                } catch (error: Throwable) {
+                    liveDetail.deliveryId?.let { DeliveryCoordinator.recordReceipt(DeliveryReceipt(it, false, error.message)) }
+                    throw error
+                }
                 logger.info("直播消息已发送到 messageChannel")
             } catch (e: Exception) {
-                liveDetail.deliveryId?.let { DeliveryCoordinator.recordReceipt(DeliveryReceipt(it, false, e.message)) }
+                liveDetail.deliveryId?.let { DeliveryCoordinator.recordBuildFailure(it, e.message) }
                 logger.error("处理直播失败: ${e.message}", e)
             }
             }

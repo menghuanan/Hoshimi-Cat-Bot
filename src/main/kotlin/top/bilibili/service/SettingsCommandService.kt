@@ -125,11 +125,6 @@ object SettingsCommandService {
             else -> "未知艾特全体命令: ${parsedCommand.rawCommand}"
         }
 
-        if ((command == "add" || command == "del") &&
-            (result == "添加成功" || result == "删除成功")
-        ) {
-            BiliConfigManager.saveData()
-        }
         sendText(chatContact, result)
     }
 
@@ -208,15 +203,6 @@ object SettingsCommandService {
                 }
             })
             else -> DynamicService.setColor(matches.first().first, subject, colorArg)
-        }
-        if (result.success) {
-            val saved = BiliConfigManager.saveData()
-            if (!saved) {
-                val failureMessage = "设置成功，但持久化失败，请联系管理员检查日志"
-                sendText(chatContact, failureMessage)
-                actionNotify("主题色持久化失败: user=$userArg, color=$colorArg")
-                return
-            }
         }
         sendText(chatContact, result.message)
     }

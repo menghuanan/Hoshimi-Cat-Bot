@@ -2,6 +2,7 @@ package top.bilibili.webui.auth
 
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -180,5 +181,22 @@ class WebUiAuthServiceTest {
         assertTrue(reusedConfirmation.reusedGrant)
         assertFalse(expiredConfirmation.confirmed)
         assertTrue(expiredConfirmation.message.contains("expired"))
+    }
+
+    /** 两个并发改密请求使用同一旧密码时，只允许锁内先完成者成功。 */
+    @Test
+    fun `concurrent password changes should allow exactly one winner`() = runBlocking {
+        val store = WebUiCredentialStore(tempRoot.resolve("webui-credentials.json").toFile())
+        val bootstrap = store.loadOrCreate()
+        val service = WebUiAuthService(store, WebUiTokenService(tokenTtlSeconds = 300L))
+        val currentPassword = requireNotNull(bootstrap.initialPassword)
+
+        val first = async { service.changePassword(currentPassword, "FirstBetter123!@") }
+        val second = async { service.changePassword(currentPassword, "SecondBetter123!@") }
+        val results = listOf(first.await(), second.await())
+
+        assertEquals(1, results.count { it.success })
+        assertEquals(1, results.count { !it.success && it.message == "invalid credentials" })
+        assertTrue(service.login("FirstBetter123!@").success xor service.login("SecondBetter123!@").success)
     }
 }

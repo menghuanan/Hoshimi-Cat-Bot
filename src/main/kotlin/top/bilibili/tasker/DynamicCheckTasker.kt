@@ -76,8 +76,8 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
         val dynamics = dynamicList.items
             .filter { !banType.contains(it.type) }
             .filter { it.time > lastDynamic }
-            // 历史去重需要同时覆盖重启恢复和接口回流场景，单靠时间戳不足以避免重复推送。
-            .filter { !historyDynamic.contains(it.did) }
+            // 旧 history 已导入联系人账本，升级去重按业务 ID 查询，不再让旧文本集合参与新交付状态推进。
+            .filter { !DeliveryCoordinator.isLegacyDynamicCompleted(it.did) }
             .filter {
                 if (listenAllDynamicMode) {
                     true
@@ -107,11 +107,21 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
             val contacts = PushFanoutService.resolveDynamicContacts(item, dynamic, bangumi)
             PushFanoutService.dynamicDetailsForContacts(item, contacts).mapNotNull { detail ->
                 val contact = detail.contact ?: return@mapNotNull detail
-                val record = DeliveryCoordinator.discover(DeliveryKind.DYNAMIC, item.did, contact)
-                if (DeliveryCoordinator.isTerminal(record.id)) null else detail.copy(deliveryId = record.id)
+                val record = DeliveryCoordinator.discoverDynamic(item.did, detail)
+                if (!DeliveryCoordinator.requiresInitialBuild(record.id)) null else detail.copy(deliveryId = record.id)
             }
         }
-        dynamicChannel.sendAll(details)
+        // 每条记录先持久化构建输入和 channel 租约；入队取消时保留 DISCOVERED 供重试 Tasker 恢复。
+        details.forEach { detail ->
+            val deliveryId = detail.deliveryId ?: return@forEach
+            try {
+                DeliveryCoordinator.markBuildQueued(deliveryId)
+                dynamicChannel.send(detail)
+            } catch (error: Throwable) {
+                logger.warn("动态构建输入入队失败，账本将重试: {}", deliveryId, error)
+                throw error
+            }
+        }
     }
 
     /**
