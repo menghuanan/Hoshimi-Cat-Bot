@@ -41,12 +41,6 @@ Skia 模块负责图片绘制的并发控制、会话级 native 资源管理、�
 | `memoryWarningThreshold` | `0.70` | 生效中 | 必须在 `0.0..1.0`；比较的是当前 JVM heap 比例，达到后只记录警告 |
 | `memoryCriticalThreshold` | `0.85` | 生效中 | 必须在 `0.0..1.0` 且大于 warning；比较的是当前 JVM heap 比例，达到后触发紧急清理 |
 | `emergencyCleanupCooldownMs` | `180_000` | 生效中 | 必须 `> 0`；限制紧急清理触发频率 |
-| `workerRestartIntervalMs` | `24 * 3600 * 1000` | 预留参数 | 必须 `> 0`；当前没有 worker 进程实现消费它 |
-| `workerMaxMemoryMb` | `512` | 预留参数 | 必须 `> 0`；当前仅保留配置和校验 |
-| `workerIdleTimeoutMs` | `120_000` | 预留参数 | 必须 `> 0`；当前仅保留配置和校验 |
-| `enableWorkerProcess` | `true` | 预留开关 | 当前仓库没有实际 worker-process 绘图路径，不能因为默认值是 `true` 就假定功能已启用 |
-| `autoSwitchMode` | `true` | 预留开关 | 当前没有自动切换模式的生产调用点，不能把它当作已生效的自愈机制 |
-
 维护要求：
 
 - `validate()` 是唯一的参数合法性守卫；新增参数时必须同步补校验。
@@ -109,19 +103,17 @@ Skia 读取 `SkiaConfig` 和绘图相关运行参数，不写业务数据。新�
 
 普通清理：
 
-1. 通过 `awaitAllCompleted()` 临时设置清理闸门并等待活动绘图完成，最长 30 秒。
-2. 空 block 返回后清理闸门会释放；当前实际 purge 不在同一个互斥窗口内。
-3. `FontUtils.resetParagraphCache()`。
-4. `Graphics.purgeResourceCache()`。
-5. `ImageCache.cleanCache()`。
-6. 执行 3 轮 GC/finalization。
+1. 通过 `runExclusiveCleanup()` 设置清理闸门并等待活动绘图完成，最长 30 秒。
+2. 在同一个互斥 block 内执行 `FontUtils.resetParagraphCache()`、`Graphics.purgeResourceCache()` 与 `ImageCache.cleanCache()`。
+3. 等待超时时跳过本轮 purge，不在失去互斥保证后强制清理。
+4. 执行 3 轮 GC/finalization。
 
 紧急清理：
 
 1. 冷却时间内跳过。
-2. 通过 `awaitAllCompleted()` 临时设置清理闸门并等待活动绘图完成，最长 15 秒。
-3. 闸门释放后重置 `FontUtils` paragraph cache。
-4. `Graphics.purgeAllCaches()` 并执行 `ImageCache.cleanCache()`。
+2. 通过 `runExclusiveCleanup()` 设置清理闸门并等待活动绘图完成，最长 15 秒。
+3. 在同一个互斥 block 内重置 paragraph cache、执行 `Graphics.purgeAllCaches()` 并清理 `ImageCache`。
+4. 等待超时时跳过本轮 purge。
 5. 执行 5 轮 GC/finalization。
 
 当前清理等待与实际 cache purge 不处于同一 `runExclusiveCleanup()` block，新绘图可能在两者之间进入 active。该实现缺口见 [`../context/known-issues.md#ki-004-skia-purge-未保持在清理闸门窗口内`](../context/known-issues.md#ki-004-skia-purge-未保持在清理闸门窗口内)。

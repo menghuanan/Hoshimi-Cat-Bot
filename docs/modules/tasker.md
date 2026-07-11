@@ -97,7 +97,7 @@ Tasker 拥有后台协程、轮询循环、channel 消费者、发送队列、�
 
 `SendTasker` 内部还有容量 100 的发送队列。新增生产者必须考虑这些容量限制和停机退出路径。
 
-当前 `ProcessGuardian` 不读取这四个本地队列的填充度；实时背压告警只来自平台 runtime status 的 inbound/outbound pressure 与 dropped 计数。本地容量只用于内存估算，观测缺口见 [`../context/known-issues.md#ki-005-本地队列与-skia-native-压力存在观测盲区`](../context/known-issues.md#ki-005-本地队列与-skia-native-压力存在观测盲区)。
+四条队列均通过 `ObservableChannel` 暴露只读 `size/capacity/fillRatio` 快照。`ProcessGuardian` 每轮记录快照，填充率达到 80% 时并入 Channel 背压告警；平台 inbound/outbound pressure 与 dropped 计数仍作为独立信号保留。
 
 ## 配置与数据
 

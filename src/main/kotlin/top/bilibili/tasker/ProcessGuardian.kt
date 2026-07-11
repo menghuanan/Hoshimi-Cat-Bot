@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import top.bilibili.client.BiliClient
 import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.core.BiliBiliBot
+import top.bilibili.core.LocalQueueSnapshot
 import top.bilibili.core.resource.BusinessLifecycleManager
 import top.bilibili.core.resource.BusinessOwnerActivitySnapshot
 import top.bilibili.skia.SkiaManager
@@ -83,6 +84,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val RSS_SOFT_LIMIT_HOLD_MS = 30 * 60 * 1000L
     private const val RSS_SOFT_LIMIT_WARN_AFTER_MS = 10 * 60 * 1000L
     private const val RSS_SOFT_LIMIT_RESTART_EXIT_CODE = 78
+    private const val LOCAL_QUEUE_WARNING_FILL_RATIO = 0.8
 
     // 连接状态追踪
     private var lastConnectionStatus = true
@@ -1451,6 +1453,17 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private fun checkChannelBackpressure(report: MonitorReport) {
         val fullChannels = mutableListOf<String>()
 
+        // 本地四条有界业务队列使用真实入队/出队计数，既输出快照，也在高填充时并入背压告警。
+        report.localQueueSnapshots = BiliBiliBot.localQueueSnapshots() + SendTasker.queueSnapshot()
+        report.localQueueSnapshots
+            .filter { snapshot -> snapshot.fillRatio >= LOCAL_QUEUE_WARNING_FILL_RATIO }
+            .forEach { snapshot ->
+                fullChannels.add(
+                    "${snapshot.name} (${snapshot.size}/${snapshot.capacity}, " +
+                        "${(snapshot.fillRatio * 100).toInt()}%)",
+                )
+            }
+
         // 检查 BiliBiliBot 的 Channel
         try {
             if (BiliBiliBot.isPlatformAdapterInitialized()) {
@@ -1788,10 +1801,19 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     writer.println("[Skia 状态]")
                     writer.println(
                         "  mode=${skia.mode}, memoryUsage=${(skia.memoryUsage * 100).toInt()}%, " +
-                            "drawings=${skia.totalDrawingCount}, cleanups=${skia.totalCleanupCount}, uptimeMs=${skia.uptimeMs}"
+                            "SkiaNativeCache=${skia.resourceCacheBytes}B, drawings=${skia.totalDrawingCount}, " +
+                            "cleanups=${skia.totalCleanupCount}, uptimeMs=${skia.uptimeMs}"
                     )
                     writer.println(
                         "  queue: pending=${skia.queueStatus.pendingCount}, active=${skia.queueStatus.activeCount}, full=${skia.queueStatus.isFull}"
+                    )
+                }
+
+                writer.println("[本地业务队列]")
+                report.localQueueSnapshots.forEach { snapshot ->
+                    writer.println(
+                        "  ${snapshot.name}: size=${snapshot.size}, capacity=${snapshot.capacity}, " +
+                            "fillRatio=${"%.2f".format(snapshot.fillRatio)}",
                     )
                 }
 
@@ -1964,6 +1986,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var biliClientMetrics: top.bilibili.client.BiliClientRuntimeSnapshot? = null,
         var platformObservability: PlatformObservabilitySnapshot = PlatformObservabilitySnapshot.empty("platform adapter is not initialized"),
         var skiaStatus: top.bilibili.skia.SkiaManagerStatus? = null,
+        var localQueueSnapshots: List<LocalQueueSnapshot> = emptyList(),
         var nativeMemorySummary: NativeMemorySummary? = null,
         var nativeSampleCaptured: Boolean = false,
         var nativeSectionDeltas: List<NativeMemorySectionDelta> = emptyList(),

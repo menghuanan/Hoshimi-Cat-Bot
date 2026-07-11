@@ -16,9 +16,9 @@
 
 | 来源 | 能证明什么 | 不能单独证明什么 |
 | --- | --- | --- |
-| `logs/bilibili-bot.log` | 启动步骤、平台事件、业务流程和普通告警 | native 内存归属或本地队列填充度 |
+| `logs/bilibili-bot.log` | 启动步骤、平台事件、业务流程和普通告警 | native 内存完整归属 |
 | `logs/error.log` | 异常堆栈、失败请求和未恢复错误 | 进程整体健康或消息是否最终送达 |
-| `logs/daemon/Daemon_*.log` | Tasker、heap、non-heap、NMT、RSS、平台 pressure、Skia 队列和资源快照 | 三条业务 channel 与发送队列的实时填充度 |
+| `logs/daemon/Daemon_*.log` | Tasker、heap、non-heap、NMT、RSS、平台 pressure、本地业务队列、Skia 队列和资源快照 | JVM/NMT 无法识别的全部 native RSS 精确归属 |
 | WebUI Dashboard | 当前生命周期、平台、宿主资源、推送统计和最近推送 | 未启用 WebUI 时的历史状态 |
 | `jcmd <pid> VM.native_memory summary` | JVM 识别的 native reserved/committed 分类 | JVM 外全部 RSS 的精确归属 |
 | Linux `/proc/<pid>/status` 与 `smaps_rollup` | VmRSS、匿名页和映射汇总 | Windows 进程内存 |
@@ -30,7 +30,7 @@
 
 ### 进程存在但 Bot 没有启动
 
-检查是否出现“初始化配置失败”“平台配置无效”或“Bot 启动失败”，并确认是否出现“Bot 启动成功”。当前启动失败可能返回 `STOPPED` 后仍停在主线程 `join()`，只看 PID 会产生误判，详见 [`known-issues.md` 的 KI-003](../context/known-issues.md#ki-003-启动失败可能不会结束进程)。
+检查是否出现“初始化配置失败”“平台配置无效”或“Bot 启动失败”，并确认是否出现“Bot 启动成功”。当前启动失败会以状态码 1 退出；若外部守护仍显示正常，应检查其退出码与重启策略。
 
 修复配置后主动停止旧进程再重启。不要让外部守护同时保留失败进程和新进程。
 
@@ -48,13 +48,13 @@ QQ 官方当前只放行精确 `/login` 和 B 站链接候选。群聊 `/login` 
 
 ### 出现背压或消息延迟
 
-守护日志中的“Channel 背压”当前只表示平台 inbound/outbound pressure 已出现 dropped 事件。`dynamicChannel`、`liveChannel`、`messageChannel` 和 `SendTasker` 内部队列只有固定容量说明，没有填充度探针。
+守护日志中的“Channel 背压”同时覆盖平台 inbound/outbound pressure 与四条本地业务队列。检查 `[本地业务队列]` 的 `size/capacity/fillRatio`，80% 以上会触发告警。
 
-先检查平台连接与 `SendTasker` 健康，再对照动态/直播生产速率和发送失败日志。不要仅根据守护日志没有背压告警，就断定本地队列没有积压。
+先检查平台连接与 `SendTasker` 健康，再对照动态/直播生产速率、四条队列填充率和发送失败日志。
 
 ### RSS 或 native 内存持续增长
 
-先区分 JVM heap、Metaspace、CodeCache、Direct/BufferPool、NMT committed、Skia 队列和未归类 RSS。`SkiaManagerStatus.memoryUsage` 是 JVM heap 使用率，不是 native Skia 内存。
+先区分 JVM heap、Metaspace、CodeCache、Direct/BufferPool、NMT committed、Skia 队列和未归类 RSS。`SkiaManagerStatus.memoryUsage` 是 JVM heap 使用率；`resourceCacheBytes` 只代表 Graphics 可直接观测的 Skia native resource cache，完整 native 压力仍需结合 NMT 与 RSS。
 
 Linux 可采集：
 
@@ -70,7 +70,7 @@ RSS 连续超过 300 MB 时，`ProcessGuardian` 在 10 分钟后告警，在 30 
 
 检查 Skia pending/active、NMT、RSS 和清理前后趋势。warning 阈值只写告警；普通清理由空闲超时或固定周期触发，critical 阈值触发紧急清理。
 
-当前 purge 没有保持在完整清理闸门内，清理等待结束后可能有新绘图进入，详见 [`known-issues.md` 的 KI-004](../context/known-issues.md#ki-004-skia-purge-未保持在清理闸门窗口内)。不要在高并发绘图时把一次 purge 后 RSS 未回落直接判定为泄漏。
+普通与紧急 purge 都在 `runExclusiveCleanup()` 完整闸门内执行；等待活动绘图超时时会跳过本轮 purge。不要把一次跳过或 purge 后 RSS 未立即回落直接判定为泄漏。
 
 ### WebUI 在 Docker 外无法访问
 

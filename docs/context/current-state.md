@@ -5,6 +5,8 @@ _最后更新：2026-07-11_
 ## 本轮已完成
 
 - [x] 按当前源码入口补齐并复核 `docs/` 长期维护文档，建立运行故障排查入口，并保持 plans/release/过期资料与当前规则分区隔离。
+- [x] 修复群管理员跨群修改分组模板策略与启动失败进程不退出的 P0 问题。
+- [x] 修复 Skia purge 闸门、业务队列/Skia native 观测盲区，并移除未实现的 worker process 配置。
 
 ## 进行中
 
@@ -22,6 +24,7 @@ _最后更新：2026-07-11_
 - React WebUI 前端位于 `webui-frontend`，构建后打包到 `src/main/resources/webui/react`，页面覆盖登录、仪表盘、设置、订阅和日志，并使用全局 Toast、确认上下文和 Portal 弹窗统一反馈。
 - 动态列表按 item 粒度容错解码：单条坏数据会记录摘要并跳过，分页外层结构仍严格解码；已撤销且只剩空字段的预约附加卡片不会绘制空白图。
 - Skia 当前实际主路径是 in-process drawing。
+- `ProcessGuardian` 直接采集三条 core 业务队列与 `SendTasker` 队列填充率，并记录 Skia Graphics native resource cache 字节数。
 - Docker 和发行包默认使用 software rendering。
 - Docker 默认内存限制为 512m，应用 heap 默认 `64m~160m`。
 

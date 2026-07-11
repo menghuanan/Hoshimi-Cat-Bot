@@ -37,7 +37,7 @@ Bootstrap 模块负责进程启动、运行目录初始化、Skiko 初始化、�
 5. 启动平台连接并注册 `ResourceSupervisor` 分区。
 6. 延迟初始化业务数据，再按固定顺序启动 Tasker 和运行期预热。
 
-`BiliBiliBot.start()` 当前会捕获部分启动失败并返回，`Main.main()` 仍无条件等待当前线程。维护者不能只用 PID 判断启动成功，必须检查生命周期与“Bot 启动成功”日志；该缺口见 [`../context/known-issues.md#ki-003-启动失败可能不会结束进程`](../context/known-issues.md#ki-003-启动失败可能不会结束进程)。
+`BiliBiliBot.start()` 通过 `BotStartResult` 同步返回启动结论。`Main.main()` 只在 `STARTED` 时等待当前线程；配置、平台或 connector 初始化失败返回 `FAILED`，主入口以状态码 1 退出，外部守护可据此识别启动失败。
 
 修改启动流程时必须同步核对 [`modules/core.md`](core.md)、[`modules/config.md`](config.md)、[`modules/connector.md`](connector.md)、[`modules/tasker.md`](tasker.md) 和 [`operations/deployment.md`](../operations/deployment.md)。
 

@@ -11,6 +11,7 @@ import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parsePlatformContact
+import top.bilibili.utils.containsEquivalentSubject
 
 /**
  * 统一管理模板查询、预览与绑定，避免命令层直接接触模板存储结构。
@@ -110,12 +111,20 @@ object TemplateService {
      * 向指定 scope 的 UID 模板策略追加模板。
      * 新模板始终追加到末尾，保持固定模式与随机池共用同一份顺序列表。
      */
-    fun addTemplate(type: String, template: String, subject: String, uid: Long, groupName: String?): String {
+    fun addTemplate(
+        type: String,
+        template: String,
+        subject: String,
+        uid: Long,
+        groupName: String?,
+        allowCrossGroup: Boolean = false,
+    ): String {
         val templates = templateMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
         val policyType = typeKey(type)
         if (!templates.containsKey(template)) return "没有这个模板: $template"
 
-        val scope = resolveScope(type, subject, uid, groupName) ?: return scopeError(subject, uid, groupName)
+        val scope = resolveScope(type, subject, uid, groupName, allowCrossGroup = allowCrossGroup)
+            ?: return scopeError(subject, uid, groupName, allowCrossGroup = allowCrossGroup)
         if (!TemplateRuntimeCoordinator.appendTemplate(policyType, scope.scopeKey, uid, template)) {
             return "模板已存在于当前策略中"
         }
@@ -126,8 +135,16 @@ object TemplateService {
      * 从指定 scope 的 UID 模板策略删除模板。
      * 删除后若有效模板不足 2 个，则自动关闭随机模式，避免留下不可用随机配置。
      */
-    fun deleteTemplate(type: String, template: String, subject: String, uid: Long, groupName: String?): String {
-        val scope = resolveScope(type, subject, uid, groupName) ?: return scopeError(subject, uid, groupName)
+    fun deleteTemplate(
+        type: String,
+        template: String,
+        subject: String,
+        uid: Long,
+        groupName: String?,
+        allowCrossGroup: Boolean = false,
+    ): String {
+        val scope = resolveScope(type, subject, uid, groupName, allowCrossGroup = allowCrossGroup)
+            ?: return scopeError(subject, uid, groupName, allowCrossGroup = allowCrossGroup)
         val policyType = typeKey(type)
         val policy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
             ?: return "当前作用域未配置模板策略"
@@ -152,9 +169,27 @@ object TemplateService {
      * 列出指定 scope 下的模板策略摘要。
      * 摘要会标出模板顺序、随机状态与失效模板，帮助用户在命令行里核对当前策略。
      */
-    fun listTemplatePolicy(type: String, subject: String, uid: Long?, groupName: String?): String {
-        val scope = resolveScope(type, subject, uid, groupName, requireFollow = false)
-            ?: return scopeError(subject, uid, groupName, requireUid = groupName != null)
+    fun listTemplatePolicy(
+        type: String,
+        subject: String,
+        uid: Long?,
+        groupName: String?,
+        allowCrossGroup: Boolean = false,
+    ): String {
+        val scope = resolveScope(
+            type,
+            subject,
+            uid,
+            groupName,
+            requireFollow = false,
+            allowCrossGroup = allowCrossGroup,
+        ) ?: return scopeError(
+            subject,
+            uid,
+            groupName,
+            requireUid = groupName != null,
+            allowCrossGroup = allowCrossGroup,
+        )
         val scopePolicies = TemplateRuntimeCoordinator.readScopePolicies(typeKey(type), scope.scopeKey)
         if (scopePolicies.isEmpty()) {
             return "当前作用域未配置模板策略"
@@ -190,8 +225,15 @@ object TemplateService {
      * 开启指定 scope 的随机模板模式。
      * 开启前必须确认作用域已订阅、所有模板都有效，且有效模板数量至少为 2。
      */
-    fun enableRandom(type: String, subject: String, uid: Long, groupName: String?): String {
-        val scope = resolveScope(type, subject, uid, groupName) ?: return scopeError(subject, uid, groupName)
+    fun enableRandom(
+        type: String,
+        subject: String,
+        uid: Long,
+        groupName: String?,
+        allowCrossGroup: Boolean = false,
+    ): String {
+        val scope = resolveScope(type, subject, uid, groupName, allowCrossGroup = allowCrossGroup)
+            ?: return scopeError(subject, uid, groupName, allowCrossGroup = allowCrossGroup)
         val policyType = typeKey(type)
         val policy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
             ?: return "当前作用域未配置模板策略"
@@ -209,8 +251,15 @@ object TemplateService {
      * 关闭指定 scope 的随机模板模式。
      * 关闭随机不会删除模板列表，方便用户保留随机池后续再次开启。
      */
-    fun disableRandom(type: String, subject: String, uid: Long, groupName: String?): String {
-        val scope = resolveScope(type, subject, uid, groupName) ?: return scopeError(subject, uid, groupName)
+    fun disableRandom(
+        type: String,
+        subject: String,
+        uid: Long,
+        groupName: String?,
+        allowCrossGroup: Boolean = false,
+    ): String {
+        val scope = resolveScope(type, subject, uid, groupName, allowCrossGroup = allowCrossGroup)
+            ?: return scopeError(subject, uid, groupName, allowCrossGroup = allowCrossGroup)
         val policyType = typeKey(type)
         val policy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
             ?: return "当前作用域未配置模板策略"
@@ -221,7 +270,7 @@ object TemplateService {
 
     /**
      * 解析 direct contact 与 groupRef 两类模板作用域。
-     * group scope 只允许指向已存在且已订阅该 UID 的分组，避免写入悬空策略。
+     * group scope 默认还要求请求联系人属于目标分组；只有超级管理员入口可显式放宽跨分组限制。
      */
     private fun resolveScope(
         type: String,
@@ -229,11 +278,13 @@ object TemplateService {
         uid: Long?,
         groupName: String?,
         requireFollow: Boolean = true,
+        allowCrossGroup: Boolean = false,
     ): ScopeResolution? {
         if (typeKey(type).isBlank()) return null
         if (uid == null) {
             if (groupName != null) {
                 val group = BiliData.group[groupName] ?: return null
+                if (!allowCrossGroup && !containsEquivalentSubject(group.contacts, subject)) return null
                 return ScopeResolution(
                     scopeKey = "groupRef:$groupName",
                     displayName = "分组 ${group.name}",
@@ -250,6 +301,7 @@ object TemplateService {
 
         if (groupName != null) {
             val group = BiliData.group[groupName] ?: return null
+            if (!allowCrossGroup && !containsEquivalentSubject(group.contacts, subject)) return null
             val subscribed = BiliData.dynamic[resolvedUid]?.sourceRefs?.contains("groupRef:$groupName") == true
             if (requireFollow && !subscribed) return null
             return ScopeResolution(
@@ -270,10 +322,19 @@ object TemplateService {
      * 统一生成 scope 解析失败提示。
      * 联系人和分组两类作用域的校验原因不同，这里集中返回更接近用户输入的错误文本。
      */
-    private fun scopeError(subject: String, uid: Long?, groupName: String?, requireUid: Boolean = true): String {
+    private fun scopeError(
+        subject: String,
+        uid: Long?,
+        groupName: String?,
+        requireUid: Boolean = true,
+        allowCrossGroup: Boolean = false,
+    ): String {
         if (requireUid && (uid == null || uid <= 0L)) return "UID 格式错误"
         if (groupName != null) {
             if (!BiliData.group.containsKey(groupName)) return "没有这个分组: $groupName"
+            if (!allowCrossGroup && !containsEquivalentSubject(BiliData.group.getValue(groupName).contacts, subject)) {
+                return "无权操作不包含当前群的分组: $groupName"
+            }
             return "该分组未订阅 UID: $uid"
         }
         return if (normalizeContactSubject(subject) == null) "联系人格式错误" else "该群未订阅 UID: $uid"

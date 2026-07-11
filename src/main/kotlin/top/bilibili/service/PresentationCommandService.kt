@@ -17,7 +17,6 @@ object PresentationCommandService {
     suspend fun sendHelp(chatContact: PlatformContact, senderContact: PlatformContact) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
-
         val isSuper = CommandPermission.isSuperAdmin(senderContact)
         val msg = if (isSuper) {
             """
@@ -103,6 +102,8 @@ object PresentationCommandService {
     suspend fun handleTemplate(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
+        // 超级管理员保留跨分组维护能力，普通群管理员则只能操作包含当前群的分组。
+        val allowCrossGroup = CommandPermission.isSuperAdmin(senderContact)
         if (args.size < 2) {
             sendText(
                 chatContact,
@@ -126,7 +127,7 @@ object PresentationCommandService {
                 val type = args.getOrNull(2) ?: "d"
                 val result = when {
                     args.getOrNull(3)?.equals("group", ignoreCase = true) == true -> {
-                        TemplateService.listTemplatePolicy(type, subject, null, parseTemplateGroupName(args, 3))
+                        TemplateService.listTemplatePolicy(type, subject, null, parseTemplateGroupName(args, 3), allowCrossGroup)
                     }
                     args.size <= 3 -> TemplateService.listTemplatePolicy(type, subject, null, null)
                     else -> {
@@ -134,7 +135,7 @@ object PresentationCommandService {
                             sendText(chatContact, "UID 格式错误，请输入纯数字")
                             return
                         }
-                        TemplateService.listTemplatePolicy(type, subject, uid, parseTemplateGroupName(args, 4))
+                        TemplateService.listTemplatePolicy(type, subject, uid, parseTemplateGroupName(args, 4), allowCrossGroup)
                     }
                 }
                 sendText(chatContact, result)
@@ -157,7 +158,9 @@ object PresentationCommandService {
                     sendText(chatContact, "UID 格式错误，请输入纯数字")
                     return
                 }
-                val result = TemplateService.addTemplate(args[2], args[3], subject, uid, parseTemplateGroupName(args, 5))
+                val result = TemplateService.addTemplate(
+                    args[2], args[3], subject, uid, parseTemplateGroupName(args, 5), allowCrossGroup,
+                )
                 if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }
@@ -171,7 +174,9 @@ object PresentationCommandService {
                     sendText(chatContact, "UID 格式错误，请输入纯数字")
                     return
                 }
-                val result = TemplateService.deleteTemplate(args[2], args[3], subject, uid, parseTemplateGroupName(args, 5))
+                val result = TemplateService.deleteTemplate(
+                    args[2], args[3], subject, uid, parseTemplateGroupName(args, 5), allowCrossGroup,
+                )
                 if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }
@@ -186,7 +191,9 @@ object PresentationCommandService {
                     return
                 }
                 // 随机开关在命令入口统一解析作用域后再下沉到服务层，避免遗漏 group 参数校验。
-                val result = TemplateService.enableRandom(args[2], subject, uid, parseTemplateGroupName(args, 4))
+                val result = TemplateService.enableRandom(
+                    args[2], subject, uid, parseTemplateGroupName(args, 4), allowCrossGroup,
+                )
                 if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }
@@ -200,7 +207,9 @@ object PresentationCommandService {
                     sendText(chatContact, "UID 格式错误，请输入纯数字")
                     return
                 }
-                val result = TemplateService.disableRandom(args[2], subject, uid, parseTemplateGroupName(args, 4))
+                val result = TemplateService.disableRandom(
+                    args[2], subject, uid, parseTemplateGroupName(args, 4), allowCrossGroup,
+                )
                 if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }

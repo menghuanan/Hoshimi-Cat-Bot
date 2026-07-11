@@ -8,7 +8,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -71,6 +70,14 @@ enum class BotLifecycleState {
     RUNNING,
     STOPPING,
     STOPPED,
+}
+
+/**
+ * 启动入口的同步结果，用于阻止主线程在初始化失败后继续保持进程存活。
+ */
+enum class BotStartResult {
+    STARTED,
+    FAILED,
 }
 
 /**
@@ -182,9 +189,16 @@ object BiliBiliBot : CoroutineScope {
         return debugMode
     }
 
-    val dynamicChannel = Channel<DynamicDetail>(20)
-    val liveChannel = Channel<LiveDetail>(20)
-    val messageChannel = Channel<BiliMessage>(20)
+    val dynamicChannel = ObservableChannel<DynamicDetail>(20)
+    val liveChannel = ObservableChannel<LiveDetail>(20)
+    val messageChannel = ObservableChannel<BiliMessage>(20)
+
+    /** 汇总三条 core 业务队列的填充度，监控侧只读取计数而不接触消息内容。 */
+    fun localQueueSnapshots(): List<LocalQueueSnapshot> = listOf(
+        dynamicChannel.snapshot("dynamicChannel"),
+        liveChannel.snapshot("liveChannel"),
+        messageChannel.snapshot("messageChannel"),
+    )
     val liveUsers = mutableMapOf<Long, Long>()
 
     /**
@@ -386,11 +400,12 @@ object BiliBiliBot : CoroutineScope {
 
     /**
      * 启动 Bot 并初始化配置、平台适配器、任务与资源分区。
+     * @return `STARTED` 表示已进入运行态，`FAILED` 表示初始化失败且不得进入永久等待。
      */
-    fun start(enableDebug: Boolean? = null) {
+    fun start(enableDebug: Boolean? = null): BotStartResult {
         if (!isRunning.compareAndSet(false, true)) {
             logger.warn("Bot 已在运行中，忽略重复启动请求")
-            return
+            return if (lifecycleState.get() == BotLifecycleState.RUNNING) BotStartResult.STARTED else BotStartResult.FAILED
         }
 
         lifecycleState.set(BotLifecycleState.STARTING)
@@ -411,7 +426,7 @@ object BiliBiliBot : CoroutineScope {
             logger.error("初始化配置失败: ${e.message}", e)
             isRunning.set(false)
             lifecycleState.set(BotLifecycleState.STOPPED)
-            return
+            return BotStartResult.FAILED
         }
 
         logger.info("========================================")
@@ -446,7 +461,7 @@ object BiliBiliBot : CoroutineScope {
                 logger.error("平台配置无效，请检查 config/bot.yml 中的 {}", config.selectedPlatformType())
                 isRunning.set(false)
                 lifecycleState.set(BotLifecycleState.STOPPED)
-                return
+                return BotStartResult.FAILED
             }
 
             if (config.webui.enabled) {
@@ -532,9 +547,11 @@ object BiliBiliBot : CoroutineScope {
 
             lifecycleState.set(BotLifecycleState.RUNNING)
             logger.info("Bot 启动成功")
+            return BotStartResult.STARTED
         } catch (e: Exception) {
             logger.error("Bot 启动失败: ${e.message}", e)
             stop("startup-failure")
+            return BotStartResult.FAILED
         }
     }
 

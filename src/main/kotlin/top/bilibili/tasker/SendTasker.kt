@@ -2,7 +2,6 @@ package top.bilibili.tasker
 
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
@@ -17,6 +16,8 @@ import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.connector.PlatformContact
 import top.bilibili.core.BiliBiliBot
+import top.bilibili.core.LocalQueueSnapshot
+import top.bilibili.core.ObservableChannel
 import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.LiveCloseMessage
@@ -45,9 +46,12 @@ object SendTasker : BiliTasker("SendTasker") {
     private const val AT_ALL_WARN_SWEEP_INTERVAL_MS = 10 * 60 * 1000L
     private const val AT_ALL_WARN_CACHE_MAX_SIZE = 1024
 
-    private val messageQueue = Channel<QueuedMessage>(100)
+    private val messageQueue = ObservableChannel<QueuedMessage>(100)
     private val atAllPermissionWarnTs = mutableMapOf<String, Long>()
     private var lastAtAllWarnSweepTs = 0L
+
+    /** 暴露内部发送队列的只读填充度，不泄露待发送消息内容。 */
+    fun queueSnapshot(): LocalQueueSnapshot = messageQueue.snapshot("SendTasker.messageQueue")
 
     override fun init() {
         BiliBiliBot.logger.info("SendTasker 已启动")

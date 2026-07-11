@@ -6,13 +6,11 @@ _最后更新：2026-07-11_
 
 ## BUG-001: Skia worker process 配置与实际实现不一致
 
-**状态**：开放，对应 [`KI-001`](context/known-issues.md#ki-001-skia-worker-process-配置尚未落地)。
+**状态**：已关闭。
 
 **现象**：`SkiaConfig.enableWorkerProcess` 默认值为 `true`，并存在 worker 进程相关配置项；但 `SkiaManager.currentMode` 当前固定初始化为 `IN_PROCESS`，`WORKER_PROCESS` 分支会抛出 `UnsupportedOperationException("Worker process mode not implemented yet")`。
 
-**处理**：文档描述统一为：worker process 为预留/未实现能力，当前仅支持 in-process。
-
-**收敛条件**：如需启用 worker process，必须补齐 worker process 实现、切换逻辑和对应测试后再更新文档。
+**处理**：删除未实现的 worker process 配置、模式枚举与异常分支，`SkiaManager` 只暴露实际可用的 in-process 绘图路径。
 
 ## BUG-002: SendTasker 存在疑似乱码注释（已修复）
 
@@ -42,27 +40,27 @@ _最后更新：2026-07-11_
 
 ## BUG-005: 启动失败状态没有稳定传递到进程退出码
 
-**状态**：开放，对应 [`KI-003`](context/known-issues.md#ki-003-启动失败可能不会结束进程)。
+**状态**：已关闭。
 
 **偏差**：`BiliBiliBot.start()` 可以记录失败并返回 `STOPPED`，`Main.main()` 随后仍进入无条件 `join()`，与启动层应暴露失败状态的目标不一致。
 
-**收敛条件**：启动入口返回明确结果或抛出异常，主入口以非零状态退出，并补失败启动回归测试。
+**处理**：`BiliBiliBot.start()` 返回 `BotStartResult`，`Main` 只在 `STARTED` 时等待，`FAILED` 时以状态码 1 退出；已补启动入口回归测试。
 
 ## BUG-006: Skia cache purge 不在完整清理闸门内
 
-**状态**：开放，对应 [`KI-004`](context/known-issues.md#ki-004-skia-purge-未保持在清理闸门窗口内)。
+**状态**：已关闭。
 
 **偏差**：`awaitAllCompleted()` 在空 block 结束后释放 `isCleaning`，`SkiaManager` 随后才执行 paragraph、Skia 和图片 cache 清理，无法保证清理全过程与新绘图互斥。
 
-**收敛条件**：把 cache 清理放入 `runExclusiveCleanup()` block，并补并发进入与超时回归测试。
+**处理**：普通与紧急 cache purge 均移入 `runExclusiveCleanup()` block；闸门等待超时时跳过本轮 purge，不再失去互斥后强制清理，并补并发与源码契约测试。
 
 ## BUG-007: 本地业务队列和 Skia native 压力缺少直接快照
 
-**状态**：开放，对应 [`KI-005`](context/known-issues.md#ki-005-本地队列与-skia-native-压力存在观测盲区)。
+**状态**：已关闭。
 
 **偏差**：`ProcessGuardian` 的实时背压检测只读取平台 pressure；三条业务 channel 与 `SendTasker` 队列没有填充度快照，`SkiaManagerStatus.memoryUsage` 也只是 JVM heap 比例。
 
-**收敛条件**：为本地队列和 Skia native 指标提供只读观测接口，并让监控文档与告警字段一一对应。
+**处理**：三条 core Channel 与 `SendTasker` 队列改用有界可观测包装器，`ProcessGuardian` 输出填充率并在 80% 时告警；Skia 状态新增 `Graphics.resourceCacheTotalUsed` 字节数，并继续结合 NMT/RSS 指标判断 native 压力。
 
 ## BUG-008: Utils 管理员通知跨越平台发送边界
 
@@ -74,11 +72,11 @@ _最后更新：2026-07-11_
 
 ## BUG-009: 群管理员可写入不属于当前群的分组模板策略
 
-**状态**：开放，对应 [`KI-007`](context/known-issues.md#ki-007-群管理员可修改任意已有分组的模板策略)。
+**状态**：已关闭。
 
 **偏差**：模板命令只校验当前群管理员身份以及目标分组存在并订阅 UID，没有校验当前群属于目标分组，弱于文档规定的群内权限边界。
 
-**收敛条件**：在命令或 scope 解析处验证当前群归属目标分组，并补跨群拒绝测试。
+**处理**：`TemplateService` 默认校验当前群属于目标分组，只有超级管理员入口显式允许跨分组维护；已补跨群拒绝测试。
 
 ## BUG-010: 平台中立迁移仍残留 OneBot11/NapCat 命名与依赖
 

@@ -1,5 +1,8 @@
 package top.bilibili.skia
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
@@ -18,6 +21,22 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
 class DrawingQueueManagerTest {
+    /**
+     * Skia 全局缓存清理必须作为 cleanup block 执行，不能在空闸门释放后再 purge。
+     */
+    @Test
+    fun `skia manager should purge caches inside the exclusive cleanup gate`() {
+        val source = Files.readString(
+            Path.of("src/main/kotlin/top/bilibili/skia/SkiaManager.kt"),
+            StandardCharsets.UTF_8,
+        ).replace("\r\n", "\n")
+
+        assertEquals(2, source.split("DrawingQueueManager.runExclusiveCleanup {").size - 1)
+        assertTrue(source.contains("clearGlobalCaches(forcePurgeAllSkiaCaches = false)"))
+        assertTrue(source.contains("clearGlobalCaches(forcePurgeAllSkiaCaches = true)"))
+        assertFalse(source.contains("DrawingQueueManager.awaitAllCompleted()"))
+    }
+
     /**
      * 已经排队等待 semaphore 的绘图在 cleanup 开始后也必须停住，避免继续使用即将 close 的全局样式。
      */

@@ -86,12 +86,13 @@ critical 会触发紧急清理。
 
 ## 平台背压与本地队列
 
-当前实时背压检测对象只有：
+当前实时背压检测对象包括：
 
 - 平台 outbound pressure 与 dropped 计数
 - 平台 inbound pressure 与 dropped 计数
+- `dynamicChannel`、`liveChannel`、`messageChannel` 与 `SendTasker.messageQueue` 的 `size/capacity/fillRatio`
 
-`dynamicChannel`、`liveChannel`、`messageChannel` 的容量均为 20，`SendTasker` 内部发送队列容量为 100；当前只用固定容量做内存估算，没有暴露实时填充度。守护日志没有背压告警时，不能据此证明本地队列没有积压。
+`dynamicChannel`、`liveChannel`、`messageChannel` 的容量均为 20，`SendTasker` 内部发送队列容量为 100。守护日志的 `[本地业务队列]` 每轮快照直接输出填充度，达到 80% 时进入 Channel 背压告警。
 
 出现背压时建议优先检查：
 
@@ -99,8 +100,6 @@ critical 会触发紧急清理。
 - B 站轮询是否短时间产生大量消息。
 - `SendTasker` 是否仍健康。
 - 平台连接是否断开。
-
-观测缺口见 [`../context/known-issues.md#ki-005-本地队列与-skia-native-压力存在观测盲区`](../context/known-issues.md#ki-005-本地队列与-skia-native-压力存在观测盲区)。
 
 ## 平台连接观测
 
@@ -127,6 +126,7 @@ critical 会触发紧急清理。
 
 - mode。
 - memoryUsage。
+- resourceCacheBytes（日志字段 `SkiaNativeCache`，来自 `Graphics.resourceCacheTotalUsed`）。
 - totalDrawingCount。
 - totalCleanupCount。
 - queue pending/active/full。

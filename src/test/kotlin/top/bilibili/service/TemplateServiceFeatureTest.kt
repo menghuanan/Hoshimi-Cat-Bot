@@ -191,6 +191,28 @@ class TemplateServiceFeatureTest {
     }
 
     /**
+     * 群作用域策略只能由该分组内的群发起，避免普通群管理员跨群修改共享策略。
+     */
+    @Test
+    fun `group scope commands should reject a subject outside the target group`() {
+        BiliData.group["ops"] = Group(
+            name = "ops",
+            creator = 1L,
+            contacts = mutableSetOf("onebot11:group:20002"),
+        )
+        BiliData.dynamic[uid] = SubData(
+            name = "测试UP",
+            contacts = mutableSetOf("onebot11:group:20002"),
+            sourceRefs = mutableSetOf("groupRef:ops"),
+        )
+
+        val result = TemplateService.addTemplate("d", "OneMsg", subject, uid, "ops")
+
+        assertTrue(result.contains("无权"))
+        assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey("groupRef:ops"))
+    }
+
+    /**
      * 读取协调层导出的运行态快照，用于断言删除策略后的清理效果。
      * 测试侧只观察副本，避免直接触碰运行中的真实缓存结构。
      */

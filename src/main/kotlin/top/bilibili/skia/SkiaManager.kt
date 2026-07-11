@@ -7,7 +7,6 @@ import top.bilibili.draw.FontManager
 import top.bilibili.utils.ImageCache
 import top.bilibili.utils.FontUtils
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Skia 资源管理器 - 统一入口
@@ -27,10 +26,6 @@ object SkiaManager {
         }
     }
 
-    // 运行模式
-    enum class Mode { IN_PROCESS, WORKER_PROCESS }
-    private var currentMode = AtomicReference(Mode.IN_PROCESS)
-
     // 统计信息
     private val totalDrawingCount = AtomicLong(0)
     private val totalCleanupCount = AtomicLong(0)
@@ -43,10 +38,7 @@ object SkiaManager {
     suspend fun <T> executeDrawing(block: suspend DrawingSession.() -> T): T {
         totalDrawingCount.incrementAndGet()
 
-        return when (currentMode.get()) {
-            Mode.IN_PROCESS -> executeInProcess(block)
-            Mode.WORKER_PROCESS -> throw UnsupportedOperationException("Worker process mode not implemented yet")
-        }
+        return executeInProcess(block)
     }
 
     /**
@@ -68,17 +60,18 @@ object SkiaManager {
         totalCleanupCount.incrementAndGet()
         logger.debug("开始执行 Skia 清理...")
 
-        // 1. 等待活动任务完成（带超时）
-        runCatching {
+        // 清理 block 必须完整处于闸门内；超时则跳过 purge，避免与新绘图并发访问全局缓存。
+        val cleaned = runCatching {
             withTimeoutOrNull(30_000L) {
-                DrawingQueueManager.awaitAllCompleted()
-            } ?: logger.warn("等待活动任务完成超时，强制继续清理")
+                DrawingQueueManager.runExclusiveCleanup {
+                    clearGlobalCaches(forcePurgeAllSkiaCaches = false)
+                }
+                true
+            } ?: false
         }.onFailure { e ->
-            logger.warn("等待活动任务完成时发生异常，强制继续清理", e)
-        }
-
-        // 2. 清理全局缓存
-        clearGlobalCaches(forcePurgeAllSkiaCaches = false)
+            logger.warn("等待活动任务并清理全局缓存时发生异常，本轮跳过 purge", e)
+        }.getOrDefault(false)
+        if (!cleaned) logger.warn("等待活动任务完成超时，本轮跳过 Skia 全局缓存清理")
 
         // 3. 强制 GC
         repeat(3) {
@@ -113,17 +106,18 @@ object SkiaManager {
         totalCleanupCount.incrementAndGet()
         logger.warn("触发 Skia 紧急清理：开始尝试回收全局缓存并加速归还 native 内存")
 
-        // 紧急路径同样先等待活动任务收敛，避免边绘制边 purge 导致抖动放大。
-        runCatching {
+        // 紧急 purge 同样保持在完整闸门内；互斥无法建立时宁可跳过，不能冒险并发清理。
+        val cleaned = runCatching {
             withTimeoutOrNull(15_000L) {
-                DrawingQueueManager.awaitAllCompleted()
-            } ?: logger.warn("紧急清理等待活动任务完成超时，继续执行强制清理")
+                DrawingQueueManager.runExclusiveCleanup {
+                    clearGlobalCaches(forcePurgeAllSkiaCaches = true)
+                }
+                true
+            } ?: false
         }.onFailure { e ->
-            logger.warn("紧急清理等待活动任务时发生异常，继续执行强制清理", e)
-        }
-
-        // 紧急清理会选择更激进的全量缓存 purge，优先降低 native 缓存占用峰值。
-        clearGlobalCaches(forcePurgeAllSkiaCaches = true)
+            logger.warn("紧急清理等待活动任务时发生异常，本轮跳过 purge", e)
+        }.getOrDefault(false)
+        if (!cleaned) logger.warn("紧急清理等待活动任务完成超时，本轮跳过 Skia 全局缓存清理")
 
         repeat(5) {
             // 连续执行更多轮 GC/finalization，尽量促使已标记对象及时释放 native 包装。
@@ -190,8 +184,9 @@ object SkiaManager {
      */
     fun getStatus(): SkiaManagerStatus {
         return SkiaManagerStatus(
-            mode = currentMode.get(),
+            mode = "IN_PROCESS",
             memoryUsage = getMemoryUsage(),
+            resourceCacheBytes = runCatching { Graphics.resourceCacheTotalUsed.toLong() }.getOrDefault(-1L),
             totalDrawingCount = totalDrawingCount.get(),
             totalCleanupCount = totalCleanupCount.get(),
             queueStatus = DrawingQueueManager.getQueueStatus(),
@@ -222,16 +217,18 @@ object SkiaManager {
 /**
  * SkiaManager 状态
  *
- * @param mode 当前运行模式
+ * @param mode 当前运行模式；当前仅支持进程内绘图。
  * @param memoryUsage 当前内存使用率
+ * @param resourceCacheBytes Skia Graphics 可直接观测的 native resource cache 字节数，采集失败时为 -1。
  * @param totalDrawingCount 累计绘图次数
  * @param totalCleanupCount 累计清理次数
  * @param queueStatus 当前队列状态
  * @param uptimeMs 管理器运行时长
  */
 data class SkiaManagerStatus(
-    val mode: SkiaManager.Mode,
+    val mode: String,
     val memoryUsage: Double,
+    val resourceCacheBytes: Long,
     val totalDrawingCount: Long,
     val totalCleanupCount: Long,
     val queueStatus: QueueStatus,

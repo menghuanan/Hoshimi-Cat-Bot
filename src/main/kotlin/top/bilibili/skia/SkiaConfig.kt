@@ -42,30 +42,6 @@ object SkiaConfig {
     @Volatile
     var emergencyCleanupCooldownMs: Long = 180_000L
 
-    // 子进程配置
-
-    /** Worker 进程重启间隔（毫秒），定期重启以防止内存泄漏累积 (must be > 0) */
-    @Volatile
-    var workerRestartIntervalMs: Long = 24 * 3600 * 1000L
-
-    /** Worker 进程最大内存限制（MB） (must be > 0) */
-    @Volatile
-    var workerMaxMemoryMb: Int = 512
-
-    /** Worker 进程空闲超时时间（毫秒） (must be > 0) */
-    @Volatile
-    var workerIdleTimeoutMs: Long = 120_000L
-
-    // 模式配置
-
-    /** 是否启用子进程模式 (worker process mode) */
-    @Volatile
-    var enableWorkerProcess: Boolean = true
-
-    /** 是否自动根据内存压力切换模式 */
-    @Volatile
-    var autoSwitchMode: Boolean = true
-
     /**
      * 验证配置参数的有效性
      * @throws IllegalArgumentException 如果配置无效
@@ -82,8 +58,5 @@ object SkiaConfig {
             "memoryWarningThreshold ($memoryWarningThreshold) must be < memoryCriticalThreshold ($memoryCriticalThreshold)"
         }
         require(emergencyCleanupCooldownMs > 0) { "emergencyCleanupCooldownMs must be > 0, got $emergencyCleanupCooldownMs" }
-        require(workerRestartIntervalMs > 0) { "workerRestartIntervalMs must be > 0, got $workerRestartIntervalMs" }
-        require(workerMaxMemoryMb > 0) { "workerMaxMemoryMb must be > 0, got $workerMaxMemoryMb" }
-        require(workerIdleTimeoutMs > 0) { "workerIdleTimeoutMs must be > 0, got $workerIdleTimeoutMs" }
     }
 }

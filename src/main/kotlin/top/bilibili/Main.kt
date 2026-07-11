@@ -2,6 +2,7 @@ package top.bilibili
 
 import org.slf4j.LoggerFactory
 import top.bilibili.core.BiliBiliBot
+import top.bilibili.core.BotStartResult
 import kotlin.system.exitProcess
 
 private val logger = LoggerFactory.getLogger("Main")
@@ -76,8 +77,11 @@ fun main(args: Array<String>) {
             },
         )
 
-        BiliBiliBot.start(enableDebug)
-        Thread.currentThread().join()
+        // 只有明确进入运行态后才永久等待；启动失败必须交还非零退出状态给外部守护。
+        when (BiliBiliBot.start(enableDebug)) {
+            BotStartResult.STARTED -> Thread.currentThread().join()
+            BotStartResult.FAILED -> exitProcess(1)
+        }
     } catch (_: InterruptedException) {
         logger.info("程序被中断")
     } catch (e: Exception) {

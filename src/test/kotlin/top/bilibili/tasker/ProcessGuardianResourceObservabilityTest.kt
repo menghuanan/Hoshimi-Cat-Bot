@@ -242,6 +242,56 @@ class ProcessGuardianResourceObservabilityTest {
         )
     }
 
+    // 本地有界队列必须暴露真实填充度，不能只依赖平台 transport 的 pressure 状态。
+    @Test
+    fun `process guardian should collect local business queue fill snapshots`() {
+        val guardian = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+        val bot = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+        val sendTasker = read("src/main/kotlin/top/bilibili/tasker/SendTasker.kt")
+
+        assertTrue(bot.contains("dynamicChannel.snapshot(\"dynamicChannel\")"))
+        assertTrue(bot.contains("liveChannel.snapshot(\"liveChannel\")"))
+        assertTrue(bot.contains("messageChannel.snapshot(\"messageChannel\")"))
+        assertTrue(sendTasker.contains("messageQueue.snapshot(\"SendTasker.messageQueue\")"))
+        assertTrue(guardian.contains("localQueueSnapshots"))
+        assertTrue(guardian.contains("fillRatio"))
+    }
+
+    // Skia 状态需要暴露 Graphics resource cache 的 native 字节数，避免继续用 JVM heap 比例代替。
+    @Test
+    fun `skia status should expose native resource cache bytes`() {
+        val skiaManager = read("src/main/kotlin/top/bilibili/skia/SkiaManager.kt")
+        val guardian = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(skiaManager.contains("resourceCacheBytes"))
+        assertTrue(skiaManager.contains("Graphics.resourceCacheTotalUsed"))
+        assertTrue(guardian.contains("SkiaNativeCache"))
+    }
+
+    // 启动入口必须根据显式启动结果决定是否进入永久等待，失败结果不能继续维持进程存活。
+    @Test
+    fun `main should only join after a successful bot start`() {
+        val main = read("src/main/kotlin/top/bilibili/Main.kt")
+        val bot = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+
+        assertTrue(bot.contains("enum class BotStartResult"))
+        assertTrue(bot.contains("fun start(enableDebug: Boolean? = null): BotStartResult"))
+        assertTrue(main.contains("BotStartResult.STARTED"))
+        assertTrue(main.contains("BotStartResult.FAILED"))
+    }
+
+    // 未实现的 worker process 不得继续以默认开启配置或可选运行模式的形式对外暴露。
+    @Test
+    fun `skia config should not expose an unimplemented worker process mode`() {
+        val config = read("src/main/kotlin/top/bilibili/skia/SkiaConfig.kt")
+        val manager = read("src/main/kotlin/top/bilibili/skia/SkiaManager.kt")
+
+        assertFalse(config.contains("enableWorkerProcess"))
+        assertFalse(config.contains("workerProcess"))
+        assertFalse(manager.contains("WORKER_PROCESS"))
+        assertFalse(manager.contains("UnsupportedOperationException"))
+    }
+
     // 非堆突发增长必须等到预热完成后再接管，否则启动期的正常上涨会被当成持续告警源。
     @Test
     fun `process guardian should delay burst non heap detection until warmup completes`() {

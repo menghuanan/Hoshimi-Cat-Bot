@@ -103,7 +103,7 @@ Service 模块是业务编排层，负责命令、订阅、模板、链接解析
 
 - 超级管理员判断统一走 `CommandPermission.isSuperAdmin(senderContact)`，数据来源是规范化后的管理员 subject。
 - 群普通管理员判断统一走 `CommandPermission.isGroupAdmin(groupContact, senderContact)`，长期约束是只对当前群生效，不得复用到跨群写操作。
-- 当前 `template ... group <分组名>` 只校验发送者是当前群管理员、目标分组存在且订阅了 UID，没有校验当前群属于目标分组；这是已知权限缺口，不得据此扩展其他跨群写入口。见 [`../context/known-issues.md#ki-007-群管理员可修改任意已有分组的模板策略`](../context/known-issues.md#ki-007-群管理员可修改任意已有分组的模板策略)。
+- `template ... group <分组名>` 在 `TemplateService` 默认校验当前群属于目标分组；只有超级管理员入口会显式放宽跨分组维护，普通群管理员不得跨群读写分组模板策略。
 - `/bili` 的“可路由”不等于“可完整执行”。例如群管理员可以进入 `config`、`list`、`add`，但仍会在具体服务里被限制跨群参数或超管专属子功能。
 - 帮助文案、命令解析器和各命令服务的权限判断必须保持一致；只改其中一处会造成“命令可见但不可用”或“绕过帮助暴露超权命令”。
 
