@@ -10,6 +10,8 @@ import top.bilibili.service.PushFanoutService
 import top.bilibili.utils.logger
 import top.bilibili.utils.sendAll
 import java.time.Instant
+import top.bilibili.delivery.DeliveryCoordinator
+import top.bilibili.delivery.DeliveryKind
 
 /**
  * 轮询关注列表中的新开播直播并投递到消息流水线。
@@ -23,6 +25,11 @@ object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
     private val dynamic by BiliData::dynamic
 
     private var lastLive: Long = Instant.now().epochSecond
+
+    override fun init() {
+        super.init()
+        DeliveryCoordinator.initialize()
+    }
 
     override suspend fun main() = withTimeout(180003) {
         logger.debug("开始直播检查...")
@@ -68,16 +75,17 @@ object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
 
             logger.debug("发送 ${lives.size} 个直播到 liveChannel...")
             val details = lives.flatMap { live ->
-                PushFanoutService.liveDetailsForContacts(live, PushFanoutService.resolveLiveContacts(live.uid, dynamic))
+                val businessId = "${live.uid}:${live.roomId}:${live.liveTime}"
+                PushFanoutService.liveDetailsForContacts(live, PushFanoutService.resolveLiveContacts(live.uid, dynamic)).mapNotNull { detail ->
+                    val contact = detail.contact ?: return@mapNotNull detail
+                    val record = DeliveryCoordinator.discover(DeliveryKind.LIVE_OPEN, businessId, contact)
+                    if (DeliveryCoordinator.isTerminal(record.id)) null else detail.copy(deliveryId = record.id)
+                }
             }
             liveChannel.sendAll(details)
             logger.debug("直播已发送到 liveChannel")
 
-            if (liveCloseEnable) {
-                // 仅记录已实际推送过的直播，避免下播提醒覆盖到未订阅或未通知的直播间。
-                liveUsers.putAll(lives.map { it.uid to it.liveTime })
-                logger.debug("已记录 ${lives.size} 个直播用于下播检测")
-            }
+            // 下播配对由 SendTasker 的开播成功回执建立，入队不再代表已通知。
         }
     }
 

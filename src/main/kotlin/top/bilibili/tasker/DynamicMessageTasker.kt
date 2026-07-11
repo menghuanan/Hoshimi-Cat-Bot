@@ -19,11 +19,20 @@ import top.bilibili.service.FeatureSwitchService
 import top.bilibili.service.normalizeArticleOpusDisplayTree
 import top.bilibili.service.parseGradientColors
 import top.bilibili.service.resolveGradientPalette
+import top.bilibili.delivery.DeliveryCoordinator
+import top.bilibili.core.BiliDataRuntimeCoordinator
 
 /**
  * 将动态详情转换为可发送消息。
  */
 object DynamicMessageTasker : BiliTasker() {
+
+    /** 动态消息构建结果，语义坏数据与可重试基础设施失败必须分开处理。 */
+    sealed interface BuildResult {
+        data class Success(val message: DynamicMessage) : BuildResult
+        data class Invalid(val reason: String) : BuildResult
+        data class RetryableFailure(val error: Throwable) : BuildResult
+    }
 
     override var interval: Int = 0
     override val wrapMainInBusinessLifecycle = false
@@ -41,14 +50,25 @@ object DynamicMessageTasker : BiliTasker() {
             withTimeout(180002) {
             val dynamicItem = dynamicDetail.item
             logger.info("开始处理动态: ${dynamicItem.modules.moduleAuthor.name} (${dynamicItem.modules.moduleAuthor.mid}) - ${dynamicItem.typeStr}")
-            try {
-                syncSubscriptionName(dynamicItem.modules.moduleAuthor.mid, dynamicItem.modules.moduleAuthor.name)
-                val message = dynamicItem.buildMessage(dynamicDetail.contact)
-                logger.info("动态消息构建成功，准备发送到 messageChannel")
-                messageChannel.send(message)
-                logger.info("动态消息已发送到 messageChannel")
-            } catch (e: Exception) {
-                logger.error("处理动态失败: ${e.message}", e)
+            syncSubscriptionName(dynamicItem.modules.moduleAuthor.mid, dynamicItem.modules.moduleAuthor.name)
+            when (val buildResult = dynamicItem.buildMessageResult(dynamicDetail.contact)) {
+                is BuildResult.Success -> {
+                    val message = buildResult.message.copy(deliveryId = dynamicDetail.deliveryId)
+                    dynamicDetail.deliveryId?.let { deliveryId -> DeliveryCoordinator.markReady(deliveryId, message) }
+                    logger.info("动态消息构建成功，准备发送到 messageChannel")
+                    messageChannel.send(message)
+                    logger.info("动态消息已发送到 messageChannel")
+                }
+                is BuildResult.Invalid -> {
+                    dynamicDetail.deliveryId?.let { DeliveryCoordinator.markInvalid(it, buildResult.reason) }
+                    logger.warn("隔离语义不完整动态 {}: {}", dynamicItem.idStr, buildResult.reason)
+                }
+                is BuildResult.RetryableFailure -> {
+                    dynamicDetail.deliveryId?.let {
+                        DeliveryCoordinator.recordReceipt(top.bilibili.delivery.DeliveryReceipt(it, false, buildResult.error.message))
+                    }
+                    throw buildResult.error
+                }
             }
             }
         }
@@ -62,8 +82,49 @@ object DynamicMessageTasker : BiliTasker() {
      */
     internal fun syncSubscriptionName(uid: Long, latestName: String) {
         val subData = dynamic[uid] ?: return
-        if (subData.name != latestName) {
-            subData.name = latestName
+        if (subData.name == latestName) return
+        // 昵称同步也走候选事务，避免轮询线程与 WebUI/命令并发覆盖整份数据。
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.dynamic[uid]?.name = latestName
+        }
+        if (!result.committed) logger.warn("同步 UID {} 昵称保存失败，运行态保持不变", uid)
+    }
+
+    /**
+     * 在进入绘图和资源下载前验证动态类型必需结构，避免单条上游坏数据击穿消费循环。
+     */
+    internal fun DynamicItem.semanticValidationError(): String? {
+        val major = modules.moduleDynamic.major
+        return when (type) {
+            DYNAMIC_TYPE_FORWARD -> if (orig == null) "转发动态缺少 orig" else null
+            DYNAMIC_TYPE_ARTICLE -> if (major?.article == null && major?.opus == null) "专栏动态缺少 article/opus" else null
+            DYNAMIC_TYPE_AV -> if (major?.archive == null) "视频动态缺少 archive" else null
+            DYNAMIC_TYPE_MUSIC -> if (major?.music == null) "音乐动态缺少 music" else null
+            DYNAMIC_TYPE_PGC,
+            DYNAMIC_TYPE_PGC_UNION -> if (major?.pgc == null) "番剧动态缺少 pgc" else null
+            DYNAMIC_TYPE_UGC_SEASON -> if (major?.ugcSeason == null) "合集动态缺少 ugcSeason" else null
+            DYNAMIC_TYPE_COMMON_VERTICAL,
+            DYNAMIC_TYPE_COMMON_SQUARE -> if (major?.common == null) "通用动态缺少 common" else null
+            DYNAMIC_TYPE_LIVE -> if (major?.live == null) "直播动态缺少 live" else null
+            DYNAMIC_TYPE_LIVE_RCMD -> if (major?.liveRcmd?.liveInfo?.livePlayInfo == null) "直播推荐动态缺少 livePlayInfo" else null
+            DYNAMIC_TYPE_NONE -> if (major?.none == null) "空动态缺少 none" else null
+            DYNAMIC_TYPE_WORD,
+            DYNAMIC_TYPE_DRAW,
+            DYNAMIC_TYPE_UNKNOWN -> null
+        }
+    }
+
+    /**
+     * 构建消息时保留可重试异常，语义不完整数据则作为当前记录的确定性失败返回。
+     */
+    internal suspend fun DynamicItem.buildMessageResult(contact: String? = null): BuildResult {
+        semanticValidationError()?.let { reason -> return BuildResult.Invalid(reason) }
+        return try {
+            BuildResult.Success(buildMessage(contact))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            BuildResult.RetryableFailure(error)
         }
     }
 
@@ -117,17 +178,17 @@ object DynamicMessageTasker : BiliTasker() {
                 ?: modules.moduleDynamic.major?.blocked?.hintMessage
                 ?: (modules.moduleDynamic.major?.opus?.title + "\n" + modules.moduleDynamic.major?.opus?.summary?.text)
             DYNAMIC_TYPE_ARTICLE -> modules.moduleDynamic.major?.article?.title
-                ?: modules.moduleDynamic.major?.opus?.title!!
-            DYNAMIC_TYPE_AV -> modules.moduleDynamic.major?.archive?.title!!
-            DYNAMIC_TYPE_MUSIC -> modules.moduleDynamic.major?.music?.title!!
-            DYNAMIC_TYPE_PGC -> modules.moduleDynamic.major?.pgc?.title!!
-            DYNAMIC_TYPE_PGC_UNION -> modules.moduleDynamic.major?.pgc?.title!!
-            DYNAMIC_TYPE_UGC_SEASON -> modules.moduleDynamic.major?.ugcSeason?.title!!
+                ?: modules.moduleDynamic.major?.opus?.title.orEmpty()
+            DYNAMIC_TYPE_AV -> modules.moduleDynamic.major?.archive?.title.orEmpty()
+            DYNAMIC_TYPE_MUSIC -> modules.moduleDynamic.major?.music?.title.orEmpty()
+            DYNAMIC_TYPE_PGC -> modules.moduleDynamic.major?.pgc?.title.orEmpty()
+            DYNAMIC_TYPE_PGC_UNION -> modules.moduleDynamic.major?.pgc?.title.orEmpty()
+            DYNAMIC_TYPE_UGC_SEASON -> modules.moduleDynamic.major?.ugcSeason?.title.orEmpty()
             DYNAMIC_TYPE_COMMON_VERTICAL,
-            DYNAMIC_TYPE_COMMON_SQUARE -> modules.moduleDynamic.major?.common?.title!!
-            DYNAMIC_TYPE_LIVE -> modules.moduleDynamic.major?.live?.title!!
-            DYNAMIC_TYPE_LIVE_RCMD -> modules.moduleDynamic.major?.liveRcmd?.liveInfo?.livePlayInfo?.title!!
-            DYNAMIC_TYPE_NONE -> modules.moduleDynamic.major?.none?.tips!!
+            DYNAMIC_TYPE_COMMON_SQUARE -> modules.moduleDynamic.major?.common?.title.orEmpty()
+            DYNAMIC_TYPE_LIVE -> modules.moduleDynamic.major?.live?.title.orEmpty()
+            DYNAMIC_TYPE_LIVE_RCMD -> modules.moduleDynamic.major?.liveRcmd?.liveInfo?.livePlayInfo?.title.orEmpty()
+            DYNAMIC_TYPE_NONE -> modules.moduleDynamic.major?.none?.tips.orEmpty()
             DYNAMIC_TYPE_UNKNOWN -> "未知的动态类型: $typeStr"
         }
     }
@@ -168,13 +229,13 @@ object DynamicMessageTasker : BiliTasker() {
                 else -> listOf()
             }
             DYNAMIC_TYPE_ARTICLE -> modules.moduleDynamic.major?.article?.covers
-            DYNAMIC_TYPE_AV -> listOf(modules.moduleDynamic.major?.archive?.cover!!)
-            DYNAMIC_TYPE_MUSIC -> listOf(modules.moduleDynamic.major?.music?.cover!!)
-            DYNAMIC_TYPE_PGC -> listOf(modules.moduleDynamic.major?.pgc?.cover!!)
-            DYNAMIC_TYPE_UGC_SEASON -> listOf(modules.moduleDynamic.major?.ugcSeason?.cover!!)
-            DYNAMIC_TYPE_COMMON_SQUARE -> listOf(modules.moduleDynamic.major?.common?.cover!!)
-            DYNAMIC_TYPE_LIVE -> listOf(modules.moduleDynamic.major?.live?.cover!!)
-            DYNAMIC_TYPE_LIVE_RCMD -> listOf(modules.moduleDynamic.major?.liveRcmd?.liveInfo?.livePlayInfo?.cover!!)
+            DYNAMIC_TYPE_AV -> listOfNotNull(modules.moduleDynamic.major?.archive?.cover)
+            DYNAMIC_TYPE_MUSIC -> listOfNotNull(modules.moduleDynamic.major?.music?.cover)
+            DYNAMIC_TYPE_PGC -> listOfNotNull(modules.moduleDynamic.major?.pgc?.cover)
+            DYNAMIC_TYPE_UGC_SEASON -> listOfNotNull(modules.moduleDynamic.major?.ugcSeason?.cover)
+            DYNAMIC_TYPE_COMMON_SQUARE -> listOfNotNull(modules.moduleDynamic.major?.common?.cover)
+            DYNAMIC_TYPE_LIVE -> listOfNotNull(modules.moduleDynamic.major?.live?.cover)
+            DYNAMIC_TYPE_LIVE_RCMD -> listOfNotNull(modules.moduleDynamic.major?.liveRcmd?.liveInfo?.livePlayInfo?.cover)
             else -> listOf()
         }
     }
@@ -187,7 +248,7 @@ object DynamicMessageTasker : BiliTasker() {
             DYNAMIC_TYPE_FORWARD -> {
                 listOf(
                     DynamicMessage.Link("动态", DYNAMIC_LINK(did)),
-                    DynamicMessage.Link("原动态", DYNAMIC_LINK(orig!!.did)),
+                    DynamicMessage.Link("原动态", DYNAMIC_LINK(requireNotNull(orig).did)),
                 )
             }
 
@@ -228,7 +289,7 @@ object DynamicMessageTasker : BiliTasker() {
                 listOf(
                     DynamicMessage.Link(
                         DYNAMIC_TYPE_MUSIC.text,
-                        MUSIC_LINK(this.modules.moduleDynamic.major?.music?.id!!.toString())
+                        MUSIC_LINK(requireNotNull(this.modules.moduleDynamic.major?.music?.id).toString())
                     ),
                     DynamicMessage.Link("动态", DYNAMIC_LINK(did))
                 )
@@ -237,7 +298,7 @@ object DynamicMessageTasker : BiliTasker() {
             DYNAMIC_TYPE_PGC,
             DYNAMIC_TYPE_PGC_UNION -> {
                 listOf(
-                    DynamicMessage.Link(type.text, EPISODE_LINK(this.modules.moduleDynamic.major?.pgc?.epid!!.toString())),
+                    DynamicMessage.Link(type.text, EPISODE_LINK(requireNotNull(this.modules.moduleDynamic.major?.pgc?.epid).toString())),
                     DynamicMessage.Link("动态", DYNAMIC_LINK(did))
                 )
             }
@@ -246,7 +307,7 @@ object DynamicMessageTasker : BiliTasker() {
                 listOf(
                     DynamicMessage.Link(
                         DYNAMIC_TYPE_LIVE.text,
-                        LIVE_LINK(this.modules.moduleDynamic.major?.live?.id!!.toString())
+                        LIVE_LINK(requireNotNull(this.modules.moduleDynamic.major?.live?.id).toString())
                     ),
                     DynamicMessage.Link("动态", DYNAMIC_LINK(did))
                 )
@@ -256,7 +317,7 @@ object DynamicMessageTasker : BiliTasker() {
                 listOf(
                     DynamicMessage.Link(
                         DYNAMIC_TYPE_LIVE_RCMD.text,
-                        LIVE_LINK(this.modules.moduleDynamic.major?.liveRcmd?.liveInfo?.livePlayInfo?.roomId!!.toString())
+                        LIVE_LINK(requireNotNull(this.modules.moduleDynamic.major?.liveRcmd?.liveInfo?.livePlayInfo?.roomId).toString())
                     ),
                     DynamicMessage.Link("动态", DYNAMIC_LINK(did))
                 )

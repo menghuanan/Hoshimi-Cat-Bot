@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 
@@ -20,6 +22,7 @@ class WebUiCredentialStore(
     private val random: SecureRandom = SecureRandom(),
     private val clock: () -> Long = { System.currentTimeMillis() / 1000L },
 ) {
+    private val credentialLock = Any()
     /**
      * 登录和改密仍使用 PBKDF2，但把迭代数收回到更轻的窗口，减少每次校验的等待时间。
      */
@@ -33,10 +36,11 @@ class WebUiCredentialStore(
     /**
      * 读取已有凭据；文件缺失时生成初始密码并写入受控状态文件。
      */
-    fun loadOrCreate(): WebUiCredentialBootstrap {
-        val existingState = loadStateOrNull()
-        if (existingState != null) {
-            return WebUiCredentialBootstrap(
+    fun loadOrCreate(): WebUiCredentialBootstrap = synchronized(credentialLock) {
+        if (credentialFile.exists()) {
+            val existingState = loadStateOrNull()
+                ?: error("WebUI credential file is blank or damaged: ${credentialFile.absolutePath}")
+            return@synchronized WebUiCredentialBootstrap(
                 state = existingState,
                 initialPassword = null,
             )
@@ -56,7 +60,7 @@ class WebUiCredentialStore(
             updatedAtEpochSecond = now,
         )
         saveState(state)
-        return WebUiCredentialBootstrap(
+        WebUiCredentialBootstrap(
             state = state,
             initialPassword = initialPassword,
         )
@@ -65,16 +69,44 @@ class WebUiCredentialStore(
     /**
      * 读取当前凭据状态；调用方若要求存在但文件缺失，应直接视为启动前置条件未满足。
      */
-    fun loadState(): WebUiCredentialState {
-        return loadStateOrNull() ?: error("missing WebUI credential state: ${credentialFile.absolutePath}")
+    fun loadState(): WebUiCredentialState = synchronized(credentialLock) {
+        loadStateOrNull() ?: error("missing WebUI credential state: ${credentialFile.absolutePath}")
     }
 
     /**
      * 将新的认证状态原样写回受控文件，供后续认证和 token 版本校验复用。
      */
-    fun saveState(state: WebUiCredentialState) {
+    fun saveState(state: WebUiCredentialState) = synchronized(credentialLock) {
+        saveStateLocked(state)
+    }
+
+    /** 编码后重新解码校验，再以临时文件和原子替换提交凭据状态。 */
+    private fun saveStateLocked(state: WebUiCredentialState) {
         credentialFile.parentFile?.mkdirs()
-        credentialFile.writeText(json.encodeToString(state), StandardCharsets.UTF_8)
+        val encoded = json.encodeToString(state)
+        json.decodeFromString(WebUiCredentialState.serializer(), encoded)
+        val tempFile = File(credentialFile.parentFile, ".${credentialFile.name}.tmp")
+        tempFile.writeText(encoded, StandardCharsets.UTF_8)
+        try {
+            // 现有凭据在替换前保留一份最近备份；损坏加载时只报告，不自动恢复或覆盖。
+            if (credentialFile.exists()) {
+                Files.copy(
+                    credentialFile.toPath(),
+                    File(credentialFile.parentFile, "${credentialFile.name}.bak").toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
+            Files.move(
+                tempFile.toPath(),
+                credentialFile.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            Files.move(tempFile.toPath(), credentialFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        } finally {
+            if (tempFile.exists()) tempFile.delete()
+        }
     }
 
     /**
@@ -105,6 +137,34 @@ class WebUiCredentialStore(
     }
 
     /**
+     * 全局串行改密事务：锁内重新读取当前状态、重验旧密码并推进 tokenVersion。
+     */
+    suspend fun replacePasswordIfMatches(
+        currentPassword: String,
+        newPassword: String,
+        mustChangePassword: Boolean = false,
+    ): WebUiCredentialState? = withContext(Dispatchers.IO) {
+        synchronized(credentialLock) {
+            val currentState = loadStateOrNull() ?: return@synchronized null
+            if (!matchesPasswordBlocking(currentState, currentPassword)) return@synchronized null
+            val salt = generateSalt()
+            val now = clock()
+            val nextState = currentState.copy(
+                passwordHash = hashPassword(newPassword, salt),
+                passwordSalt = salt,
+                hashAlgorithm = "PBKDF2WithHmacSHA256",
+                hashIterations = pbkdf2Iterations,
+                version = 2,
+                mustChangePassword = mustChangePassword,
+                tokenVersion = currentState.tokenVersion + 1L,
+                updatedAtEpochSecond = now,
+            )
+            saveStateLocked(nextState)
+            nextState
+        }
+    }
+
+    /**
      * 为后续密码校验提供统一散列入口，避免路由层自行处理密码材料。
      */
     fun hashPassword(password: String, salt: String, iterations: Int = pbkdf2Iterations): String {
@@ -121,14 +181,19 @@ class WebUiCredentialStore(
     suspend fun matchesPassword(state: WebUiCredentialState, password: String): Boolean {
         // 登录校验同样切到 IO 调度器，避免 PBKDF2 占住默认计算线程池导致请求排队。
         return withContext(Dispatchers.IO) {
-            val matches = when {
-                state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256" -> legacyMatchesPassword(state, password)
-                else -> hashPassword(password, state.passwordSalt, state.hashIterations) == state.passwordHash
-            }
+            val matches = matchesPasswordBlocking(state, password)
             if (matches && (state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256")) {
                 migrateLegacyState(state, password)
             }
             matches
+        }
+    }
+
+    /** 在调用方已选择 IO 调度器时执行无 suspend 的密码比较。 */
+    private fun matchesPasswordBlocking(state: WebUiCredentialState, password: String): Boolean {
+        return when {
+            state.version < 2 || state.hashAlgorithm != "PBKDF2WithHmacSHA256" -> legacyMatchesPassword(state, password)
+            else -> hashPassword(password, state.passwordSalt, state.hashIterations) == state.passwordHash
         }
     }
 
@@ -140,9 +205,7 @@ class WebUiCredentialStore(
             return null
         }
         val content = credentialFile.readText(StandardCharsets.UTF_8)
-        if (content.isBlank()) {
-            return null
-        }
+        if (content.isBlank()) error("WebUI credential file is blank: ${credentialFile.absolutePath}")
         return json.decodeFromString(WebUiCredentialState.serializer(), content)
     }
 

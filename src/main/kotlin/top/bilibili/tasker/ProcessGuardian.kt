@@ -139,7 +139,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         checkConnectionStatus(report)
 
         // 4. 清理僵尸任务
-        cleanDeadTaskers(report)
+        recoverDeadTaskers(report)
 
         // 5. ✅ P3修复: 检查 Channel 背压
         checkChannelBackpressure(report)
@@ -1425,14 +1425,25 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     /**
      * 清理僵尸任务
      */
-    private fun cleanDeadTaskers(report: MonitorReport) {
-        val deadTaskers = snapshotTaskers().filter { it != this && !it.isActive }
+    private suspend fun recoverDeadTaskers(report: MonitorReport) {
+        // 外层 CompletableJob 会长于主循环，僵尸判断必须使用主 Job 健康快照。
+        val deadTaskers = snapshotTaskers().filter { it != this && !it.healthSnapshot().active }
 
         if (deadTaskers.isNotEmpty()) {
-            // 从列表中移除僵尸任务
+            // 主作业异常退出优先按注册表恢复；正常停止或已熔断实例才移除无效引用。
+            val recoveredNames = mutableListOf<String>()
+            val removableTaskers = mutableListOf<BiliTasker>()
+            deadTaskers.forEach { tasker ->
+                when (val result = TaskRecoveryRegistry.recover(tasker.healthSnapshot().taskerName)) {
+                    is TaskRecoveryResult.Restarted -> recoveredNames += result.taskName
+                    is TaskRecoveryResult.CircuitOpen -> logger.error("任务 {} 已耗尽主作业恢复预算并熔断", result.taskName)
+                    TaskRecoveryResult.NotEligible,
+                    is TaskRecoveryResult.Waiting -> removableTaskers += tasker
+                }
+            }
             val removedCount = synchronized(taskers) {
                 val beforeCount = taskers.size
-                taskers.removeAll(deadTaskers.toSet())
+                taskers.removeAll(removableTaskers.toSet())
                 beforeCount - taskers.size
             }
 
@@ -1440,7 +1451,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             report.zombieTaskersCleaned = removedCount
             report.zombieTaskerNames = deadTaskers.mapNotNull { it::class.simpleName }
 
-            logger.info("已清理 $removedCount 个僵尸任务引用: ${report.zombieTaskerNames}")
+            logger.info("已恢复 {} 个主任务并清理 {} 个僵尸引用: {}", recoveredNames.size, removedCount, report.zombieTaskerNames)
         } else {
             report.hasZombieTaskers = false
         }

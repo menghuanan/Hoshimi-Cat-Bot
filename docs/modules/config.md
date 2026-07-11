@@ -66,6 +66,8 @@ Config 模块负责配置文件、业务数据、平台配置和迁移。当前�
 
 WebUI 保存链路使用热重载协调器统一处理 `BiliConfig.yml`、`BiliData.yml` 和 `bot.yml`。设置页保存先基于旧运行快照 dry-run 校验全部 payload，全部通过后才按 owner 写盘；候选运行代际应用失败时先恢复旧内存态，再通过 `BiliConfigManager` 或 `ConfigManager` 尝试回滚已落盘文件。订阅页已完成 `BiliData.yml` 持久化的 mutation 只提交内部运行态刷新信号，不把后端内部信号暴露给浏览器 DTO。
 
+`BiliDataRuntimeCoordinator` 是业务数据运行态 mutation 的唯一事务边界：从深快照构建候选，候选成功落盘后才安装。`bot.yml` 仅在文件缺失时生成默认值；已有文件解析失败会保留原件并报告原文件及最近备份位置。Cookie 的冷启动、热重载和回滚都使用完整替换，输入缺失字段会清除旧值。
+
 ## 资源与生命周期
 
 Config 模块拥有配置文件和业务数据文件的写入权，但不拥有长期协程、网络客户端或 native 资源。文件写入必须保持原子语义和编码一致，运行期缓存由调用方或协调器负责刷新。

@@ -17,12 +17,32 @@ data class BiliCookie(
      * 从原始 Cookie 字符串中提取 `SESSDATA` 与 `bili_jct`。
      */
     fun parse(cookie: String): BiliCookie {
+        val parsed = fromHeader(cookie)
+        return replaceWith(parsed)
+    }
+
+    /**
+     * 从完整配置字符串生成独立 Cookie 快照；缺失字段保持为空，表示显式清除旧值。
+     */
+    fun fromHeader(cookie: String): BiliCookie {
+        val parsed = BiliCookie()
         cookie.split("; ", ";").forEach {
-            val cookieKV = it.split("=")
+            val cookieKV = it.split("=", limit = 2)
+            if (cookieKV.size != 2) return@forEach
             // 这里保留最小转义是为了兼容请求头传输，避免特殊字符在后续拼接时被截断。
-            if (cookieKV[0] == "SESSDATA") sessData = cookieKV[1].replace(",", "%2C").replace("*", "%2A")
-            if (cookieKV[0] == "bili_jct") biliJct = cookieKV[1]
+            if (cookieKV[0].trim() == "SESSDATA") parsed.sessData = cookieKV[1].replace(",", "%2C").replace("*", "%2A")
+            if (cookieKV[0].trim() == "bili_jct") parsed.biliJct = cookieKV[1]
         }
+        return parsed
+    }
+
+    /**
+     * 一次性安装完整 Cookie 快照，避免热重载只覆盖出现的字段而遗留旧凭据。
+     */
+    @Synchronized
+    fun replaceWith(snapshot: BiliCookie): BiliCookie {
+        sessData = snapshot.sessData
+        biliJct = snapshot.biliJct
         return this
     }
 

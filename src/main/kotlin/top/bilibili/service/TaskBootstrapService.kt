@@ -5,6 +5,7 @@ import top.bilibili.core.resource.TaskResourcePolicyRegistry
 import top.bilibili.tasker.CacheClearTasker
 import top.bilibili.tasker.DynamicCheckTasker
 import top.bilibili.tasker.DynamicMessageTasker
+import top.bilibili.tasker.DeliveryRetryTasker
 import top.bilibili.tasker.ListenerTasker
 import top.bilibili.tasker.LiveCheckTasker
 import top.bilibili.tasker.LiveCloseCheckTasker
@@ -13,24 +14,28 @@ import top.bilibili.tasker.LogClearTasker
 import top.bilibili.tasker.ProcessGuardian
 import top.bilibili.tasker.SendTasker
 import top.bilibili.tasker.SkiaCleanupTasker
+import top.bilibili.tasker.TaskRecoveryRegistration
+import top.bilibili.tasker.TaskRecoveryRegistry
 
 /**
  * 统一启动后台任务集合，避免主启动流程手工维护任务顺序和覆盖校验。
  */
 object TaskBootstrapService {
     private const val TASK_INITIALIZATION_TIMEOUT_MS = 10_000L
-    private val startupTaskNames = listOf(
-        "ListenerTasker",
-        "DynamicCheckTasker",
-        "LiveCheckTasker",
-        "LiveCloseCheckTasker",
-        "DynamicMessageTasker",
-        "LiveMessageTasker",
-        "SendTasker",
-        "CacheClearTasker",
-        "LogClearTasker",
-        "SkiaCleanupTasker",
-        "ProcessGuardian",
+    private val taskRegistrations = listOf(
+        TaskRecoveryRegistration("ListenerTasker", { ListenerTasker }, autoRecover = true, critical = true),
+        TaskRecoveryRegistration("DynamicCheckTasker", { DynamicCheckTasker }, autoRecover = true, critical = true),
+        TaskRecoveryRegistration("LiveCheckTasker", { LiveCheckTasker }, autoRecover = true, critical = true),
+        TaskRecoveryRegistration("LiveCloseCheckTasker", { LiveCloseCheckTasker }, autoRecover = true, critical = true),
+        TaskRecoveryRegistration("DynamicMessageTasker", { DynamicMessageTasker }, autoRecover = true, critical = true),
+        TaskRecoveryRegistration("DeliveryRetryTasker", { DeliveryRetryTasker }, autoRecover = true, critical = true),
+        TaskRecoveryRegistration("LiveMessageTasker", { LiveMessageTasker }, autoRecover = true, critical = true),
+        TaskRecoveryRegistration("SendTasker", { SendTasker }, autoRecover = true, critical = true),
+        TaskRecoveryRegistration("CacheClearTasker", { CacheClearTasker }, autoRecover = true, critical = false),
+        TaskRecoveryRegistration("LogClearTasker", { LogClearTasker }, autoRecover = true, critical = false),
+        TaskRecoveryRegistration("SkiaCleanupTasker", { SkiaCleanupTasker }, autoRecover = true, critical = false),
+        // Guardian 不自我监督；其异常由根生命周期和健康日志暴露，避免形成递归恢复环。
+        TaskRecoveryRegistration("ProcessGuardian", { ProcessGuardian }, autoRecover = false, critical = true),
     )
 
     /**
@@ -40,27 +45,13 @@ object TaskBootstrapService {
      */
     suspend fun startTasks(): Boolean {
         BiliBiliBot.logger.info("正在启动任务...")
-        TaskResourcePolicyRegistry.validateCoverage(startupTaskNames)
-
-        val taskStarts = listOf(
-            "ListenerTasker" to suspend { ListenerTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "DynamicCheckTasker" to suspend { DynamicCheckTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "LiveCheckTasker" to suspend { LiveCheckTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "LiveCloseCheckTasker" to suspend { LiveCloseCheckTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "DynamicMessageTasker" to suspend { DynamicMessageTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "LiveMessageTasker" to suspend { LiveMessageTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "SendTasker" to suspend { SendTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "CacheClearTasker" to suspend { CacheClearTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "LogClearTasker" to suspend { LogClearTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "SkiaCleanupTasker" to suspend { SkiaCleanupTasker.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-            "ProcessGuardian" to suspend { ProcessGuardian.startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS) },
-        )
+        TaskRecoveryRegistry.install(taskRegistrations)
 
         // 每个任务的 Boolean 启动结果都属于启动契约，不能只记录日志后继续报告整体成功。
-        taskStarts.forEach { (taskName, startTask) ->
-            BiliBiliBot.logger.info("启动任务: {}", taskName)
-            if (!startTask()) {
-                BiliBiliBot.logger.error("任务拒绝启动: {}", taskName)
+        TaskRecoveryRegistry.registrations().forEach { registration ->
+            BiliBiliBot.logger.info("启动任务: {}", registration.taskName)
+            if (!registration.tasker().startAndAwaitInitialization(TASK_INITIALIZATION_TIMEOUT_MS)) {
+                BiliBiliBot.logger.error("任务拒绝启动: {}", registration.taskName)
                 return false
             }
         }

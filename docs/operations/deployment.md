@@ -81,6 +81,8 @@ Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 L
 
 ## Docker entrypoint
 
+停机契约固定为 JVM 共享预算 90 秒、entrypoint 等待 100 秒、Compose `stop_grace_period` 110 秒。entrypoint 超时后保留最终 `SIGKILL` 兜底；不得缩短外层预算到 JVM 截止时间以内。
+
 `docker-entrypoint.sh` 负责：
 
 - 合并 CMD 传入的 heap 参数。

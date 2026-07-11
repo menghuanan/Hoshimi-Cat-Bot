@@ -47,6 +47,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - 首次默认密码或强制改密状态下，只允许进入改密相关路径；其他受保护路由返回 `password change required`。
 - 高风险确认以当前密码校验为准，成功后只在当前 session token 上缓存短时授权；改密会清空 token 与确认窗口。
 - 登录失败会同时推进单 IP 和全局 backoff，外部响应保持通用错误，避免泄露凭据状态。
+- 凭据、token、鉴权状态和审计各自以私有锁保护复合操作，跨仓库调用固定遵守“凭据 → token → 鉴权 → 审计”。并发改密在凭据锁内重读并校验旧密码，因此只有首个有效请求成功。
 
 ## HTTP 边界
 
@@ -78,6 +79,8 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - `WebUiManager` 只拥有嵌入式服务器生命周期，不持有 bot 主协程或平台 adapter。
 - WebUI 配置热重载协调器归 `BiliBiliBot` 根生命周期所有，不随单个 `WebUiManager` 重建；WebUI host、port、enabled、token TTL 或 static_dir 变化会参与运行态 apply 事务。新 host/port 会先启动新入口、再延迟停止旧入口，启动失败时保存 job 必须失败且旧入口继续服务；同 host/port 的运行参数重启需要先释放旧端口，失败时尝试恢复旧入口。
 - `WebUiCredentialStore` 负责 `webui-credentials.json` 的创建、读取、迁移和密码哈希。
+- 已有凭据文件空白或损坏时保留原件与备份并禁用 WebUI；核心平台和 Tasker 继续启动。凭据写入使用候选编码/解码验证、备份和原子替换。
+- 热重载 job 的终态最多保留 24 小时和 1000 条，按完成时间淘汰最旧终态；非终态不因容量被删除。
 - 凭据文件默认落在 `config/webui-credentials.json`，路径由 `bot.yml` 的 `webui.credential_file` 决定。
 - `WebUiLogFacade` 只读固定日志源，并按本次启动时间裁切旧日志窗口。
 - React 静态产物由 `webui-frontend` 构建生成，`src/main/resources/webui/react` 不应手工维护。

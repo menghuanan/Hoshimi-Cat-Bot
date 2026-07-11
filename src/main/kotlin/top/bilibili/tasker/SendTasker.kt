@@ -32,6 +32,8 @@ import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.subjectsEquivalent
 import top.bilibili.utils.toSubject
+import top.bilibili.delivery.DeliveryCoordinator
+import top.bilibili.delivery.DeliveryReceipt
 
 /**
  * 消息发送任务
@@ -101,6 +103,12 @@ object SendTasker : BiliTasker("SendTasker") {
 
                 // 先把送达结论写入最近推送历史，再继续输出日志，确保首页和控制台看到同一份状态。
                 if (success) {
+                    queuedMessage.sourceMessage.deliveryId?.let { deliveryId ->
+                        DeliveryCoordinator.recordReceipt(DeliveryReceipt(deliveryId, true))
+                        if (queuedMessage.sourceMessage is LiveCloseMessage) {
+                            DeliveryCoordinator.completeLivePair(deliveryId)
+                        }
+                    }
                     PushStatistics.recordDelivery(
                         type = queuedMessage.pushStatisticType,
                         success = true,
@@ -109,6 +117,9 @@ object SendTasker : BiliTasker("SendTasker") {
                     )
                     BiliBiliBot.logger.info("消息已发送到 {}", queuedMessage.contact.toSubject())
                 } else {
+                    queuedMessage.sourceMessage.deliveryId?.let {
+                        DeliveryCoordinator.recordReceipt(DeliveryReceipt(it, false, "platform send returned false"))
+                    }
                     PushStatistics.recordDelivery(
                         type = queuedMessage.pushStatisticType,
                         success = false,
@@ -138,6 +149,9 @@ object SendTasker : BiliTasker("SendTasker") {
                     summary = buildPushRecordSubscriptionInfo(queuedMessage.sourceMessage),
                     target = queuedMessage.contact.toSubject(),
                 )
+                queuedMessage.sourceMessage.deliveryId?.let {
+                    DeliveryCoordinator.recordReceipt(DeliveryReceipt(it, false, e.message))
+                }
                 BiliBiliBot.logger.error("发送消息时出错: ${e.message}", e)
             }
         }

@@ -1,8 +1,8 @@
 package top.bilibili.service
 
-import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.Group
+import top.bilibili.core.BiliDataRuntimeCoordinator
 import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
@@ -66,16 +66,17 @@ object GroupCommandService {
         }
 
         val creatorId = senderContact.id.toLongOrNull() ?: 0L
-        BiliData.group[groupName] = Group(
-            name = groupName,
-            creator = creatorId,
-            admin = creatorId.takeIf { it > 0L }?.let { mutableSetOf(it) } ?: mutableSetOf(),
-            creatorContact = senderContact.toSubject(),
-            adminContacts = mutableSetOf(senderContact.toSubject()),
-            contacts = mutableSetOf(),
-        )
-        BiliConfigManager.saveData()
-        sendText(chatContact, "成功创建分组: $groupName")
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.group[groupName] = Group(
+                name = groupName,
+                creator = creatorId,
+                admin = creatorId.takeIf { it > 0L }?.let { mutableSetOf(it) } ?: mutableSetOf(),
+                creatorContact = senderContact.toSubject(),
+                adminContacts = mutableSetOf(senderContact.toSubject()),
+                contacts = mutableSetOf(),
+            )
+        }
+        sendText(chatContact, if (result.committed) "成功创建分组: $groupName" else "保存失败，分组未创建，请稍后重试")
     }
 
     private suspend fun delete(chatContact: PlatformContact, args: List<String>) {
@@ -89,10 +90,11 @@ object GroupCommandService {
             return
         }
 
-        DynamicService.deleteGroupRef(groupName)
-        BiliData.group.remove(groupName)
-        BiliConfigManager.saveData()
-        sendText(chatContact, "成功删除分组: $groupName")
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.group.remove(groupName)
+            DynamicService.deleteGroupRefIn(candidate, groupName)
+        }
+        sendText(chatContact, if (result.committed) "成功删除分组: $groupName" else "保存失败，分组未删除，请稍后重试")
     }
 
     private suspend fun add(chatContact: PlatformContact, args: List<String>) {
@@ -125,10 +127,11 @@ object GroupCommandService {
             sendText(chatContact, "群 ${targetContact.id} 已在分组 $groupName 中")
             return
         }
-        group.contacts.add(contactStr)
-        DynamicService.refreshGroupRef(groupName)
-        BiliConfigManager.saveData()
-        sendText(chatContact, "成功将群 ${targetContact.id} 加入分组 $groupName")
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.group[groupName]?.contacts?.add(contactStr)
+            DynamicService.refreshGroupRefIn(candidate, groupName)
+        }
+        sendText(chatContact, if (result.committed) "成功将群 ${targetContact.id} 加入分组 $groupName" else "保存失败，分组未变更，请稍后重试")
     }
 
     private suspend fun remove(chatContact: PlatformContact, args: List<String>) {
@@ -152,10 +155,11 @@ object GroupCommandService {
             sendText(chatContact, "群 ${targetContact.id} 不在分组 $groupName 中")
             return
         }
-        group.contacts.remove(contactStr)
-        DynamicService.refreshGroupRef(groupName)
-        BiliConfigManager.saveData()
-        sendText(chatContact, "成功从分组 $groupName 移除群 ${targetContact.id}")
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.group[groupName]?.contacts?.remove(contactStr)
+            DynamicService.refreshGroupRefIn(candidate, groupName)
+        }
+        sendText(chatContact, if (result.committed) "成功从分组 $groupName 移除群 ${targetContact.id}" else "保存失败，分组未变更，请稍后重试")
     }
 
     private suspend fun list(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
@@ -214,7 +218,6 @@ object GroupCommandService {
                 return
             }
             val result = DynamicService.addGroupSubscribe(uid, groupName)
-            BiliConfigManager.saveData()
             sendText(chatContact, result)
             return
         }
@@ -233,7 +236,6 @@ object GroupCommandService {
                 if (firstError == null) firstError = e.message
             }
         }
-        BiliConfigManager.saveData()
 
         val msg = if (firstError != null && addedCount == 0) {
             "订阅失败：$firstError"
@@ -273,7 +275,6 @@ object GroupCommandService {
                 return
             }
             val result = DynamicService.removeGroupSubscribe(uid, groupName)
-            BiliConfigManager.saveData()
             sendText(chatContact, result)
             return
         }
@@ -292,7 +293,6 @@ object GroupCommandService {
                 if (firstError == null) firstError = e.message
             }
         }
-        BiliConfigManager.saveData()
 
         val msg = if (firstError != null && removedCount == 0) {
             "取消订阅失败：$firstError"

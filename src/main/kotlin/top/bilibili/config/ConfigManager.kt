@@ -27,7 +27,7 @@ object ConfigManager {
         }
 
         try {
-            // 启动阶段优先保证服务可继续运行，因此异常时回退到默认配置并立即落盘。
+            // 仅缺失文件允许生成默认配置；已有文件解析失败必须保留现场并拒绝启动。
             val loadResult = store.loadWithMetadata()
             botConfig = loadResult.config
             if (loadResult.createdDefault) {
@@ -39,9 +39,11 @@ object ConfigManager {
                 logger.info("检测到旧版 bot.yml 结构，已自动迁移为 v1.8 标准配置样式")
             }
         } catch (e: Exception) {
-            logger.error("加载配置文件失败，使用默认配置: ${e.message}", e)
-            botConfig = BotConfig().normalizedBotConfig()
-            saveConfig()
+            val backupHint = store.latestBackupFile()?.absolutePath ?: "无可用备份"
+            val message = "bot.yml 已存在但无法解析，原文件保持不变: ${store.configFile().absolutePath}; " +
+                "请检查文件或从最近备份人工恢复: $backupHint"
+            logger.error(message, e)
+            throw IllegalStateException(message, e)
         }
 
         if (!botConfig.validateSelectedPlatform()) {

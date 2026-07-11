@@ -1,0 +1,219 @@
+package top.bilibili.delivery
+
+import java.io.File
+import java.security.MessageDigest
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+import top.bilibili.data.BiliMessage
+
+/**
+ * 联系人级交付状态机，统一推进构建、平台回执、重试预算和直播配对。
+ */
+object DeliveryCoordinator {
+    private const val MAX_ATTEMPTS = 6
+    private const val RETRY_WINDOW_MS = 24L * 60L * 60L * 1_000L
+    private const val TERMINAL_RETENTION_MS = 7L * 24L * 60L * 60L * 1_000L
+    private const val TERMINAL_CAPACITY = 5_000
+    private val retryDelays = longArrayOf(30_000L, 2 * 60_000L, 10 * 60_000L, 30 * 60_000L, 2 * 60 * 60_000L, 6 * 60 * 60_000L)
+    private val lock = ReentrantLock()
+    private var store = DeliveryLedgerStore()
+    private var ledger = DeliveryLedger()
+    @Volatile private var initialized = false
+
+    /** 启动时加载账本并导入旧 dynamic_history 为完成历史，避免升级后重复推送。 */
+    fun initialize() = lock.withLock {
+        if (initialized) return
+        ledger = store.load()
+        // 崩溃前已构建但尚未收到平台回执的消息，重启后立即进入可重试状态。
+        ledger.records.replaceAll { _, record ->
+            if (record.stage == DeliveryStage.READY && record.message != null) {
+                record.copy(stage = DeliveryStage.RETRY_WAIT, nextRetryAtEpochMillis = System.currentTimeMillis())
+            } else record
+        }
+        if (!ledger.legacyDynamicHistoryImported) importLegacyDynamicHistoryLocked()
+        compactLocked(System.currentTimeMillis())
+        store.save(ledger)
+        initialized = true
+    }
+
+    /**
+     * 为事件联系人创建稳定记录；已有记录直接复用以实现跨重启和轮询去重。
+     */
+    fun discover(kind: DeliveryKind, businessId: String, contact: String, now: Long = System.currentTimeMillis()): DeliveryRecord = lock.withLock {
+        ensureInitializedLocked()
+        val id = stableId(kind, businessId, contact)
+        ledger.records[id]?.let { return it }
+        val record = DeliveryRecord(id, kind, businessId, contact, now)
+        ledger.records[id] = record
+        store.save(ledger)
+        record
+    }
+
+    /** 构建成功后保存可重试消息快照，供发送失败或重启恢复重新入队。 */
+    fun markReady(deliveryId: String, message: BiliMessage): DeliveryRecord? = update(deliveryId) { record ->
+        record.copy(stage = DeliveryStage.READY, message = message, lastError = null)
+    }
+
+    /** 语义无效属于确定性终态，只隔离当前联系人记录。 */
+    fun markInvalid(deliveryId: String, reason: String, now: Long = System.currentTimeMillis()): DeliveryRecord? = update(deliveryId) { record ->
+        record.copy(stage = DeliveryStage.INVALID, lastError = reason, completedAtEpochMillis = now)
+    }
+
+    /** 平台回执是唯一交付终态推进入口；失败按次数与 24 小时双预算安排重试。 */
+    fun recordReceipt(receipt: DeliveryReceipt): DeliveryRecord? = update(receipt.deliveryId) { record ->
+        if (receipt.success) {
+            record.copy(stage = DeliveryStage.DELIVERED, completedAtEpochMillis = receipt.occurredAtEpochMillis, lastError = null)
+        } else {
+            val nextAttempts = record.attempts + 1
+            val exhausted = nextAttempts >= MAX_ATTEMPTS || receipt.occurredAtEpochMillis - record.discoveredAtEpochMillis >= RETRY_WINDOW_MS
+            if (exhausted) {
+                record.copy(
+                    stage = DeliveryStage.PERMANENT_FAILURE,
+                    attempts = nextAttempts,
+                    completedAtEpochMillis = receipt.occurredAtEpochMillis,
+                    lastError = receipt.error,
+                )
+            } else {
+                val baseDelay = retryDelays[(nextAttempts - 1).coerceIn(retryDelays.indices)]
+                val jitter = stableJitter(record.id, baseDelay / 5L)
+                record.copy(
+                    stage = DeliveryStage.RETRY_WAIT,
+                    attempts = nextAttempts,
+                    nextRetryAtEpochMillis = receipt.occurredAtEpochMillis + baseDelay + jitter,
+                    lastError = receipt.error,
+                )
+            }
+        }
+    }
+
+    /** 返回到期且保留完整消息快照的记录，调用方成功入队后无需提前推进为成功。 */
+    fun dueRetries(now: Long = System.currentTimeMillis()): List<DeliveryRecord> = lock.withLock {
+        ensureInitializedLocked()
+        ledger.records.values.filter { record ->
+            record.stage == DeliveryStage.RETRY_WAIT && record.nextRetryAtEpochMillis <= now && record.message != null
+        }
+    }
+
+    /** 终态记录不应被上游轮询重复入队。 */
+    fun isTerminal(deliveryId: String): Boolean = lock.withLock {
+        ensureInitializedLocked()
+        ledger.records[deliveryId]?.stage in setOf(DeliveryStage.DELIVERED, DeliveryStage.PERMANENT_FAILURE, DeliveryStage.INVALID)
+    }
+
+    /** 只有刚发现且尚未构建的记录允许业务轮询生成消息，避免重复入队或终态回退。 */
+    fun requiresInitialBuild(deliveryId: String): Boolean = lock.withLock {
+        ensureInitializedLocked()
+        ledger.records[deliveryId]?.stage == DeliveryStage.DISCOVERED
+    }
+
+    /** 重试消息成功放回 channel 后先离开到期集合，后续仍由平台回执决定最终状态。 */
+    fun markRetryQueued(deliveryId: String): DeliveryRecord? = update(deliveryId) { record ->
+        record.copy(stage = DeliveryStage.READY, nextRetryAtEpochMillis = 0L)
+    }
+
+    /** 返回已成功收到开播通知、尚未完成下播配对的联系人记录。 */
+    fun deliveredLiveOpenRecords(): List<DeliveryRecord> = lock.withLock {
+        ensureInitializedLocked()
+        ledger.records.values.filter { it.kind == DeliveryKind.LIVE_OPEN && it.stage == DeliveryStage.DELIVERED && !it.closeCompleted }
+    }
+
+    /** 下播记录成功后闭合对应开播联系人配对，失败时保持配对供后续重试。 */
+    fun completeLivePair(closeDeliveryId: String): Boolean = lock.withLock {
+        ensureInitializedLocked()
+        val closeRecord = ledger.records[closeDeliveryId] ?: return false
+        val openId = closeRecord.pairedOpenDeliveryId ?: return false
+        val openRecord = ledger.records[openId] ?: return false
+        ledger.records[openId] = openRecord.copy(closeCompleted = true)
+        store.save(ledger)
+        true
+    }
+
+    /** 创建与已交付开播记录绑定的联系人级下播记录。 */
+    fun discoverLiveClose(openRecord: DeliveryRecord, businessId: String, now: Long = System.currentTimeMillis()): DeliveryRecord = lock.withLock {
+        ensureInitializedLocked()
+        val id = stableId(DeliveryKind.LIVE_CLOSE, businessId, openRecord.contact)
+        ledger.records[id]?.let { return it }
+        val record = DeliveryRecord(
+            id = id,
+            kind = DeliveryKind.LIVE_CLOSE,
+            businessId = businessId,
+            contact = openRecord.contact,
+            discoveredAtEpochMillis = now,
+            pairedOpenDeliveryId = openRecord.id,
+        )
+        ledger.records[id] = record
+        store.save(ledger)
+        record
+    }
+
+    /** 停机检查点显式保存当前账本，确保 worker 回收前状态已落盘。 */
+    fun flush() = lock.withLock {
+        ensureInitializedLocked()
+        compactLocked(System.currentTimeMillis())
+        store.save(ledger)
+    }
+
+    /** 测试隔离入口替换临时存储并清空内存态，生产代码不会调用。 */
+    internal fun resetForTest(testStore: DeliveryLedgerStore) = lock.withLock {
+        store = testStore
+        ledger = DeliveryLedger()
+        initialized = false
+    }
+
+    /** 锁内更新单条记录并同步原子落盘。 */
+    private fun update(deliveryId: String, transform: (DeliveryRecord) -> DeliveryRecord): DeliveryRecord? = lock.withLock {
+        ensureInitializedLocked()
+        val current = ledger.records[deliveryId] ?: return null
+        val updated = transform(current)
+        ledger.records[deliveryId] = updated
+        compactLocked(System.currentTimeMillis())
+        store.save(ledger)
+        updated
+    }
+
+    /** 旧历史按特殊联系人建立完成记录，只承担升级去重，不参与实际发送。 */
+    private fun importLegacyDynamicHistoryLocked() {
+        val history = File("data/dynamic_history.txt")
+        if (history.exists()) {
+            history.readLines(Charsets.UTF_8).filter { it.isNotBlank() }.forEach { did ->
+                val id = stableId(DeliveryKind.DYNAMIC, did, "legacy-history")
+                ledger.records.putIfAbsent(
+                    id,
+                    DeliveryRecord(
+                        id = id,
+                        kind = DeliveryKind.DYNAMIC,
+                        businessId = did,
+                        contact = "legacy-history",
+                        discoveredAtEpochMillis = 0L,
+                        stage = DeliveryStage.DELIVERED,
+                        completedAtEpochMillis = System.currentTimeMillis(),
+                    ),
+                )
+            }
+        }
+        ledger = ledger.copy(legacyDynamicHistoryImported = true)
+    }
+
+    /** 终态按七天和容量压缩，活跃记录不参与淘汰。 */
+    private fun compactLocked(now: Long) {
+        val terminalStages = setOf(DeliveryStage.DELIVERED, DeliveryStage.PERMANENT_FAILURE, DeliveryStage.INVALID)
+        ledger.records.values.filter { it.stage in terminalStages && it.completedAtEpochMillis > 0L && now - it.completedAtEpochMillis >= TERMINAL_RETENTION_MS }
+            .forEach { ledger.records.remove(it.id) }
+        val terminal = ledger.records.values.filter { it.stage in terminalStages }.sortedBy { it.completedAtEpochMillis }
+        terminal.dropLast(TERMINAL_CAPACITY).forEach { ledger.records.remove(it.id) }
+    }
+
+    /** 调用公开操作前保证只加载一次持久化账本。 */
+    private fun ensureInitializedLocked() {
+        if (!initialized) initialize()
+    }
+
+    /** ID 使用业务类型、业务 ID 与规范联系人哈希，避免把联系人明文写入文件键。 */
+    private fun stableId(kind: DeliveryKind, businessId: String, contact: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest("${kind.name}|$businessId|$contact".toByteArray())
+        return bytes.take(16).joinToString("") { "%02x".format(it) }
+    }
+
+    /** 稳定抖动让跨重启的重试计划保持可预测，同时避免同批记录完全同刻回流。 */
+    private fun stableJitter(id: String, bound: Long): Long = if (bound <= 0L) 0L else (id.hashCode().toLong() and Long.MAX_VALUE) % bound
+}

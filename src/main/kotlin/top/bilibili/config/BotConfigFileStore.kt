@@ -60,6 +60,16 @@ internal class BotConfigFileStore(
     fun load(): BotConfig = loadWithMetadata().config
 
     /**
+     * 返回当前可供人工恢复的最近备份；存储层只报告位置，不自动覆盖损坏原文件。
+     */
+    fun latestBackupFile(): File? {
+        return (1..maxBackupFiles).map(::backupFile).firstOrNull { it.exists() }
+    }
+
+    /** 返回受管 bot.yml 的绝对路径，供启动失败诊断定位原文件。 */
+    fun configFile(): File = botConfigFile
+
+    /**
      * 只按 v1.8 标准结构写出平台配置，避免继续把 legacy napcat 块持久化回 bot.yml。
      */
     fun save(config: BotConfig) {

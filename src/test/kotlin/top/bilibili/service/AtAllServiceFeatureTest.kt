@@ -2,13 +2,16 @@ package top.bilibili.service
 
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.bilibili.AtAllType
 import top.bilibili.BiliData
+import top.bilibili.BiliDataWrapper
 import top.bilibili.SubData
+import top.bilibili.core.BiliDataRuntimeCoordinator
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
@@ -18,11 +21,21 @@ class AtAllServiceFeatureTest {
     private val subject = "group:10001"
     private val persistedSubject = "onebot11:group:10001"
 
+    /** 每个用例先安装空数据快照，隔离其他测试类留下的全局 BiliData 状态。 */
+    @BeforeTest
+    fun setup() {
+        resetRuntimeData()
+    }
+
     @AfterTest
     fun cleanup() {
-        BiliData.atAll.clear()
-        BiliData.dynamic.clear()
+        resetRuntimeData()
         clearCooldownState()
+    }
+
+    /** 通过生产安装边界同步清空 live 数据和协调器下一次读取的稳定快照。 */
+    private fun resetRuntimeData() {
+        BiliDataRuntimeCoordinator.installSnapshot(BiliDataWrapper(dynamic = mutableMapOf()))
     }
 
     @Test

@@ -8,6 +8,7 @@ import top.bilibili.utils.formatDuration
 import top.bilibili.utils.formatRelativeTime
 import top.bilibili.utils.formatTime
 import java.time.Instant
+import top.bilibili.delivery.DeliveryCoordinator
 
 
 /**
@@ -19,31 +20,42 @@ object LiveCloseCheckTasker : BiliCheckTasker("LiveCloseCheckTasker")  {
     override var interval: Int = 60
     override var checkReportEnable = false
 
-    private val liveUsers by BiliBiliBot::liveUsers
     private var nowTime = Instant.now().epochSecond
 
     override suspend fun main() {
-        if (liveUsers.isNotEmpty()) {
+        val openRecords = DeliveryCoordinator.deliveredLiveOpenRecords()
+        if (openRecords.isNotEmpty()) {
             nowTime = Instant.now().epochSecond
-
-            val liveStatusMap = client.getLiveStatus(liveUsers.map { it.key })
+            val openMessages = openRecords.mapNotNull { it.message as? top.bilibili.data.LiveMessage }
+            val liveStatusMap = client.getLiveStatus(openMessages.map { it.mid }.distinct())
             val liveStatusList = liveStatusMap?.map { it.value }?.filter { it.liveStatus != 1 }
 
             liveStatusList?.forEach { info ->
-                val liveTime = liveUsers[info.uid]!!
-                BiliBiliBot.messageChannel.send(LiveCloseMessage(
-                    info.roomId,
-                    info.uid,
-                    info.uname,
-                    liveTime.formatRelativeTime,
-                    0,
-                    nowTime.formatTime,
-                    (nowTime - liveTime).formatDuration(),
-                    info.title,
-                    info.area,
-                    LIVE_LINK(info.roomId.toString())
-                ))
-                liveUsers.remove(info.uid)
+                openRecords.filter { record -> (record.message as? top.bilibili.data.LiveMessage)?.mid == info.uid }
+                    .forEach { openRecord ->
+                        val openMessage = openRecord.message as? top.bilibili.data.LiveMessage ?: return@forEach
+                        val liveTime = openMessage.timestamp.toLong()
+                        val businessId = "${openRecord.businessId}:close"
+                        val closeRecord = DeliveryCoordinator.discoverLiveClose(openRecord, businessId)
+                        // 已构建、重试中或已完成的下播记录由账本状态机接管，轮询不得重复入队或回退终态。
+                        if (!DeliveryCoordinator.requiresInitialBuild(closeRecord.id)) return@forEach
+                        val message = LiveCloseMessage(
+                            info.roomId,
+                            info.uid,
+                            info.uname,
+                            liveTime.formatRelativeTime,
+                            0,
+                            nowTime.formatTime,
+                            (nowTime - liveTime).formatDuration(),
+                            info.title,
+                            info.area,
+                            LIVE_LINK(info.roomId.toString()),
+                            contact = openRecord.contact,
+                            deliveryId = closeRecord.id,
+                        )
+                        DeliveryCoordinator.markReady(closeRecord.id, message)
+                        BiliBiliBot.messageChannel.send(message)
+                    }
             }
         }
     }

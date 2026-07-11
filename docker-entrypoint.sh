@@ -102,14 +102,14 @@ cleanup() {
     if [ -n "${JAVA_PID:-}" ]; then
         log "Stopping Java (PID: $JAVA_PID)..."
         kill -TERM "$JAVA_PID" 2>/dev/null || true
-        # 最多等待 8 秒，让 JVM 有机会优雅退出，同时预留余量给 Docker 的 stop 超时策略。
-        for i in $(seq 1 8); do
+        # 最多等待 100 秒，覆盖 JVM 90 秒总停机预算并为外层 Compose 留出收敛余量。
+        for i in $(seq 1 100); do
             if ! kill -0 "$JAVA_PID" 2>/dev/null; then
                 break
             fi
             sleep 1
         done
-        # 如果 JVM 仍未退出，执行强制终止，避免 cleanup 长时间阻塞。
+        # 如果 JVM 仍未退出，执行最终强制终止；正常路径应在共享总预算内完成。
         kill -KILL "$JAVA_PID" 2>/dev/null || true
         wait "$JAVA_PID" 2>/dev/null || true
     fi

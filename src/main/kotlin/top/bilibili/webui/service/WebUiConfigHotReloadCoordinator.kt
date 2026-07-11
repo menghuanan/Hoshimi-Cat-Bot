@@ -29,6 +29,8 @@ class WebUiConfigHotReloadCoordinator(
 ) {
     companion object {
         private const val SHUTDOWN_CANCELLED_MESSAGE = "hot reload job cancelled during bot shutdown"
+        private const val TERMINAL_JOB_RETENTION_MS = 24L * 60L * 60L * 1_000L
+        private const val MAX_TERMINAL_JOBS = 1_000
 
         /**
          * 兼容旧保存 facade 的协调器工厂，Task 9 会替换为完整 dry-run/persist/apply 链路。
@@ -114,12 +116,14 @@ class WebUiConfigHotReloadCoordinator(
             acceptedAtEpochMillis = nowMillis(),
         )
         synchronized(lock) {
+            pruneTerminalJobsLocked()
             if (!acceptingJobs) {
                 val rejected = snapshot.copy(
                     phase = WebUiConfigHotReloadPhase.FAILED,
                     message = "hot reload coordinator is shutting down",
                 )
                 jobs[jobId] = rejected
+                pruneTerminalJobsLocked()
                 return rejected
             }
             jobs[jobId] = snapshot
@@ -175,6 +179,7 @@ class WebUiConfigHotReloadCoordinator(
             pendingSignalCount = 0
             runningBatch = null
             pausedBatchForTest = null
+            pruneTerminalJobsLocked()
         }
     }
 
@@ -377,6 +382,9 @@ class WebUiConfigHotReloadCoordinator(
     private fun updateJob(jobId: String, job: WebUiConfigHotReloadJobDto) {
         synchronized(lock) {
             jobs[jobId] = job
+            if (job.phase.isTerminal()) {
+                pruneTerminalJobsLocked()
+            }
         }
         onJobUpdatedForTest(job)
     }
@@ -404,6 +412,25 @@ class WebUiConfigHotReloadCoordinator(
             }
             completionCallbacksByJobId.remove(jobId)
         }
+        pruneTerminalJobsLocked()
+    }
+
+    /**
+     * 终态任务保留 24 小时且最多 1000 条；运行中任务不参与时间或容量淘汰。
+     */
+    private fun pruneTerminalJobsLocked() {
+        val now = nowMillis()
+        val terminal = jobs.values.filter { job -> job.phase.isTerminal() }
+        terminal.filter { job ->
+            val completedAt = job.completedAtEpochMillis.takeIf { it > 0L } ?: job.acceptedAtEpochMillis
+            completedAt > 0L && now - completedAt >= TERMINAL_JOB_RETENTION_MS
+        }.forEach { expired -> jobs.remove(expired.jobId) }
+
+        // 时间清理后重新取快照，并按真实完成时间淘汰最旧终态，绝不删除非终态任务。
+        val overflow = jobs.values.filter { job -> job.phase.isTerminal() }
+            .sortedBy { job -> job.completedAtEpochMillis.takeIf { it > 0L } ?: job.acceptedAtEpochMillis }
+            .dropLast(MAX_TERMINAL_JOBS)
+        overflow.forEach { oldest -> jobs.remove(oldest.jobId) }
     }
 
     /**

@@ -10,6 +10,7 @@ import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.core.BiliDataRuntimeCoordinator
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parsePlatformContact
 
@@ -46,35 +47,18 @@ object AtAllService {
         if (contact.type != PlatformChatType.GROUP) return@withLock "仅群聊支持 @全体 策略"
         validateUidScope(uid, normalizedSubject)?.let { return@withLock it }
 
-        val list = BiliData.atAll
-            .getOrPut(normalizedSubject) { mutableMapOf() }
-            .getOrPut(uid) { mutableSetOf() }
-
-        if (list.isEmpty()) {
-            list.add(atAllType)
-            return@withLock "添加成功"
-        }
-
-        when (atAllType) {
-            AtAllType.ALL -> {
-                list.clear()
-                list.add(atAllType)
-            }
-            AtAllType.DYNAMIC -> {
-                list.removeAll(listOf(AtAllType.ALL, AtAllType.VIDEO, AtAllType.MUSIC, AtAllType.ARTICLE))
-                list.add(atAllType)
-            }
-            AtAllType.LIVE -> {
-                list.remove(AtAllType.ALL)
-                list.add(atAllType)
-            }
-            else -> {
-                list.remove(AtAllType.ALL)
-                list.remove(AtAllType.DYNAMIC)
-                list.add(atAllType)
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            val list = candidate.atAll.getOrPut(normalizedSubject) { mutableMapOf() }.getOrPut(uid) { mutableSetOf() }
+            when (atAllType) {
+                AtAllType.ALL -> { list.clear(); list.add(atAllType) }
+                AtAllType.DYNAMIC -> {
+                    list.removeAll(listOf(AtAllType.ALL, AtAllType.VIDEO, AtAllType.MUSIC, AtAllType.ARTICLE)); list.add(atAllType)
+                }
+                AtAllType.LIVE -> { list.remove(AtAllType.ALL); list.add(atAllType) }
+                else -> { list.remove(AtAllType.ALL); list.remove(AtAllType.DYNAMIC); list.add(atAllType) }
             }
         }
-        "添加成功"
+        if (result.committed) "添加成功" else "保存失败，设置未生效，请稍后重试"
     }
 
     /**
@@ -85,18 +69,16 @@ object AtAllService {
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
         validateUidScope(uid, normalizedSubject)?.let { return@withLock it }
 
-        val subjectMap = BiliData.atAll[normalizedSubject] ?: return@withLock "删除失败"
+        val subjectMap = BiliDataRuntimeCoordinator.snapshot().atAll[normalizedSubject] ?: return@withLock "删除失败"
         val uidMap = subjectMap[uid] ?: return@withLock "删除失败"
-        val removed = uidMap.remove(atAllType)
-        if (!removed) return@withLock "删除失败"
-
-        if (uidMap.isEmpty()) {
-            subjectMap.remove(uid)
+        if (atAllType !in uidMap) return@withLock "删除失败"
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            val candidateSubject = candidate.atAll[normalizedSubject] ?: return@mutateAndPersist
+            candidateSubject[uid]?.remove(atAllType)
+            if (candidateSubject[uid].isNullOrEmpty()) candidateSubject.remove(uid)
+            if (candidateSubject.isEmpty()) candidate.atAll.remove(normalizedSubject)
         }
-        if (subjectMap.isEmpty()) {
-            BiliData.atAll.remove(normalizedSubject)
-        }
-        "删除成功"
+        if (result.committed) "删除成功" else "保存失败，设置未变更，请稍后重试"
     }
 
     /**
@@ -155,7 +137,9 @@ object AtAllService {
     suspend fun recordAtAllSuccess(subject: String, uid: Long, message: BiliMessage, now: Long = System.currentTimeMillis()) = mutex.withLock {
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock
         val actualType = resolveActualType(message) ?: return@withLock
-        BiliData.atAllCooldownUntil[cooldownKey(normalizedSubject, uid, actualType)] = now + AT_ALL_COOLDOWN_MS
+        BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.atAllCooldownUntil[cooldownKey(normalizedSubject, uid, actualType)] = now + AT_ALL_COOLDOWN_MS
+        }
     }
 
     /**
@@ -187,7 +171,8 @@ object AtAllService {
         val key = cooldownKey(subject, uid, actualType)
         val cooldownUntil = BiliData.atAllCooldownUntil[key] ?: return false
         if (cooldownUntil <= now) {
-            BiliData.atAllCooldownUntil.remove(key)
+            // 过期清理也走候选事务，避免读取线程直接修改共享持久化集合。
+            BiliDataRuntimeCoordinator.mutateAndPersist { candidate -> candidate.atAllCooldownUntil.remove(key) }
             return false
         }
         return true

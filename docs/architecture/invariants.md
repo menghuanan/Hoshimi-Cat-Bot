@@ -119,6 +119,7 @@
 | `webui-manager` | `INGRESS` | `WebUiManager` | `RELAXED_LONG_RUNNING` | 取消 WebUI reload job，并关闭当前和待停止的本地 WebUI manager，避免停机期间继续接收新的 HTTP 请求 |
 | `webui-config-hot-reload` | `INGRESS` | `WebUiConfigHotReloadCoordinator` | `RELAXED_LONG_RUNNING` | 拒收新保存，等待或取消当前 worker，并把未终态 job 收敛为失败 |
 | `event-collector` | `INGRESS` | `eventCollectorJob` | `STRICT` | 取消事件收集协程 |
+| `critical-state-checkpoint` | `WORKERS` | `BiliDataRuntimeCoordinator`、`DeliveryCoordinator` | `STRICT` | 在取消 worker 前持久化业务数据和交付账本 |
 | `taskers` | `WORKERS` | `BiliTasker.*` | `RELAXED_LONG_RUNNING` | 调用 `BiliTasker.cancelAll(timeoutMs = 10_000)` 统一停止后台任务 |
 | `channels` | `CHANNELS` | `dynamicChannel`、`liveChannel`、`messageChannel` | `STRICT` | 关闭三条消息通道 |
 | `skia-manager` | `DEPENDENCIES` | `SkiaManager`、`FontManager` | `RELAXED_LONG_RUNNING` | 执行 `SkiaManager.shutdown()` |
@@ -127,6 +128,8 @@
 | `check-tasker-bili-client` | `DEPENDENCIES` | `BiliCheckTasker.client` | `STRICT` | 执行 `BiliCheckTasker.closeSharedClient()` |
 | `image-cache` | `DEPENDENCIES` | `ImageCache` | `STRICT` | 关闭图片缓存 |
 | `scope-job` | `ROOT_SCOPE` | `BiliBiliBot.job` | `RELAXED_LONG_RUNNING` | 在 10 秒内取消并等待根协程作用域停止，超时后强制取消 |
+
+全部分区共享同一 90 秒 JVM 截止时间；每一阶段只能使用剩余预算，正常路径与 fallback 必须保持相同阶段顺序和截止时间。
 
 **维护要求**：
 
@@ -137,3 +140,15 @@
 - `fallbackStopResources()` 是资源总管失效时的兜底路径；只更新分区登记、不更新兜底顺序，会让异常停机场景与正常停机场景出现分叉。
 
 **相关代码**：`BiliBiliBot.registerResourcePartitions()`、`BiliBiliBot.fallbackStopResources()`、`ResourceSupervisor`
+
+## INV-012: BiliData 运行态修改必须先持久化候选快照
+
+**约束**：业务 mutation 必须经 `BiliDataRuntimeCoordinator` 执行“深快照、候选修改、持久化、一次安装”；落盘失败不得修改运行态。读取链路每轮使用同一稳定快照，不得跨字段读取 live 可变集合。
+
+## INV-013: 联系人交付只能由平台回执提交成功
+
+**约束**：动态、开播和下播采用 `DeliveryCoordinator` 联系人级账本；channel 入队与消息构建均不代表成功。只有 `SendTasker` 的平台成功回执可进入 `DELIVERED`，失败在 24 小时内最多尝试 6 次。已成功开播的联系人才能建立下播配对，下播成功后才闭合配对。
+
+## INV-014: 主 Tasker 恢复受窗口预算约束
+
+**约束**：可恢复主 Tasker 由 `TaskRecoveryRegistry` 保存工厂和健康状态，30 分钟内最多恢复 5 次，退避为 5、15、45、135、300 秒；预算耗尽进入熔断。正常停止不得触发恢复，`ProcessGuardian` 自身不得自恢复。

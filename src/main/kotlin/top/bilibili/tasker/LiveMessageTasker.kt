@@ -16,6 +16,8 @@ import top.bilibili.utils.logger
 import top.bilibili.service.DynamicService
 import top.bilibili.service.FeatureSwitchService
 import top.bilibili.service.resolveGradientPalette
+import top.bilibili.delivery.DeliveryCoordinator
+import top.bilibili.delivery.DeliveryReceipt
 
 /**
  * 将直播详情转换为可发送消息。
@@ -35,11 +37,13 @@ object LiveMessageTasker : BiliTasker() {
             val liveInfo = liveDetail.item
             logger.info("开始处理直播: ${liveInfo.uname} (${liveInfo.uid}) - ${liveInfo.title}")
             try {
-                val message = liveInfo.buildMessage(liveDetail.contact)
+                val message = liveInfo.buildMessage(liveDetail.contact).copy(deliveryId = liveDetail.deliveryId)
+                liveDetail.deliveryId?.let { DeliveryCoordinator.markReady(it, message) }
                 logger.info("直播消息构建成功，准备发送到 messageChannel")
                 messageChannel.send(message)
                 logger.info("直播消息已发送到 messageChannel")
             } catch (e: Exception) {
+                liveDetail.deliveryId?.let { DeliveryCoordinator.recordReceipt(DeliveryReceipt(it, false, e.message)) }
                 logger.error("处理直播失败: ${e.message}", e)
             }
             }

@@ -19,6 +19,7 @@ object TaskResourcePolicyRegistry {
         "LiveCheckTasker" to TaskResourcePolicy("LiveCheckTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "周期轮询任务"),
         "LiveCloseCheckTasker" to TaskResourcePolicy("LiveCloseCheckTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "周期轮询任务"),
         "DynamicMessageTasker" to TaskResourcePolicy("DynamicMessageTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "持续消费消息通道"),
+        "DeliveryRetryTasker" to TaskResourcePolicy("DeliveryRetryTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "周期恢复联系人级交付记录"),
         "LiveMessageTasker" to TaskResourcePolicy("LiveMessageTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "持续消费消息通道"),
         "SendTasker" to TaskResourcePolicy("SendTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "持续消费发送队列"),
         "CacheClearTasker" to TaskResourcePolicy("CacheClearTasker", ResourceStrictness.STRICT, "周期缓存维护"),

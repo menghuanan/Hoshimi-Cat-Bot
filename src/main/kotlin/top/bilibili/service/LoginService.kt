@@ -19,11 +19,24 @@ import top.bilibili.initTagid
 import top.bilibili.utils.toSubject
 import java.io.File
 import java.net.URI
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 统一封装扫码登录流程，避免消息入口直接处理二维码轮询与 Cookie 落盘。
  */
 object LoginService {
+    private const val LOGIN_TTL_MS = 180_000L
+    private val loginGeneration = AtomicLong(0L)
+    private val activeLogin = AtomicReference<ActiveQrLoginState?>(null)
+
+    /** 当前全局活动二维码登录，代际用于阻止旧流程的迟到成功提交。 */
+    internal data class ActiveQrLoginState(
+        val generation: Long,
+        val startedAtEpochMillis: Long,
+        val expiresAtEpochMillis: Long,
+        val requester: String,
+    )
     /**
      * 登录回调解析结果：统一携带 cookie 字符串和可选的 DedeUserID。
      */
@@ -35,7 +48,26 @@ object LoginService {
     /**
      * 执行二维码登录全流程，并在成功后刷新运行时账号状态与持久化配置。
      */
-    suspend fun login(contact: PlatformContact) {
+    suspend fun login(contact: PlatformContact): Boolean {
+        val now = System.currentTimeMillis()
+        val state = ActiveQrLoginState(
+            generation = loginGeneration.incrementAndGet(),
+            startedAtEpochMillis = now,
+            expiresAtEpochMillis = now + LOGIN_TTL_MS,
+            requester = contact.toSubject(),
+        )
+        val existing = activeLogin.get()
+        if (existing != null && existing.expiresAtEpochMillis > now) {
+            val remainingSeconds = ((existing.expiresAtEpochMillis - now + 999L) / 1_000L).coerceAtLeast(1L)
+            sendMessage(contact, "已有登录流程进行中，请在 ${remainingSeconds} 秒后重试")
+            return false
+        }
+        if (!activeLogin.compareAndSet(existing, state)) {
+            sendMessage(contact, "已有登录流程进行中，请稍后重试")
+            return false
+        }
+
+        try {
         BusinessLifecycleManager.run(
             owner = "LoginService",
             operation = "login:${contact.toSubject()}",
@@ -95,7 +127,7 @@ object LoginService {
                 }
 
                 runCatching {
-                    withTimeout(180_000) {
+                    withTimeout(LOGIN_TTL_MS) {
                         while (isActive) {
                             delay(3_000)
                             val loginInfo = client.loginInfo(loginData.qrcodeKey!!)
@@ -103,10 +135,14 @@ object LoginService {
                             when (loginInfo?.code) {
                                 0 -> {
                                     val callbackPayload = parseLoginCallback(loginInfo.url!!)
-                                    if (callbackPayload.cookie.isNotEmpty()) {
+                                    if (callbackPayload.cookie.isNotEmpty() && activeLogin.get()?.generation == state.generation) {
                                         BiliConfigManager.config.accountConfig.cookie = callbackPayload.cookie
-                                        BiliConfigManager.saveConfig()
-                                        BiliBiliBot.cookie.parse(callbackPayload.cookie)
+                                        if (!BiliConfigManager.saveConfig()) {
+                                            sendMessage(contact, "登录凭据保存失败，请稍后重试")
+                                            logger.error("二维码登录凭据保存失败，未安装运行态 Cookie")
+                                            break
+                                        }
+                                        BiliBiliBot.cookie.replaceWith(BiliBiliBot.cookie.fromHeader(callbackPayload.cookie))
                                         // 若当前登录回调携带 DedeUserID，则直接刷新运行时 UID，避免额外调用 userInfo。
                                         callbackPayload.dedeUserId?.toLongOrNull()?.let { dedeUserId ->
                                             BiliBiliBot.uid = dedeUserId
@@ -117,8 +153,13 @@ object LoginService {
                                         sendMessage(contact, "BiliBili 登录成功")
                                         logger.info("BiliBili 登录成功")
                                     } else {
-                                        sendMessage(contact, "Cookie 解析失败")
-                                        logger.error("Cookie 解析失败")
+                                        val message = if (activeLogin.get()?.generation != state.generation) {
+                                            "登录流程已失效，请重新发送 /login"
+                                        } else {
+                                            "Cookie 解析失败"
+                                        }
+                                        sendMessage(contact, message)
+                                        logger.error(message)
                                     }
                                     break
                                 }
@@ -148,6 +189,11 @@ object LoginService {
                 logger.error("登录流程发生异常", e)
                 sendMessage(contact, "登录过程出错，请稍后重试")
             }
+        }
+        return true
+        } finally {
+            // 只允许当前代际释放占用，旧流程不得清除后来者的 active 状态。
+            activeLogin.compareAndSet(state, null)
         }
     }
 

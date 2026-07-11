@@ -34,7 +34,8 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 8. `CacheClearTasker`
 9. `LogClearTasker`
 10. `SkiaCleanupTasker`
-11. `ProcessGuardian`
+11. `DeliveryRetryTasker`
+12. `ProcessGuardian`
 
 ## 当前任务职责表
 
@@ -50,6 +51,7 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 | `CacheClearTasker` | 周期维护 | 清理图片缓存 | `ImageCache` |
 | `LogClearTasker` | 周期维护 | 清理日志文件 | `logs/*` |
 | `SkiaCleanupTasker` | 周期维护 | 触发 Skia 普通或紧急清理 | `SkiaManager`、Skia native cache |
+| `DeliveryRetryTasker` | 周期维护 | 将到期的联系人交付消息快照重新放回发送链 | `DeliveryCoordinator`、`messageChannel` |
 | `ProcessGuardian` | 周期守护 | 汇总健康、资源、平台、NMT/RSS、channel 和 tasker 自愈 | 管理/观测快照，不直接替代资源 owner |
 
 命令和快捷消息由 `BiliBiliBot.eventCollectorJob` 消费同一稳定 `eventFlow`，再交给 `MessageEventDispatchService`；不要把这条分发链误写成 `ListenerTasker` 消费 `messageChannel`。`PushStatistics` 是进程内有界辅助状态，维护当日推送计数和最近 4 条记录，不是独立 Tasker，也不需要单独停机分区。
@@ -64,6 +66,7 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 - 同一 tasker 已运行时重复 `start()` 会被拒绝。
 - 启动前必须能从 `TaskResourcePolicyRegistry` 查到策略。
 - 周期任务异常会记录连续失败次数，达到 10 次后停止任务。
+- 主 Job 异常退出后由恢复注册表按 30 分钟 5 次预算重建，耗尽后熔断并保持进程在线。
 - `interval == -1` 表示一次性任务。
 - 受管 worker 失败后按 `ConnectionBackoffPolicy` 退避重启。
 
@@ -119,7 +122,7 @@ WebUI 热重载应用 `BiliConfig.yml` 后，读取启动期缓存的 Tasker 必
 - [ ] 是否区分当前实现、阶段性计划和过期记录？
 ## 变更 checklist
 
-- [ ] 新 tasker 是否加入 `TaskBootstrapService.startupTaskNames`？
+- [ ] 新 tasker 是否加入 `TaskBootstrapService` 恢复注册清单并声明恢复资格？
 - [ ] 是否加入 `TaskResourcePolicyRegistry`？
 - [ ] 长生命周期子循环是否使用 `launchManagedWorker`？
 - [ ] 停机期间是否能快速退出？

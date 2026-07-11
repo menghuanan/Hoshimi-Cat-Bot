@@ -13,6 +13,7 @@ sealed interface BiliMessage {
     val timestamp: Int
     val drawPath: String?
     val contact: String?
+    val deliveryId: String?
 }
 
 /**
@@ -31,7 +32,8 @@ data class DynamicMessage(
     val images: List<String>?,
     val links: List<Link>?,
     override val drawPath: String? = null,
-    override val contact: String? = null
+    override val contact: String? = null,
+    override val deliveryId: String? = null,
 ) : BiliMessage {
     /**
      * 动态消息中提取出的链接片段。
@@ -58,7 +60,8 @@ data class LiveMessage(
     val area: String,
     val link: String,
     override val drawPath: String? = null,
-    override val contact: String? = null
+    override val contact: String? = null,
+    override val deliveryId: String? = null,
 ) : BiliMessage
 
 /**
@@ -77,5 +80,6 @@ data class LiveCloseMessage(
     val area: String,
     val link: String,
     override val drawPath: String? = null,
-    override val contact: String? = null
+    override val contact: String? = null,
+    override val deliveryId: String? = null,
 ) : BiliMessage

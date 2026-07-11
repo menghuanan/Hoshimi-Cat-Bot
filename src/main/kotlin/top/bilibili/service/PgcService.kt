@@ -6,6 +6,7 @@ import top.bilibili.api.getEpisodeInfo
 import top.bilibili.api.getMediaInfo
 import top.bilibili.api.getSeasonInfo
 import top.bilibili.utils.normalizeContactSubject
+import top.bilibili.core.BiliDataRuntimeCoordinator
 
 val pgcRegex = """^((?:ss)|(?:md)|(?:ep))(\d{4,10})$""".toRegex()
 
@@ -36,13 +37,13 @@ object PgcService {
      */
     suspend fun followPgcBySsid(ssid: Long, subject: String): String {
         client.followPgc(ssid) ?: return "追番失败"
-        bangumi.getOrPut(ssid) {
-            val season = client.getSeasonInfo(ssid) ?: return "获取番剧信息失败，如果是港澳台番剧请用 media id (md11111) 订阅"
-            Bangumi(season.title, season.seasonId, season.mediaId, type(season.type))
-        }.apply {
-            contacts.add(subject)
-            return "追番成功 [$title]"
+        val existing = BiliDataRuntimeCoordinator.snapshot().bangumi[ssid]
+        val season = if (existing == null) client.getSeasonInfo(ssid) ?: return "获取番剧信息失败，如果是港澳台番剧请用 media id (md11111) 订阅" else null
+        val title = existing?.title ?: requireNotNull(season).title
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.bangumi.getOrPut(ssid) { Bangumi(requireNotNull(season).title, season.seasonId, season.mediaId, type(season.type)) }.contacts.add(subject)
         }
+        return if (result.committed) "追番成功 [$title]" else "保存失败，追番未生效，请稍后重试"
     }
 
     /**
@@ -52,12 +53,10 @@ object PgcService {
         val season = client.getMediaInfo(mdid) ?: return "获取番剧信息失败"
         val ssid = season.media.seasonId
         client.followPgc(ssid) ?: return "追番失败"
-        bangumi.getOrPut(ssid) {
-            Bangumi(season.media.title, ssid, season.media.mediaId, season.media.typeName)
-        }.apply {
-            contacts.add(subject)
-            return "追番成功 [$title]"
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.bangumi.getOrPut(ssid) { Bangumi(season.media.title, ssid, season.media.mediaId, season.media.typeName) }.contacts.add(subject)
         }
+        return if (result.committed) "追番成功 [${season.media.title}]" else "保存失败，追番未生效，请稍后重试"
     }
 
     /**
@@ -66,12 +65,10 @@ object PgcService {
     suspend fun followPgcByEpid(epid: Long, subject: String): String {
         val season = client.getEpisodeInfo(epid) ?: return "获取番剧信息失败，如果是港澳台番剧请用 media id (md11111) 订阅"
         client.followPgc(season.seasonId) ?: return "追番失败"
-        bangumi.getOrPut(season.seasonId) {
-            Bangumi(season.title, season.seasonId, season.mediaId, type(season.type))
-        }.apply {
-            contacts.add(subject)
-            return "追番成功 [$title]"
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.bangumi.getOrPut(season.seasonId) { Bangumi(season.title, season.seasonId, season.mediaId, type(season.type)) }.contacts.add(subject)
         }
+        return if (result.committed) "追番成功 [${season.title}]" else "保存失败，追番未生效，请稍后重试"
     }
 
     /**
@@ -87,12 +84,15 @@ object PgcService {
         return when (type) {
             "ss" -> removeBySsid(parsedId, normalizedSubject)
             "md" -> {
-                val pgc = bangumi.filter { it.value.mediaId == parsedId }.values
+                val pgc = BiliDataRuntimeCoordinator.snapshot().bangumi.filter { it.value.mediaId == parsedId }.values
                 if (pgc.isEmpty()) return "没有这个番剧哦"
-                val contacts = pgc.first().contacts
-                if (contacts.remove(normalizedSubject)) {
-                    if (contacts.isEmpty()) bangumi.remove(pgc.first().seasonId)
-                    "删除成功"
+                if (normalizedSubject in pgc.first().contacts) {
+                    val seasonId = pgc.first().seasonId
+                    val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+                        candidate.bangumi[seasonId]?.contacts?.remove(normalizedSubject)
+                        if (candidate.bangumi[seasonId]?.contacts.isNullOrEmpty()) candidate.bangumi.remove(seasonId)
+                    }
+                    if (result.committed) "删除成功" else "保存失败，订阅未变更，请稍后重试"
                 } else {
                     "没有订阅这个番剧哦"
                 }
@@ -106,10 +106,13 @@ object PgcService {
     }
 
     private fun removeBySsid(ssid: Long, subject: String): String {
-        val pgc = bangumi[ssid] ?: return "没有这个番剧哦"
-        if (pgc.contacts.remove(subject)) {
-            if (pgc.contacts.isEmpty()) bangumi.remove(ssid)
-            return "删除成功"
+        val pgc = BiliDataRuntimeCoordinator.snapshot().bangumi[ssid] ?: return "没有这个番剧哦"
+        if (subject in pgc.contacts) {
+            val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+                candidate.bangumi[ssid]?.contacts?.remove(subject)
+                if (candidate.bangumi[ssid]?.contacts.isNullOrEmpty()) candidate.bangumi.remove(ssid)
+            }
+            return if (result.committed) "删除成功" else "保存失败，订阅未变更，请稍后重试"
         }
         return "没有订阅这个番剧哦"
     }

@@ -4,6 +4,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import top.bilibili.BiliConfigManager
 import top.bilibili.SubData
+import top.bilibili.BiliDataWrapper
+import top.bilibili.core.BiliDataRuntimeCoordinator
 import top.bilibili.api.follow
 import top.bilibili.api.groupAddUser
 import top.bilibili.api.isFollow
@@ -68,7 +70,7 @@ object DynamicService {
         return sourceRef.removePrefix(GROUP_REF_PREFIX).takeIf { it.isNotBlank() }
     }
 
-    private fun rebuildContactsFromSources(subData: SubData): Set<String> {
+    private fun rebuildContactsFromSources(subData: SubData, groups: Map<String, top.bilibili.Group>): Set<String> {
         val normalizedSourceRefs = mutableSetOf<String>()
         val resolvedContacts = mutableSetOf<String>()
 
@@ -83,7 +85,7 @@ object DynamicService {
             val groupName = parseGroupSourceRef(sourceRef)
             if (groupName != null) {
                 normalizedSourceRefs.add(groupSourceRef(groupName))
-                val contactsInGroup = group[groupName]?.contacts.orEmpty()
+                val contactsInGroup = groups[groupName]?.contacts.orEmpty()
                 contactsInGroup.mapNotNullTo(resolvedContacts) { normalizeSubject(it) }
                 return@forEach
             }
@@ -104,40 +106,55 @@ object DynamicService {
         return resolvedContacts
     }
 
-    private fun cleanupRemovedContactFilters(uid: Long, removedContacts: Set<String>) {
+    private fun cleanupRemovedContactFilters(
+        filters: MutableMap<String, MutableMap<Long, top.bilibili.DynamicFilter>>,
+        uid: Long,
+        removedContacts: Set<String>,
+    ) {
         removedContacts.forEach { contact ->
-            if (filter[contact]?.run {
+            if (filters[contact]?.run {
                     remove(uid)
                     isEmpty()
                 } == true
             ) {
-                filter.remove(contact)
+                filters.remove(contact)
             }
         }
     }
 
-    private suspend fun removeUidCompletely(uid: Long, contactsForCleanup: Set<String>) {
-        dynamic.remove(uid)
+    private fun removeUidCompletely(candidate: BiliDataWrapper, uid: Long) {
+        candidate.dynamic.remove(uid)
 
         // 同步清理与 UID 绑定的数据
-        filter.forEach { (_, filterMap) ->
+        candidate.filter.forEach { (_, filterMap) ->
             filterMap.remove(uid)
         }
 
         // 彻底移除 UID 时同步清理新模板策略，避免失效 UID 仍残留在 direct/groupRef scope 中。
-        removeUidTemplatePolicies(uid)
+        candidate.dynamicTemplatePolicyByScope.values.forEach { it.remove(uid) }
+        candidate.liveTemplatePolicyByScope.values.forEach { it.remove(uid) }
+        candidate.liveCloseTemplatePolicyByScope.values.forEach { it.remove(uid) }
+        candidate.dynamicTemplatePolicyByScope.entries.removeIf { it.value.isEmpty() }
+        candidate.liveTemplatePolicyByScope.entries.removeIf { it.value.isEmpty() }
+        candidate.liveCloseTemplatePolicyByScope.entries.removeIf { it.value.isEmpty() }
+        candidate.dynamicColorByUid.entries.removeIf { (_, colors) -> colors.remove(uid); colors.isEmpty() }
+        candidate.atAll.entries.removeIf { (_, values) -> values.remove(uid); values.isEmpty() }
+        candidate.atAllCooldownUntil.keys.removeIf { key -> key.contains("|$uid|") || key.contains(".$uid.") }
+        candidate.subscriptionCardUpdatedAt.remove("dynamic:$uid")
 
         logger.info("已完全移除 UID $uid 的订阅数据（无订阅来源）")
-        unfollowUser(uid)
     }
 
     /**
      * WebUI 卡片删除是 UID 级完整退订，必须无视 direct/groupRef 来源并触发账号侧取消关注。
      */
     suspend fun removeUidForWebUi(uid: Long) = mutex.withLock {
-        val user = dynamic[uid] ?: return@withLock "还未订阅此人哦"
-        removeUidCompletely(uid, user.contacts.toSet())
-        "取消订阅 ${user.name} 成功"
+        val user = BiliDataRuntimeCoordinator.snapshot().dynamic[uid] ?: return@withLock "还未订阅此人哦"
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate -> removeUidCompletely(candidate, uid) }
+        if (result.committed) {
+            unfollowUser(uid)
+            "取消订阅 ${user.name} 成功"
+        } else "保存失败，订阅未变更，请稍后重试"
     }
 
     /**
@@ -148,11 +165,10 @@ object DynamicService {
         TemplateRuntimeCoordinator.removeUidAcrossTypes(uid)
     }
 
-    private suspend fun createSubData(uid: Long): Pair<SubData?, String?> {
-        if (dynamic.size >= MAX_SUBSCRIPTIONS) {
-            return null to "订阅数量已达上限 $MAX_SUBSCRIPTIONS，无法添加新订阅"
-        }
-
+    /**
+     * 在事务外完成远程关注与昵称查询，只返回候选构建所需数据，不修改 live BiliData。
+     */
+    private suspend fun resolveNewSubscriptionName(uid: Long): Pair<String?, String?> {
         val userName = if (uid == BiliBiliBot.uid) {
             client.userInfo(uid)?.name
         } else {
@@ -164,10 +180,7 @@ object DynamicService {
         if (userName.isNullOrBlank()) {
             return null to "获取UP主信息失败，请稍后重试"
         }
-
-        val subData = SubData(userName)
-        dynamic[uid] = subData
-        return subData to null
+        return userName to null
     }
 
     private suspend fun unfollowUser(uid: Long) {
@@ -211,33 +224,25 @@ object DynamicService {
     suspend fun addDirectSubscribe(uid: Long, subject: String, isSelf: Boolean = true) = mutex.withLock {
         val normalizedSubject = normalizeSubject(subject) ?: return@withLock "联系人格式错误: $subject"
         val sourceRef = directSourceRef(normalizedSubject)
-
-        val existing = dynamic[uid]
+        val initial = BiliDataRuntimeCoordinator.snapshot()
+        val existing = initial.dynamic[uid]
         if (existing != null && sourceRef in existing.sourceRefs) return@withLock "之前订阅过这个人哦"
-
-        val subData = existing ?: run {
-            val (created, err) = createSubData(uid)
-            if (err != null) return@withLock err
-            created!!
+        val newName = if (existing == null) resolveNewSubscriptionName(uid).also { (_, error) ->
+            if (error != null) return@withLock error
+        }.first else existing.name
+        var response = ""
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist(
+            validate = { candidate -> if ((candidate.dynamic[uid]?.contacts?.size ?: 0) > MAX_CONTACTS_PER_UID) "联系人数量超限" else null },
+        ) { candidate ->
+            if (candidate.dynamic.size >= MAX_SUBSCRIPTIONS && uid !in candidate.dynamic) error("订阅数量已达上限 $MAX_SUBSCRIPTIONS")
+            val subData = candidate.dynamic.getOrPut(uid) { SubData(requireNotNull(newName)) }
+            val oldContacts = subData.contacts.toSet()
+            subData.sourceRefs.add(sourceRef)
+            rebuildContactsFromSources(subData, candidate.group)
+            cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - subData.contacts)
+            response = if (isSelf) "订阅 ${subData.name} 成功!" else "为 $normalizedSubject 订阅 ${subData.name} 成功!"
         }
-
-        val oldContacts = subData.contacts.toSet()
-        subData.sourceRefs.add(sourceRef)
-        rebuildContactsFromSources(subData)
-
-        if (subData.contacts.size > MAX_CONTACTS_PER_UID) {
-            subData.sourceRefs.remove(sourceRef)
-            rebuildContactsFromSources(subData)
-            if (subData.sourceRefs.isEmpty()) {
-                dynamic.remove(uid)
-            }
-            return@withLock "UID $uid 的订阅联系人数量已达上限 $MAX_CONTACTS_PER_UID"
-        }
-
-        cleanupRemovedContactFilters(uid, oldContacts - subData.contacts)
-
-        if (isSelf) "订阅 ${subData.name} 成功!"
-        else "为 $normalizedSubject 订阅 ${subData.name} 成功!"
+        if (result.committed) response else "保存失败，订阅未生效，请稍后重试"
     }
 
     /**
@@ -245,76 +250,77 @@ object DynamicService {
      */
     suspend fun removeDirectSubscribe(uid: Long, subject: String, isSelf: Boolean = true) = mutex.withLock {
         val normalizedSubject = normalizeSubject(subject) ?: return@withLock "联系人格式错误: $subject"
-        val user = dynamic[uid] ?: return@withLock "还未订阅此人哦"
+        val initial = BiliDataRuntimeCoordinator.snapshot()
+        val user = initial.dynamic[uid] ?: return@withLock "还未订阅此人哦"
 
         val sourceRef = directSourceRef(normalizedSubject)
         if (sourceRef !in user.sourceRefs) return@withLock "还未订阅此人哦"
 
-        val oldContacts = user.contacts.toSet()
-        user.sourceRefs.remove(sourceRef)
-        rebuildContactsFromSources(user)
-        cleanupRemovedContactFilters(uid, oldContacts - user.contacts)
-
-        if (user.sourceRefs.isEmpty()) {
-            removeUidCompletely(uid, oldContacts)
+        var removedCompletely = false
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            val candidateUser = candidate.dynamic[uid] ?: return@mutateAndPersist
+            val oldContacts = candidateUser.contacts.toSet()
+            candidateUser.sourceRefs.remove(sourceRef)
+            rebuildContactsFromSources(candidateUser, candidate.group)
+            cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - candidateUser.contacts)
+            if (candidateUser.sourceRefs.isEmpty()) {
+                removeUidCompletely(candidate, uid)
+                removedCompletely = true
+            }
         }
-
-        if (isSelf) "取消订阅 ${user.name} 成功"
-        else "为 $normalizedSubject 取消订阅 ${user.name} 成功"
+        if (!result.committed) return@withLock "保存失败，订阅未变更，请稍后重试"
+        if (removedCompletely) unfollowUser(uid)
+        if (isSelf) "取消订阅 ${user.name} 成功" else "为 $normalizedSubject 取消订阅 ${user.name} 成功"
     }
 
     /**
      * 为分组追加订阅来源，并把分组联系人展开成实际推送目标。
      */
     suspend fun addGroupSubscribe(uid: Long, groupName: String) = mutex.withLock {
-        val targetGroup = group[groupName] ?: return@withLock "分组 $groupName 不存在"
+        val initial = BiliDataRuntimeCoordinator.snapshot()
+        val targetGroup = initial.group[groupName] ?: return@withLock "分组 $groupName 不存在"
         if (targetGroup.contacts.isEmpty()) return@withLock "分组 $groupName 中没有任何联系人"
 
         val sourceRef = groupSourceRef(groupName)
-        val existing = dynamic[uid]
+        val existing = initial.dynamic[uid]
         if (existing != null && sourceRef in existing.sourceRefs) return@withLock "分组 $groupName 之前订阅过这个人哦"
 
-        val subData = existing ?: run {
-            val (created, err) = createSubData(uid)
-            if (err != null) return@withLock err
-            created!!
+        val newName = if (existing == null) resolveNewSubscriptionName(uid).also { (_, error) -> if (error != null) return@withLock error }.first else existing.name
+        var response = ""
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist(
+            validate = { candidate -> if ((candidate.dynamic[uid]?.contacts?.size ?: 0) > MAX_CONTACTS_PER_UID) "联系人数量超限" else null },
+        ) { candidate ->
+            val subData = candidate.dynamic.getOrPut(uid) { SubData(requireNotNull(newName)) }
+            val oldContacts = subData.contacts.toSet()
+            subData.sourceRefs.add(sourceRef)
+            rebuildContactsFromSources(subData, candidate.group)
+            cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - subData.contacts)
+            response = "分组 $groupName 订阅 ${subData.name} 成功!"
         }
-
-        val oldContacts = subData.contacts.toSet()
-        subData.sourceRefs.add(sourceRef)
-        rebuildContactsFromSources(subData)
-
-        if (subData.contacts.size > MAX_CONTACTS_PER_UID) {
-            subData.sourceRefs.remove(sourceRef)
-            rebuildContactsFromSources(subData)
-            if (subData.sourceRefs.isEmpty()) {
-                dynamic.remove(uid)
-            }
-            return@withLock "UID $uid 的订阅联系人数量已达上限 $MAX_CONTACTS_PER_UID"
-        }
-
-        cleanupRemovedContactFilters(uid, oldContacts - subData.contacts)
-        "分组 $groupName 订阅 ${subData.name} 成功!"
+        if (result.committed) response else "保存失败，订阅未生效，请稍后重试"
     }
 
     /**
      * 删除分组订阅来源，并在无剩余来源时同步回收整条订阅记录。
      */
     suspend fun removeGroupSubscribe(uid: Long, groupName: String) = mutex.withLock {
-        val user = dynamic[uid] ?: return@withLock "还未订阅此人哦"
+        val initial = BiliDataRuntimeCoordinator.snapshot()
+        val user = initial.dynamic[uid] ?: return@withLock "还未订阅此人哦"
         val sourceRef = groupSourceRef(groupName)
         if (sourceRef !in user.sourceRefs) return@withLock "分组 $groupName 未订阅该UP主"
 
-        val oldContacts = user.contacts.toSet()
-        user.sourceRefs.remove(sourceRef)
-        rebuildContactsFromSources(user)
-        cleanupRemovedContactFilters(uid, oldContacts - user.contacts)
-
-        if (user.sourceRefs.isEmpty()) {
-            removeUidCompletely(uid, oldContacts)
+        var removedCompletely = false
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            val candidateUser = candidate.dynamic[uid] ?: return@mutateAndPersist
+            val oldContacts = candidateUser.contacts.toSet()
+            candidateUser.sourceRefs.remove(sourceRef)
+            rebuildContactsFromSources(candidateUser, candidate.group)
+            cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - candidateUser.contacts)
+            if (candidateUser.sourceRefs.isEmpty()) { removeUidCompletely(candidate, uid); removedCompletely = true }
         }
-
-        return@withLock "分组 $groupName 取消订阅 ${user.name} 成功"
+        if (!result.committed) return@withLock "保存失败，订阅未变更，请稍后重试"
+        if (removedCompletely) unfollowUser(uid)
+        "分组 $groupName 取消订阅 ${user.name} 成功"
     }
 
     /**
@@ -322,11 +328,41 @@ object DynamicService {
      */
     suspend fun refreshGroupRef(groupName: String) = mutex.withLock {
         val sourceRef = groupSourceRef(groupName)
-        dynamic.forEach { (uid, subData) ->
+        BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.dynamic.forEach { (uid, subData) ->
+                if (sourceRef !in subData.sourceRefs) return@forEach
+                val oldContacts = subData.contacts.toSet()
+                rebuildContactsFromSources(subData, candidate.group)
+                cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - subData.contacts)
+            }
+        }
+    }
+
+    /**
+     * 在调用方候选内重建指定分组引用，供分组增删成员与订阅展开保持单事务。
+     */
+    internal fun refreshGroupRefIn(candidate: BiliDataWrapper, groupName: String) {
+        val sourceRef = groupSourceRef(groupName)
+        candidate.dynamic.forEach { (uid, subData) ->
             if (sourceRef !in subData.sourceRefs) return@forEach
             val oldContacts = subData.contacts.toSet()
-            rebuildContactsFromSources(subData)
-            cleanupRemovedContactFilters(uid, oldContacts - subData.contacts)
+            rebuildContactsFromSources(subData, candidate.group)
+            cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - subData.contacts)
+        }
+    }
+
+    /**
+     * 在调用方候选内删除分组来源，避免分组表和订阅来源分两次提交。
+     */
+    internal fun deleteGroupRefIn(candidate: BiliDataWrapper, groupName: String) {
+        val sourceRef = groupSourceRef(groupName)
+        candidate.dynamic.toMap().forEach { (uid, subData) ->
+            if (sourceRef !in subData.sourceRefs) return@forEach
+            val oldContacts = subData.contacts.toSet()
+            subData.sourceRefs.remove(sourceRef)
+            rebuildContactsFromSources(subData, candidate.group)
+            cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - subData.contacts)
+            if (subData.sourceRefs.isEmpty()) removeUidCompletely(candidate, uid)
         }
     }
 
@@ -335,16 +371,14 @@ object DynamicService {
      */
     suspend fun deleteGroupRef(groupName: String) = mutex.withLock {
         val sourceRef = groupSourceRef(groupName)
-        dynamic.toMap().forEach { (uid, subData) ->
-            if (sourceRef !in subData.sourceRefs) return@forEach
-
-            val oldContacts = subData.contacts.toSet()
-            subData.sourceRefs.remove(sourceRef)
-            rebuildContactsFromSources(subData)
-            cleanupRemovedContactFilters(uid, oldContacts - subData.contacts)
-
-            if (subData.sourceRefs.isEmpty()) {
-                removeUidCompletely(uid, oldContacts)
+        BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.dynamic.toMap().forEach { (uid, subData) ->
+                if (sourceRef !in subData.sourceRefs) return@forEach
+                val oldContacts = subData.contacts.toSet()
+                subData.sourceRefs.remove(sourceRef)
+                rebuildContactsFromSources(subData, candidate.group)
+                cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - subData.contacts)
+                if (subData.sourceRefs.isEmpty()) removeUidCompletely(candidate, uid)
             }
         }
     }
@@ -372,19 +406,16 @@ object DynamicService {
         val normalizedSubject = normalizeSubject(subject) ?: subject
         val directRef = directSourceRef(normalizedSubject)
 
-        filter.remove(normalizedSubject)
-        group.forEach { (_, g) -> g.contacts.remove(normalizedSubject) }
-
-        dynamic.toMap().forEach { (uid, subData) ->
-            if (directRef !in subData.sourceRefs && normalizedSubject !in subData.contacts) return@forEach
-
-            val oldContacts = subData.contacts.toSet()
-            subData.sourceRefs.remove(directRef)
-            rebuildContactsFromSources(subData)
-            cleanupRemovedContactFilters(uid, oldContacts - subData.contacts)
-
-            if (subData.sourceRefs.isEmpty()) {
-                removeUidCompletely(uid, oldContacts)
+        BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.filter.remove(normalizedSubject)
+            candidate.group.forEach { (_, group) -> group.contacts.remove(normalizedSubject) }
+            candidate.dynamic.toMap().forEach { (uid, subData) ->
+                if (directRef !in subData.sourceRefs && normalizedSubject !in subData.contacts) return@forEach
+                val oldContacts = subData.contacts.toSet()
+                subData.sourceRefs.remove(directRef)
+                rebuildContactsFromSources(subData, candidate.group)
+                cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - subData.contacts)
+                if (subData.sourceRefs.isEmpty()) removeUidCompletely(candidate, uid)
             }
         }
     }

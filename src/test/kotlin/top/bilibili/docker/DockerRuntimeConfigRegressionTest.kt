@@ -402,12 +402,17 @@ class DockerRuntimeConfigRegressionTest {
 
         // 清理流程必须有边界等待，避免 JVM 停机钩子卡住时无限阻塞。
         assertTrue(
-            entrypoint.contains("for i in $(seq 1 8); do"),
-            "docker-entrypoint cleanup should wait with bounded retries before force-kill",
+            entrypoint.contains("for i in $(seq 1 100); do"),
+            "docker-entrypoint cleanup should allow the JVM shutdown budget plus outer margin",
         )
         assertTrue(
             entrypoint.contains("kill -KILL \"\$JAVA_PID\""),
             "docker-entrypoint cleanup should force-kill Java after timeout to avoid indefinite wait",
+        )
+        val compose = read("docker-compose.yml")
+        assertTrue(
+            compose.contains("stop_grace_period: 110s"),
+            "compose grace period should exceed the 100-second entrypoint wait",
         )
     }
 

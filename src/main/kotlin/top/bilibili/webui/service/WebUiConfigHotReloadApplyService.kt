@@ -43,7 +43,8 @@ class WebUiConfigHotReloadApplyService(
         BiliConfigManager.installRuntimeSnapshot(snapshot.biliConfig, snapshot.biliData)
         ConfigManager.installRuntimeSnapshot(snapshot.botConfig)
         top.bilibili.core.BiliBiliBot.installRuntimeConfig(snapshot.botConfig)
-        top.bilibili.core.BiliBiliBot.cookie.parse(snapshot.biliConfig.accountConfig.cookie)
+        val runtimeCookie = top.bilibili.core.BiliBiliBot.cookie
+        runtimeCookie.replaceWith(runtimeCookie.fromHeader(snapshot.biliConfig.accountConfig.cookie))
     },
     private val applyRuntime: (RuntimeConfigGeneration) -> WebUiReloadPlan = { generation ->
         RuntimeConfigApplier().applyBaseConfig(generation)

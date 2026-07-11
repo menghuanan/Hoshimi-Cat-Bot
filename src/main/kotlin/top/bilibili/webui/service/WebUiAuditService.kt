@@ -31,6 +31,7 @@ class WebUiAuditService(
     private val clockMillis: () -> Long = { System.currentTimeMillis() },
     private val loginFailureCountBySource: MutableMap<String, Int> = mutableMapOf(),
 ) {
+    private val auditCounterLock = Any()
     /**
      * 登录、改密等认证事件统一记录成功或失败结果，方便排查本地管理面认证链路。
      */
@@ -139,8 +140,11 @@ class WebUiAuditService(
         message: String,
     ) {
         val sourceKey = sourceIp?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
-        val failureCount = (loginFailureCountBySource[sourceKey] ?: 0) + 1
-        loginFailureCountBySource[sourceKey] = failureCount
+        val failureCount = synchronized(auditCounterLock) {
+            ((loginFailureCountBySource[sourceKey] ?: 0) + 1).also { nextCount ->
+                loginFailureCountBySource[sourceKey] = nextCount
+            }
+        }
         recordAuthEvent(
             target = "login",
             success = false,

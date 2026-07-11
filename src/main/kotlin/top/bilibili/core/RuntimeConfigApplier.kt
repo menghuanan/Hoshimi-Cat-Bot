@@ -25,7 +25,7 @@ class RuntimeConfigApplier(
         BiliConfigManager.installConfigRuntimeSnapshot(config)
     },
     private val installBiliDataRuntimeSnapshot: (BiliDataWrapper) -> Unit = { data ->
-        BiliConfigManager.installDataRuntimeSnapshot(data)
+        BiliDataRuntimeCoordinator.installSnapshot(data)
     },
     private val installBotRuntimeSnapshot: (BotConfig) -> Unit = { config ->
         ConfigManager.installRuntimeSnapshot(config)
@@ -106,7 +106,7 @@ class RuntimeConfigApplier(
                 installBotRuntimeSnapshot(generation.candidateSnapshot.botConfig)
             }
             if (biliConfigChanged) {
-                BiliBiliBot.cookie.parse(generation.candidateSnapshot.biliConfig.accountConfig.cookie)
+                BiliBiliBot.cookie.replaceWith(BiliBiliBot.cookie.fromHeader(generation.candidateSnapshot.biliConfig.accountConfig.cookie))
                 syncDebugLoggingRuntime(generation.candidateSnapshot.biliConfig)
                 reloadImageRuntime()
                 closeBiliClients()
@@ -161,7 +161,7 @@ class RuntimeConfigApplier(
             installBotRuntimeSnapshot(generation.oldSnapshot.botConfig)
         }
         if (WebUiConfigFileKind.BILI_CONFIG in changedFiles) {
-            BiliBiliBot.cookie.parse(generation.oldSnapshot.biliConfig.accountConfig.cookie)
+            BiliBiliBot.cookie.replaceWith(BiliBiliBot.cookie.fromHeader(generation.oldSnapshot.biliConfig.accountConfig.cookie))
             syncDebugLoggingRuntime(generation.oldSnapshot.biliConfig)
             reloadImageRuntime()
             closeBiliClients()

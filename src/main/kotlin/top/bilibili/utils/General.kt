@@ -544,21 +544,14 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
              return null
          }
          else {
-             // 修复：拒绝内网地址访问
-             if (isPrivateNetwork(normalizedUrl)) {
-                 logger.warn("拒绝下载内网 URL (SSRF 防护): $normalizedUrl")
-                 return null
-             }
-
              var retryCount = 0
              val maxRetries = 1
 
              while (retryCount <= maxRetries) {
                  try {
-                    biliClient.useHttpClient {
-                        it.get(normalizedUrl).body<ByteArray>().apply {
-                            filePath.writeBytes(this)
-                        }
+                    // 两条图片下载链共享逐跳 SSRF 校验、25 MiB 硬限制和并发闸门。
+                    BoundedRemoteResourceDownloader.download(normalizedUrl).also { bytes ->
+                        filePath.writeBytes(bytes)
                     }
                     if (filePath.exists()) {
                         filePath.setLastModifiedTime(FileTime.from(Instant.now()))

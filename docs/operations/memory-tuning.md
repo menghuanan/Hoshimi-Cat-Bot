@@ -63,6 +63,8 @@
 
 ## Heap 策略
 
+远程图片响应实际读取硬上限为 25 MiB，全局并发闸门为 2；初始 URL、DNS 全部结果和每跳重定向都必须重新验证公网边界。160 MiB heap 下不得提高单响应上限或并发数而不重新做峰值验证。
+
 默认 heap 来自 `Dockerfile` 的 `CMD`，不在 `JAVA_TOOL_OPTIONS` 里：
 
 - `-Xms64m`

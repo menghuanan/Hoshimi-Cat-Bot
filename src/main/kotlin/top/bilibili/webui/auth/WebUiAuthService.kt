@@ -13,6 +13,7 @@ class WebUiAuthService(
     private val failureStateByIp: MutableMap<String, WebUiLoginFailureState> = mutableMapOf(),
     private var globalFailureState: WebUiGlobalFailureState = WebUiGlobalFailureState(),
 ) {
+    private val authStateLock = Any()
     /**
      * 启动期确保凭据状态存在，供 WebUI 在开放登录入口前完成本地认证前置条件准备。
      */
@@ -31,7 +32,7 @@ class WebUiAuthService(
     suspend fun login(password: String, context: WebUiLoginContext): WebUiLoginResult {
         val state = credentialStore.loadState()
         val now = timeProvider()
-        val throttled = resolveThrottleState(context.sourceIp, now)
+        val throttled = synchronized(authStateLock) { resolveThrottleState(context.sourceIp, now) }
         if (throttled != null) {
             return WebUiLoginResult(
                 success = false,
@@ -41,7 +42,7 @@ class WebUiAuthService(
             )
         }
         if (!credentialStore.matchesPassword(state, password)) {
-            val failureState = recordFailure(context.sourceIp, now)
+            val failureState = synchronized(authStateLock) { recordFailure(context.sourceIp, now) }
             return WebUiLoginResult(
                 success = false,
                 message = "invalid credentials",
@@ -49,7 +50,7 @@ class WebUiAuthService(
                 retryAfterMillis = failureState.retryAfterMillis,
             )
         }
-        clearFailureState(context.sourceIp)
+        synchronized(authStateLock) { clearFailureState(context.sourceIp) }
         val currentState = credentialStore.loadState()
         val session = tokenService.issueToken(currentState.tokenVersion)
         return WebUiLoginResult(
@@ -97,13 +98,6 @@ class WebUiAuthService(
         currentPassword: String,
         newPassword: String,
     ): WebUiPasswordChangeResult {
-        val state = credentialStore.loadState()
-        if (!credentialStore.matchesPassword(state, currentPassword)) {
-            return WebUiPasswordChangeResult(
-                success = false,
-                message = "invalid credentials",
-            )
-        }
         val validation = passwordPolicy.validate(newPassword)
         if (!validation.isValid) {
             return WebUiPasswordChangeResult(
@@ -111,14 +105,17 @@ class WebUiAuthService(
                 message = validation.errors.joinToString("; "),
             )
         }
-        credentialStore.replacePassword(
-            currentState = state,
+        val replaced = credentialStore.replacePasswordIfMatches(
+            currentPassword = currentPassword,
             newPassword = newPassword,
             mustChangePassword = false,
         )
+        if (replaced == null) {
+            return WebUiPasswordChangeResult(success = false, message = "invalid credentials")
+        }
         // 改密后立即清空旧确认状态，避免旧密码确认窗口跨越 token 失效周期继续生效。
-        confirmationExpiryByToken.clear()
         tokenService.revokeAll()
+        synchronized(authStateLock) { confirmationExpiryByToken.clear() }
         return WebUiPasswordChangeResult(
             success = true,
             requiresReauthentication = true,
@@ -133,7 +130,7 @@ class WebUiAuthService(
         currentPassword: String,
     ): WebUiHighRiskConfirmationResult {
         val now = timeProvider()
-        val cachedExpiry = confirmationExpiryByToken[session.token]
+        val cachedExpiry = synchronized(authStateLock) { confirmationExpiryByToken[session.token] }
         if (currentPassword.isBlank() && cachedExpiry != null && cachedExpiry > now) {
             return WebUiHighRiskConfirmationResult(
                 confirmed = true,
@@ -144,7 +141,7 @@ class WebUiAuthService(
         }
         if (currentPassword.isBlank()) {
             if (cachedExpiry != null && cachedExpiry <= now) {
-                confirmationExpiryByToken.remove(session.token)
+                synchronized(authStateLock) { confirmationExpiryByToken.remove(session.token) }
                 return WebUiHighRiskConfirmationResult(
                     confirmed = false,
                     message = "confirmation expired, re-enter current password",
@@ -155,7 +152,7 @@ class WebUiAuthService(
                 message = "confirmation password required",
             )
         }
-        pruneExpiredConfirmations()
+        synchronized(authStateLock) { pruneExpiredConfirmations() }
         return confirmWithPassword(session, currentPassword, now)
     }
 
@@ -188,7 +185,7 @@ class WebUiAuthService(
             )
         }
         val expiresAt = now + confirmationTtlMillis
-        confirmationExpiryByToken[session.token] = expiresAt
+        synchronized(authStateLock) { confirmationExpiryByToken[session.token] = expiresAt }
         return WebUiHighRiskConfirmationResult(
             confirmed = true,
             reusedGrant = false,
@@ -248,7 +245,7 @@ class WebUiAuthService(
      */
     private fun clearFailureState(sourceIp: String?) {
         normalizeSourceIp(sourceIp)?.let { failureStateByIp.remove(it) }
-        globalFailureState = WebUiGlobalFailureState()
+        // 成功登录只清理对应来源；全局风险由时间窗自然衰减，不能抹掉其他并发请求的失败累计。
     }
 
     /**

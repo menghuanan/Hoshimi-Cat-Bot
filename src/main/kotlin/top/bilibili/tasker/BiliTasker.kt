@@ -83,10 +83,24 @@ data class TaskWorkerSnapshot(
 data class TaskHealthSnapshot(
     val taskerName: String,
     val active: Boolean,
+    val mainState: TaskMainState,
     val workerSnapshots: List<TaskWorkerSnapshot>,
 ) {
     val healthy: Boolean
-        get() = active && workerSnapshots.none { it.restartExhausted || (!it.active && it.lastFailureMessage != null) }
+        get() = active && mainState == TaskMainState.RUNNING &&
+            workerSnapshots.none { it.restartExhausted || (!it.active && it.lastFailureMessage != null) }
+
+    val recoverableMainFailure: Boolean
+        get() = !active && mainState == TaskMainState.FAILED
+}
+
+/** Tasker 主作业状态，用于区分运行、正常停止、异常失败和熔断。 */
+enum class TaskMainState {
+    NEW,
+    RUNNING,
+    STOPPED,
+    FAILED,
+    CIRCUIT_OPEN,
 }
 
 @OptIn(InternalForInheritanceCoroutinesApi::class)
@@ -146,6 +160,10 @@ abstract class BiliTasker(
     }
 
     private var job: Job? = null
+    @Volatile
+    private var mainState: TaskMainState = TaskMainState.NEW
+    @Volatile
+    private var lastMainFailureMessage: String? = null
     private var initializationResult = CompletableDeferred<Boolean>()
     private val managedWorkers = ConcurrentHashMap<String, ManagedWorkerState>()
     private val managedWorkerDefinitions = ConcurrentHashMap<String, ManagedWorkerDefinition>()
@@ -199,6 +217,7 @@ abstract class BiliTasker(
         return TaskHealthSnapshot(
             taskerName = taskDisplayName,
             active = job?.isActive == true,
+            mainState = mainState,
             workerSnapshots = snapshots,
         )
     }
@@ -308,6 +327,10 @@ abstract class BiliTasker(
         TaskResourcePolicyRegistry.policyOf(taskDisplayName)
             ?: error("任务未声明资源策略: $taskDisplayName")
 
+        // 每次主作业启动都发布新的运行代际，旧失败原因仅保留到实际接受重启为止。
+        mainState = TaskMainState.RUNNING
+        lastMainFailureMessage = null
+
         // 先以 LAZY 方式创建主任务协程并发布 job，再进入 init，避免受管 worker 在初始化阶段读到空父 Job。
         val taskJob = launch(coroutineContext, start = kotlinx.coroutines.CoroutineStart.LAZY) {
             var consecutiveErrors = 0
@@ -318,6 +341,8 @@ abstract class BiliTasker(
                 initializationResult.complete(true)
             } catch (e: Exception) {
                 BiliBiliBot.logger.error("任务 ${this::class.simpleName} 初始化失败", e)
+                mainState = TaskMainState.FAILED
+                lastMainFailureMessage = e.message ?: e::class.simpleName
                 initializationResult.complete(false)
                 return@launch
             }
@@ -351,6 +376,8 @@ abstract class BiliTasker(
 
                         if (consecutiveErrors >= maxErrors) {
                             BiliBiliBot.logger.error("任务 ${this::class.simpleName} 连续失败 $maxErrors 次，停止任务")
+                            mainState = TaskMainState.FAILED
+                            lastMainFailureMessage = failure?.message ?: "连续失败 $maxErrors 次"
                             break
                         }
 
@@ -365,13 +392,21 @@ abstract class BiliTasker(
             }
 
             if (!isActive) {
+                if (mainState == TaskMainState.RUNNING) {
+                    mainState = TaskMainState.STOPPED
+                }
                 BiliBiliBot.logger.info("${this::class.simpleName} 已停止")
+            } else if (mainState == TaskMainState.RUNNING && interval == -1) {
+                mainState = TaskMainState.STOPPED
             }
         }
         job = taskJob
         taskJob.start()
 
-        return taskers.add(this)
+        // singleton Tasker 恢复时保留原注册引用，避免同一实例重复进入全局健康列表。
+        return synchronized(taskers) {
+            if (taskers.contains(this)) true else taskers.add(this)
+        }
     }
 
     /**
@@ -402,6 +437,8 @@ abstract class BiliTasker(
      * @param cause 取消原因
      */
     override fun cancel(cause: CancellationException?) {
+        // 主动取消属于预期停止，必须先覆盖失败态，避免 guardian 在停机并发窗口误触发恢复。
+        mainState = TaskMainState.STOPPED
         managedWorkers.values.forEach { state ->
             state.job?.cancel(cause)
         }
@@ -411,6 +448,26 @@ abstract class BiliTasker(
         managedWorkers.clear()
         managedWorkerDefinitions.clear()
         taskers.remove(this)
+    }
+
+    /**
+     * 在主作业异常终止后重新启动同一 Tasker 单例，不复用旧 worker 元数据。
+     */
+    internal fun restartAfterFailure(): Boolean {
+        if (mainState != TaskMainState.FAILED || BiliBiliBot.isStopping()) return false
+        managedWorkers.clear()
+        managedWorkerDefinitions.clear()
+        initializationResult = CompletableDeferred()
+        return start()
+    }
+
+    /**
+     * 标记主作业恢复预算耗尽，使健康快照稳定呈现熔断而不继续重试。
+     */
+    internal fun markMainCircuitOpen() {
+        if (mainState == TaskMainState.FAILED) {
+            mainState = TaskMainState.CIRCUIT_OPEN
+        }
     }
 
     /**

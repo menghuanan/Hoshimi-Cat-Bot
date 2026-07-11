@@ -11,6 +11,8 @@ import top.bilibili.FilterMode
 import top.bilibili.Group
 import top.bilibili.TemplatePolicy
 import top.bilibili.core.deepCopyForRuntimeSnapshot
+import top.bilibili.core.BiliDataRuntimeCoordinator
+import top.bilibili.core.BiliDataTransactionResult
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformType
@@ -46,7 +48,7 @@ import top.bilibili.webui.model.WebUiSubscriptionUidSaveRequestDto
 class WebUiSubscriptionManagementFacade(
     private val configProvider: () -> BiliConfig = { runCatching { BiliConfigManager.config }.getOrDefault(BiliConfig()) },
     private val saveConfigAction: () -> Boolean = { BiliConfigManager.saveConfig() },
-    private val saveDataAction: () -> Boolean = { BiliConfigManager.saveData() },
+    private val saveDataAction: () -> Boolean = DEFAULT_WEBUI_DATA_SAVE_ACTION,
     private val submitPersistedDataReload: () -> Unit = {},
     private val currentTimeMillisProvider: () -> Long = { System.currentTimeMillis() },
     private val addDynamicAction: suspend (Long, String) -> String = { uid, subject ->
@@ -65,6 +67,32 @@ class WebUiSubscriptionManagementFacade(
         PgcService.delPgc(id, subject)
     },
 ) {
+    companion object {
+        /** 稳定默认函数值用于区分生产候选保存与测试注入的失败模拟。 */
+        private val DEFAULT_WEBUI_DATA_SAVE_ACTION: () -> Boolean = { BiliConfigManager.saveData() }
+    }
+    /**
+     * facade 候选事务保留 saveDataAction 测试注入；生产默认路径改写为保存候选快照而非 live 对象。
+     */
+    private fun <T> mutateDataResult(mutate: (BiliDataWrapper) -> T): BiliDataTransactionResult<T> {
+        val result = BiliDataRuntimeCoordinator.mutateAndPersistResult(
+            persistCandidate = { candidate ->
+                if (saveDataAction === DEFAULT_WEBUI_DATA_SAVE_ACTION) {
+                    BiliConfigManager.saveDataSnapshot(candidate, installAfterSave = false)
+                } else {
+                    saveDataAction()
+                }
+            },
+            mutate = mutate,
+        )
+        if (result is BiliDataTransactionResult.Committed) submitPersistedDataReload()
+        return result
+    }
+
+    /** 无业务返回值的 facade 候选事务复用同一注入持久化边界。 */
+    private fun mutateData(mutate: (BiliDataWrapper) -> Unit): Boolean {
+        return mutateDataResult(mutate) is BiliDataTransactionResult.Committed
+    }
     // 模板类型规格集中放在 facade 内，避免列表、保存和随机开关维护三套类型映射。
     private val templateTypeSpecs = listOf(
         TemplateTypeSpec(
@@ -97,14 +125,12 @@ class WebUiSubscriptionManagementFacade(
      * 按页面选择的类型分发新增订阅请求，并保持各类型的校验口径和页面文案一致。
      */
     suspend fun createSubscription(request: WebUiSubscriptionCreateRequestDto): WebUiSubscriptionMutationResultDto {
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
-        val result = when (request.type.trim().lowercase()) {
+        return when (request.type.trim().lowercase()) {
             "dynamic", "subscription" -> createDynamicSubscription(request)
             "group" -> createGroupSubscription(request)
             "bangumi" -> createBangumiSubscription(request)
             else -> validationFailure("添加类型无效")
         }
-        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, result)
     }
 
     /**
@@ -157,7 +183,6 @@ class WebUiSubscriptionManagementFacade(
     ): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持推送群聊")
         val subject = normalizePositiveGroupTarget(request.targetGroup) ?: return validationFailure("推送群聊必须是正整数")
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val result = when (context.kind) {
             "dynamic" -> saveDynamicTarget(context, subject)
             "group" -> saveGroupTarget(context, subject)
@@ -165,8 +190,7 @@ class WebUiSubscriptionManagementFacade(
             else -> validationFailure("订阅类型无效")
         }
         if (!result.success) return result
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(result))
+        return result
     }
 
     /**
@@ -175,7 +199,6 @@ class WebUiSubscriptionManagementFacade(
     suspend fun deleteSubscriptionTarget(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持推送群聊")
         val subject = normalizeGroupTarget(key) ?: return validationFailure("推送群聊标识无效")
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val result = when (context.kind) {
             "dynamic" -> deleteDynamicTarget(context, subject)
             "group" -> deleteGroupTarget(context, subject)
@@ -183,8 +206,7 @@ class WebUiSubscriptionManagementFacade(
             else -> validationFailure("订阅类型无效")
         }
         if (!result.success) return result
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(result))
+        return result
     }
 
     /**
@@ -338,25 +360,25 @@ class WebUiSubscriptionManagementFacade(
             return validationFailure("目标群聊必须至少选择一个")
         }
 
-        if (request.key.isNotBlank()) {
-            val parsedKey = parseFilterKey(request.key) ?: return validationFailure("过滤器标识无效")
-            if (!context.ownsFilterKey(parsedKey) || !removeFilterRow(parsedKey)) {
-                return validationFailure("过滤器不存在")
-            }
-            cleanupEmptyFilter(parsedKey.scope, parsedKey.uid)
-        }
         val scopes = selectedScopes ?: if (context.filterScopes.isNotEmpty()) context.filterScopes else context.contactScopes
         if (scopes.isEmpty() || context.uids.isEmpty()) {
             return validationFailure("当前订阅没有可写入过滤器的推送群")
         }
-        scopes.forEach { scope ->
-            context.uids.forEach { uid ->
-                val filter = BiliData.filter.getOrPut(scope) { mutableMapOf() }.getOrPut(uid) { DynamicFilter() }
-                appendFilterRow(filter, kind, mode, content, type)
+        val transaction = mutateDataResult { candidate ->
+            if (request.key.isNotBlank()) {
+                val parsedKey = parseFilterKey(request.key) ?: error("过滤器标识无效")
+                if (!context.ownsFilterKey(parsedKey) || !removeFilterRow(candidate, parsedKey)) error("过滤器不存在")
             }
+            scopes.forEach { scope ->
+                context.uids.forEach { uid ->
+                    val filter = candidate.filter.getOrPut(scope) { mutableMapOf() }.getOrPut(uid) { DynamicFilter() }
+                    appendFilterRow(filter, kind, mode, content, type)
+                }
+            }
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(itemId, "过滤器已保存")
         }
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "过滤器已保存")))
+        return transaction.toMutationDto()
     }
 
     /**
@@ -364,21 +386,20 @@ class WebUiSubscriptionManagementFacade(
      */
     fun deleteSubscriptionFilter(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持过滤器")
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val parsedKey = parseFilterKey(key) ?: return validationFailure("过滤器标识无效")
         if (!context.ownsFilterKey(parsedKey)) return validationFailure("过滤器不存在")
-        val filter = BiliData.filter[parsedKey.scope]?.get(parsedKey.uid) ?: return validationFailure("过滤器不存在")
-        val removed = when (parsedKey.kind) {
-            "type" -> filter.typeSelect.list.removeAtOrNull(parsedKey.index)
-            "regex" -> filter.regularSelect.list.removeAtOrNull(parsedKey.index)
-            else -> null
-        } ?: return validationFailure("过滤器不存在")
-        cleanupEmptyFilter(parsedKey.scope, parsedKey.uid)
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(
-            dataRollbackSnapshot,
-            persistMutation(success(itemId, "已删除 ${if (removed is DynamicFilterType) removed.value else removed}")),
-        )
+        val transaction = mutateDataResult { candidate ->
+            val filter = candidate.filter[parsedKey.scope]?.get(parsedKey.uid) ?: error("过滤器不存在")
+            val removed = when (parsedKey.kind) {
+                "type" -> filter.typeSelect.list.removeAtOrNull(parsedKey.index)
+                "regex" -> filter.regularSelect.list.removeAtOrNull(parsedKey.index)
+                else -> null
+            } ?: error("过滤器不存在")
+            cleanupEmptyFilter(candidate, parsedKey.scope, parsedKey.uid)
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(itemId, "已删除 ${if (removed is DynamicFilterType) removed.value else removed}")
+        }
+        return transaction.toMutationDto()
     }
 
     /**
@@ -420,7 +441,6 @@ class WebUiSubscriptionManagementFacade(
     ): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持模板")
         val configRollbackSnapshot = captureConfigRollbackSnapshot()
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val spec = templateSpec(request.type) ?: return validationFailure("模板类型无效")
         val name = request.name.trim()
         if (name.isBlank()) {
@@ -440,26 +460,35 @@ class WebUiSubscriptionManagementFacade(
 
         val config = configProvider()
         spec.configMap(config)[name] = request.content
-        parseTemplateKey(request.key)?.let { key ->
-            if (!context.ownsTemplateKey(key)) {
-                return validationFailure("模板不存在")
-            }
-            if (key.scope !in scopes || key.type != spec.storageType || key.name != name) {
-                TemplateRuntimeCoordinator.removeTemplate(key.type, key.scope, key.uid, key.name)
-            }
+        if (!runCatching { saveConfigAction() }.getOrDefault(false)) {
+            restoreConfigRollbackSnapshot(configRollbackSnapshot)
+            return persistenceFailure("模板正文保存失败，策略未变更")
         }
-        scopes.forEach { scope ->
-            context.uids.forEach { uid ->
-                TemplateRuntimeCoordinator.appendTemplate(spec.storageType, scope, uid, name)
+        val parsedExistingKey = parseTemplateKey(request.key)
+        if (parsedExistingKey != null && !context.ownsTemplateKey(parsedExistingKey)) return validationFailure("模板不存在")
+        val dataTransaction = mutateDataResult { candidate ->
+            parsedExistingKey?.let { key ->
+                if (key.scope !in scopes || key.type != spec.storageType || key.name != name) {
+                    candidate.policyMap(key.type)[key.scope]?.get(key.uid)?.templates?.remove(key.name)
+                }
             }
+            scopes.forEach { scope ->
+                context.uids.forEach { uid ->
+                    val policy = candidate.policyMap(spec.storageType).getOrPut(scope) { mutableMapOf() }
+                        .getOrPut(uid) { TemplatePolicy() }
+                    if (name !in policy.templates) policy.templates.add(name)
+                }
+            }
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(itemId, "模板已保存")
         }
-
-        markSubscriptionCardUpdated(itemId)
-        return rollbackConfigAndDataIfPersistenceFailed(
-            configRollbackSnapshot,
-            dataRollbackSnapshot,
-            persistConfigAndData(success(itemId, "模板已保存"), configRollbackSnapshot),
-        )
+        if (dataTransaction !is BiliDataTransactionResult.Committed) {
+            restoreConfigRollbackSnapshot(configRollbackSnapshot)
+            // 配置文件已先提交，数据候选失败时必须把旧配置补偿写回磁盘。
+            runCatching { saveConfigAction() }
+            return dataTransaction.toMutationDto()
+        }
+        return dataTransaction.value
     }
 
     /**
@@ -467,15 +496,17 @@ class WebUiSubscriptionManagementFacade(
      */
     fun deleteSubscriptionTemplate(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持模板")
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val parsedKey = parseTemplateKey(key) ?: return validationFailure("模板标识无效")
         if (!context.ownsTemplateKey(parsedKey)) return validationFailure("模板不存在")
-        val result = TemplateRuntimeCoordinator.removeTemplate(parsedKey.type, parsedKey.scope, parsedKey.uid, parsedKey.name)
-        if (result == RemoveTemplateResult.POLICY_MISSING || result == RemoveTemplateResult.TEMPLATE_MISSING) {
-            return validationFailure("模板不存在")
+        val transaction = mutateDataResult { candidate ->
+            val policy = candidate.policyMap(parsedKey.type)[parsedKey.scope]?.get(parsedKey.uid) ?: error("模板不存在")
+            if (!policy.templates.remove(parsedKey.name)) error("模板不存在")
+            if (policy.templates.isEmpty()) candidate.policyMap(parsedKey.type)[parsedKey.scope]?.remove(parsedKey.uid)
+            if (candidate.policyMap(parsedKey.type)[parsedKey.scope].isNullOrEmpty()) candidate.policyMap(parsedKey.type).remove(parsedKey.scope)
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(itemId, "模板已删除")
         }
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "模板已删除")))
+        return transaction.toMutationDto()
     }
 
     /**
@@ -483,25 +514,23 @@ class WebUiSubscriptionManagementFacade(
      */
     fun setSubscriptionTemplateRandom(itemId: String, enabled: Boolean): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持模板")
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
-        var changed = false
-        templateTypeSpecs.forEach { spec ->
-            context.templateScopes.forEach { scope ->
-                context.uids.forEach { uid ->
-                    if (TemplateRuntimeCoordinator.setRandomEnabled(spec.storageType, scope, uid, enabled)) {
-                        changed = true
+        val transaction = mutateDataResult { candidate ->
+            var changed = false
+            templateTypeSpecs.forEach { spec ->
+                context.templateScopes.forEach { scope ->
+                    context.uids.forEach { uid ->
+                        candidate.policyMap(spec.storageType)[scope]?.get(uid)?.let { policy ->
+                            policy.randomEnabled = enabled
+                            changed = true
+                        }
                     }
                 }
             }
+            if (!changed) error("当前订阅未配置模板策略")
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(itemId, if (enabled) "随机模板已开启" else "随机模板已关闭")
         }
-        if (!changed) {
-            return validationFailure("当前订阅未配置模板策略")
-        }
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(
-            dataRollbackSnapshot,
-            persistMutation(success(itemId, if (enabled) "随机模板已开启" else "随机模板已关闭")),
-        )
+        return transaction.toMutationDto()
     }
 
     /**
@@ -546,20 +575,23 @@ class WebUiSubscriptionManagementFacade(
         if (context.uids.isEmpty()) {
             return validationFailure("当前订阅没有可写入 @全体 的推送群")
         }
-        resolveAtAllScopes(context).filterNot { it in scopes }.forEach { scope ->
-            context.uids.forEach { uid ->
-                BiliData.atAll[scope]?.get(uid)?.remove(atAllType)
-                cleanupEmptyAtAll(scope, uid)
+        val transaction = mutateDataResult { candidate ->
+            resolveAtAllScopes(context).filterNot { it in scopes }.forEach { scope ->
+                context.uids.forEach { uid ->
+                    candidate.atAll[scope]?.get(uid)?.remove(atAllType)
+                    cleanupEmptyAtAll(candidate, scope, uid)
+                }
             }
-        }
-        scopes.forEach { scope ->
-            context.uids.forEach { uid ->
-                val set = BiliData.atAll.getOrPut(scope) { mutableMapOf() }.getOrPut(uid) { mutableSetOf() }
-                applyAtAllType(set, atAllType)
+            scopes.forEach { scope ->
+                context.uids.forEach { uid ->
+                    val set = candidate.atAll.getOrPut(scope) { mutableMapOf() }.getOrPut(uid) { mutableSetOf() }
+                    applyAtAllType(set, atAllType)
+                }
             }
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(itemId, "@全体已保存")
         }
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "@全体已保存")))
+        return transaction.toMutationDto()
     }
 
     /**
@@ -567,21 +599,21 @@ class WebUiSubscriptionManagementFacade(
      */
     fun deleteSubscriptionAtAll(itemId: String, key: String): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持 @全体")
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val atAllType = parseAtAllType(key) ?: return validationFailure("@全体类型无效")
-        var changed = false
-        resolveAtAllScopes(context).forEach { scope ->
-            context.uids.forEach { uid ->
-                val set = BiliData.atAll[scope]?.get(uid) ?: return@forEach
-                changed = set.remove(atAllType) || changed
-                cleanupEmptyAtAll(scope, uid)
+        val transaction = mutateDataResult { candidate ->
+            var changed = false
+            resolveAtAllScopes(context).forEach { scope ->
+                context.uids.forEach { uid ->
+                    val set = candidate.atAll[scope]?.get(uid) ?: return@forEach
+                    changed = set.remove(atAllType) || changed
+                    cleanupEmptyAtAll(candidate, scope, uid)
+                }
             }
+            if (!changed) error("@全体配置不存在")
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(itemId, "@全体已删除")
         }
-        if (!changed) {
-            return validationFailure("@全体配置不存在")
-        }
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "@全体已删除")))
+        return transaction.toMutationDto()
     }
 
     /**
@@ -617,52 +649,46 @@ class WebUiSubscriptionManagementFacade(
         targetGroups: List<String> = emptyList(),
     ): WebUiSubscriptionMutationResultDto {
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持主题色")
-        val dataRollbackSnapshot = captureDataRollbackSnapshot()
         val normalizedColor = color.trim()
         // 空主题色沿用前端“恢复默认”语义；单 UP 只清除所选群聊，分组清除全部绑定群聊。
         if (normalizedColor.isBlank()) {
-            if (context.kind == "bangumi") {
-                val bangumi = BiliData.bangumi[context.primaryBangumiId] ?: return validationFailure("番剧订阅不存在")
-                bangumi.color = null
-            } else {
-                val scopes = resolveThemeWriteScopes(context, targetGroups, requireSelection = false)
-                    ?: return validationFailure("目标群聊必须至少选择一个")
-                if (scopes.isEmpty()) {
-                    return success(itemId, "主题色未变更")
-                }
-                if (context.uids.isEmpty()) {
-                    return validationFailure("当前订阅没有可写入主题色的推送群")
-                }
-                scopes.forEach { scope ->
-                    val colorsByUid = BiliData.dynamicColorByUid[scope] ?: return@forEach
-                    context.uids.forEach { uid -> colorsByUid.remove(uid) }
-                    if (colorsByUid.isEmpty()) {
-                        BiliData.dynamicColorByUid.remove(scope)
+            val scopes = if (context.kind == "bangumi") emptyList() else resolveThemeWriteScopes(context, targetGroups, requireSelection = false)
+                ?: return validationFailure("目标群聊必须至少选择一个")
+            if (context.kind != "bangumi" && scopes.isEmpty()) return success(itemId, "主题色未变更")
+            val transaction = mutateDataResult { candidate ->
+                if (context.kind == "bangumi") {
+                    candidate.bangumi[context.primaryBangumiId]?.color = null
+                } else {
+                    scopes.forEach { scope ->
+                        val colorsByUid = candidate.dynamicColorByUid[scope] ?: return@forEach
+                        context.uids.forEach { uid -> colorsByUid.remove(uid) }
+                        if (colorsByUid.isEmpty()) candidate.dynamicColorByUid.remove(scope)
                     }
                 }
+                candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+                success(itemId, "主题色已恢复默认")
             }
-            markSubscriptionCardUpdated(itemId)
-            return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "主题色已恢复默认")))
+            return transaction.toMutationDto()
         }
         if (!hexColorRegex.matches(normalizedColor)) {
             return validationFailure("HEX颜色格式错误")
         }
-        if (context.kind == "bangumi") {
-            val bangumi = BiliData.bangumi[context.primaryBangumiId] ?: return validationFailure("番剧订阅不存在")
-            bangumi.color = normalizedColor
-        } else {
-            val scopes = resolveThemeWriteScopes(context, targetGroups, requireSelection = true)
-                ?: return validationFailure("目标群聊必须至少选择一个")
-            if (scopes.isEmpty() || context.uids.isEmpty()) {
-                return validationFailure("当前订阅没有可写入主题色的推送群")
+        val scopes = if (context.kind == "bangumi") emptyList() else resolveThemeWriteScopes(context, targetGroups, requireSelection = true)
+            ?: return validationFailure("目标群聊必须至少选择一个")
+        if (context.kind != "bangumi" && (scopes.isEmpty() || context.uids.isEmpty())) return validationFailure("当前订阅没有可写入主题色的推送群")
+        val transaction = mutateDataResult { candidate ->
+            if (context.kind == "bangumi") {
+                candidate.bangumi[context.primaryBangumiId]?.color = normalizedColor
+            } else {
+                scopes.forEach { scope ->
+                    val byUid = candidate.dynamicColorByUid.getOrPut(scope) { mutableMapOf() }
+                    context.uids.forEach { uid -> byUid[uid] = normalizedColor }
+                }
             }
-            scopes.forEach { scope ->
-                val byUid = BiliData.dynamicColorByUid.getOrPut(scope) { mutableMapOf() }
-                context.uids.forEach { uid -> byUid[uid] = normalizedColor }
-            }
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(itemId, "主题色已保存")
         }
-        markSubscriptionCardUpdated(itemId)
-        return rollbackDataIfPersistenceFailed(dataRollbackSnapshot, persistMutation(success(itemId, "主题色已保存")))
+        return transaction.toMutationDto()
     }
 
     /**
@@ -682,8 +708,9 @@ class WebUiSubscriptionManagementFacade(
         if (!isSuccessMessage(message)) {
             return validationFailure("UID或群号错误：$message")
         }
-        markSubscriptionCardUpdated("dynamic:$uid")
-        return persistMutation(success("dynamic:$uid", message))
+        val cardSaved = mutateData { candidate -> candidate.subscriptionCardUpdatedAt["dynamic:$uid"] = currentTimeMillisProvider().coerceAtLeast(0L) }
+        if (!cardSaved) return persistenceFailure("订阅保存失败，运行态未变更")
+        return success("dynamic:$uid", message)
     }
 
     /**
@@ -697,29 +724,26 @@ class WebUiSubscriptionManagementFacade(
             return validationFailure("分组名必须填写")
         }
 
-        val group = BiliData.group.getOrPut(groupName) {
-            Group(
-                name = groupName,
-                creator = 0L,
-                admin = mutableSetOf(),
-                creatorContact = "",
-                adminContacts = mutableSetOf(),
-                contacts = mutableSetOf(),
-            )
+        val subject = normalizeGroupTarget(request.targetGroup)
+        val groupCommitted = mutateData { candidate ->
+            val group = candidate.group.getOrPut(groupName) {
+                Group(groupName, 0L, mutableSetOf(), "", mutableSetOf(), mutableSetOf())
+            }
+            subject?.let(group.contacts::add)
+            DynamicService.refreshGroupRefIn(candidate, groupName)
+            candidate.subscriptionCardUpdatedAt["group:$groupName"] = currentTimeMillisProvider().coerceAtLeast(0L)
         }
-        normalizeGroupTarget(request.targetGroup)?.let { subject ->
-            group.contacts.add(subject)
-        }
+        if (!groupCommitted) return persistenceFailure("分组保存失败，运行态未变更")
 
         val uid = request.uid.trim().toLongOrNull()
-        val bindMessage = if (uid != null && uid > 0L && group.contacts.isNotEmpty()) {
+        val hasContacts = BiliDataRuntimeCoordinator.snapshot().group[groupName]?.contacts?.isNotEmpty() == true
+        val bindMessage = if (uid != null && uid > 0L && hasContacts) {
             addGroupDynamicAction(uid, groupName)
         } else {
             null
         }
-        markSubscriptionCardUpdated("group:$groupName")
         val message = bindMessage ?: "分组 $groupName 已保存"
-        return persistMutation(success("group:$groupName", message))
+        return if (isSuccessMessage(message) || bindMessage == null) success("group:$groupName", message) else validationFailure(message)
     }
 
     /**
@@ -740,8 +764,17 @@ class WebUiSubscriptionManagementFacade(
         if (!isSuccessMessage(message)) {
             return validationFailure("番剧号或群号错误：$message")
         }
-        markBangumiCardUpdated(bangumiId, previousBangumiContacts)
-        return persistMutation(success("bangumi:$bangumiId", message))
+        val cardSaved = mutateData { candidate ->
+            candidate.subscriptionCardUpdatedAt["bangumi:$bangumiId"] = currentTimeMillisProvider().coerceAtLeast(0L)
+            if (bangumiId.startsWith("ss")) {
+                bangumiId.removePrefix("ss").toLongOrNull()?.let { candidate.subscriptionCardUpdatedAt["bangumi:$it"] = currentTimeMillisProvider().coerceAtLeast(0L) }
+            }
+            candidate.bangumi.forEach { (seasonId, bangumi) ->
+                if (previousBangumiContacts[seasonId] != bangumi.contacts.toSet()) candidate.subscriptionCardUpdatedAt["bangumi:$seasonId"] = currentTimeMillisProvider().coerceAtLeast(0L)
+            }
+        }
+        if (!cardSaved) return persistenceFailure("番剧订阅保存失败，运行态未变更")
+        return success("bangumi:$bangumiId", message)
     }
 
     /**
@@ -757,11 +790,15 @@ class WebUiSubscriptionManagementFacade(
      * 分组新增推送群聊会刷新所有 groupRef UID 的 contacts 展开，新增 UID 后自然推送到全部群聊。
      */
     private fun saveGroupTarget(context: SubscriptionEditContext, subject: String): WebUiSubscriptionMutationResultDto {
-        val group = BiliData.group[context.groupName()] ?: return validationFailure("分组不存在")
+        val group = BiliDataRuntimeCoordinator.snapshot().group[context.groupName()] ?: return validationFailure("分组不存在")
         if (subject in group.contacts) return validationFailure("推送群聊已存在")
-        group.contacts += subject
-        rebuildGroupRefContacts(context.groupName())
-        return success(context.itemId, "推送群聊已保存")
+        val transaction = mutateDataResult { candidate ->
+            candidate.group[context.groupName()]?.contacts?.add(subject)
+            DynamicService.refreshGroupRefIn(candidate, context.groupName())
+            candidate.subscriptionCardUpdatedAt[context.itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(context.itemId, "推送群聊已保存")
+        }
+        return transaction.toMutationDto()
     }
 
     /**
@@ -780,7 +817,6 @@ class WebUiSubscriptionManagementFacade(
         if (subject !in context.contactScopes) return validationFailure("推送群聊不存在")
         val message = DynamicService.removeDirectSubscribe(uid, subject, isSelf = false)
         if (!isSuccessMessage(message)) return validationFailure(message)
-        cleanupTargetPayload(subject, listOf(uid))
         return success(context.itemId, message)
     }
 
@@ -788,11 +824,16 @@ class WebUiSubscriptionManagementFacade(
      * 分组删除推送群聊会影响分组内所有 UID 的展开目标，并清理该群上的 UID 附属配置。
      */
     private fun deleteGroupTarget(context: SubscriptionEditContext, subject: String): WebUiSubscriptionMutationResultDto {
-        val group = BiliData.group[context.groupName()] ?: return validationFailure("分组不存在")
-        if (!group.contacts.remove(subject)) return validationFailure("推送群聊不存在")
-        cleanupTargetPayload(subject, context.uids)
-        rebuildGroupRefContacts(context.groupName())
-        return success(context.itemId, "推送群聊已删除")
+        val group = BiliDataRuntimeCoordinator.snapshot().group[context.groupName()] ?: return validationFailure("分组不存在")
+        if (subject !in group.contacts) return validationFailure("推送群聊不存在")
+        val transaction = mutateDataResult { candidate ->
+            candidate.group[context.groupName()]?.contacts?.remove(subject)
+            cleanupTargetPayload(candidate, subject, context.uids)
+            DynamicService.refreshGroupRefIn(candidate, context.groupName())
+            candidate.subscriptionCardUpdatedAt[context.itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+            success(context.itemId, "推送群聊已删除")
+        }
+        return transaction.toMutationDto()
     }
 
     /**
@@ -841,10 +882,14 @@ class WebUiSubscriptionManagementFacade(
             }
             removeUidPayload(uid)
         }
-        BiliData.group.remove(groupName)
-        BiliData.subscriptionCardUpdatedAt.remove("group:$groupName")
-        removeScopedPayload(groupRef)
-        return success("group:$groupName", "分组已删除")
+        val transaction = mutateDataResult { candidate ->
+            candidate.group.remove(groupName)
+            candidate.subscriptionCardUpdatedAt.remove("group:$groupName")
+            removeScopedPayload(candidate, groupRef)
+            DynamicService.deleteGroupRefIn(candidate, groupName)
+            success("group:$groupName", "分组已删除")
+        }
+        return transaction.toMutationDto()
     }
 
     /**
@@ -859,7 +904,10 @@ class WebUiSubscriptionManagementFacade(
                 return validationFailure(message)
             }
         }
-        BiliData.subscriptionCardUpdatedAt.remove("bangumi:$seasonId")
+        mutateData { candidate ->
+            candidate.bangumi.remove(seasonId)
+            candidate.subscriptionCardUpdatedAt.remove("bangumi:$seasonId")
+        }
         return success("bangumi:$seasonId", "番剧订阅已删除")
     }
 
@@ -867,23 +915,15 @@ class WebUiSubscriptionManagementFacade(
      * UID 级删除同时覆盖过滤器、模板策略、@全体、冷却状态和主题色，避免附属配置孤儿化。
      */
     private fun removeUidPayload(uid: Long) {
-        BiliData.dynamic.remove(uid)
-        BiliData.subscriptionCardUpdatedAt.remove("dynamic:$uid")
-        BiliData.filter.entries.removeIf { (_, filtersByUid) ->
-            filtersByUid.remove(uid)
-            filtersByUid.isEmpty()
-        }
-        TemplateRuntimeCoordinator.removeUidAcrossTypes(uid)
-        BiliData.dynamicColorByUid.entries.removeIf { (_, colorsByUid) ->
-            colorsByUid.remove(uid)
-            colorsByUid.isEmpty()
-        }
-        BiliData.atAll.entries.removeIf { (_, atAllByUid) ->
-            atAllByUid.remove(uid)
-            atAllByUid.isEmpty()
-        }
-        BiliData.atAllCooldownUntil.keys.removeIf { key ->
-            key.contains("|$uid|") || key.contains(".$uid.")
+        mutateData { candidate ->
+            candidate.dynamic.remove(uid)
+            candidate.subscriptionCardUpdatedAt.remove("dynamic:$uid")
+            candidate.filter.entries.removeIf { (_, values) -> values.remove(uid); values.isEmpty() }
+            candidate.dynamicColorByUid.entries.removeIf { (_, values) -> values.remove(uid); values.isEmpty() }
+            candidate.atAll.entries.removeIf { (_, values) -> values.remove(uid); values.isEmpty() }
+            candidate.atAllCooldownUntil.keys.removeIf { it.contains("|$uid|") || it.contains(".$uid.") }
+            listOf(candidate.dynamicTemplatePolicyByScope, candidate.liveTemplatePolicyByScope, candidate.liveCloseTemplatePolicyByScope)
+                .forEach { policies -> policies.entries.removeIf { (_, values) -> values.remove(uid); values.isEmpty() } }
         }
     }
 
@@ -891,13 +931,7 @@ class WebUiSubscriptionManagementFacade(
      * scope 级删除覆盖分组引用残留，特别是没有绑定 UID 时仍可能存在的空壳策略。
      */
     private fun removeScopedPayload(scope: String) {
-        BiliData.filter.remove(scope)
-        listOf("dynamic", "live", "liveClose").forEach { type ->
-            TemplateRuntimeCoordinator.removeScope(type, scope)
-        }
-        BiliData.dynamicColorByUid.remove(scope)
-        BiliData.atAll.remove(scope)
-        BiliData.atAllCooldownUntil.keys.removeIf { key -> key.startsWith("$scope|") || key.startsWith("$scope.") }
+        mutateData { candidate -> removeScopedPayload(candidate, scope) }
     }
 
     /**
@@ -931,45 +965,14 @@ class WebUiSubscriptionManagementFacade(
      * 删除某个推送群聊后按 UID 清理该 subject 下的过滤器、@全体、冷却和主题色残留。
      */
     private fun cleanupTargetPayload(subject: String, uids: List<Long>) {
-        val uidSet = uids.toSet()
-        BiliData.filter[subject]?.let { filtersByUid ->
-            filtersByUid.keys.removeAll(uidSet)
-            if (filtersByUid.isEmpty()) BiliData.filter.remove(subject)
-        }
-        BiliData.dynamicColorByUid[subject]?.let { colorsByUid ->
-            colorsByUid.keys.removeAll(uidSet)
-            if (colorsByUid.isEmpty()) BiliData.dynamicColorByUid.remove(subject)
-        }
-        BiliData.atAll[subject]?.let { atAllByUid ->
-            atAllByUid.keys.removeAll(uidSet)
-            if (atAllByUid.isEmpty()) BiliData.atAll.remove(subject)
-        }
-        uidSet.forEach { uid ->
-            BiliData.atAllCooldownUntil.keys.removeIf { key -> key.startsWith("$subject|$uid|") || key.startsWith("$subject.$uid.") }
-        }
-        listOf("dynamic", "live", "liveClose").forEach { type ->
-            // 模板直连策略使用 contact:<subject>，目标删除时需要和裸 subject 桶一起回收。
-            TemplateRuntimeCoordinator.removeScope(type, contactTemplateScope(subject))
-        }
+        mutateData { candidate -> cleanupTargetPayload(candidate, subject, uids) }
     }
 
     /**
      * 分组联系人变更后按 groupRef 重建所有关联 UID 的实际 contacts，保持推送目标与分组一致。
      */
     private fun rebuildGroupRefContacts(groupName: String) {
-        val groupRef = "groupRef:$groupName"
-        BiliData.dynamic.forEach { (_, subData) ->
-            if (groupRef !in subData.sourceRefs) return@forEach
-            val resolvedContacts = linkedSetOf<String>()
-            subData.sourceRefs.forEach { sourceRef ->
-                when {
-                    sourceRef.startsWith("direct:") -> normalizeContactSubject(sourceRef.removePrefix("direct:"))?.let(resolvedContacts::add)
-                    sourceRef == groupRef -> BiliData.group[groupName]?.contacts?.mapNotNullTo(resolvedContacts, ::normalizeContactSubject)
-                }
-            }
-            subData.contacts.clear()
-            subData.contacts.addAll(resolvedContacts)
-        }
+        mutateData { candidate -> DynamicService.refreshGroupRefIn(candidate, groupName) }
     }
 
     /**
@@ -983,7 +986,9 @@ class WebUiSubscriptionManagementFacade(
      * 记录 WebUI 卡片管理信息更新时间，避免列表页用推送内容时间误导用户。
      */
     private fun markSubscriptionCardUpdated(itemId: String) {
-        BiliData.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+        mutateData { candidate ->
+            candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider().coerceAtLeast(0L)
+        }
     }
 
     /**
@@ -1206,6 +1211,40 @@ class WebUiSubscriptionManagementFacade(
         return removed is DynamicFilterType || removed is String
     }
 
+    /** 候选事务内清理 scope 级附属配置。 */
+    private fun removeScopedPayload(candidate: BiliDataWrapper, scope: String) {
+        candidate.filter.remove(scope)
+        candidate.dynamicColorByUid.remove(scope)
+        candidate.atAll.remove(scope)
+        candidate.atAllCooldownUntil.keys.removeIf { it.startsWith("$scope|") || it.startsWith("$scope.") }
+        listOf(candidate.dynamicTemplatePolicyByScope, candidate.liveTemplatePolicyByScope, candidate.liveCloseTemplatePolicyByScope)
+            .forEach { policies -> policies.remove(scope) }
+    }
+
+    /** 候选事务内清理目标联系人附属数据和直连模板策略。 */
+    private fun cleanupTargetPayload(candidate: BiliDataWrapper, subject: String, uids: List<Long>) {
+        val uidSet = uids.toSet()
+        candidate.filter[subject]?.let { byUid -> byUid.keys.removeAll(uidSet); if (byUid.isEmpty()) candidate.filter.remove(subject) }
+        candidate.dynamicColorByUid[subject]?.let { byUid -> byUid.keys.removeAll(uidSet); if (byUid.isEmpty()) candidate.dynamicColorByUid.remove(subject) }
+        candidate.atAll[subject]?.let { byUid -> byUid.keys.removeAll(uidSet); if (byUid.isEmpty()) candidate.atAll.remove(subject) }
+        uidSet.forEach { uid -> candidate.atAllCooldownUntil.keys.removeIf { it.startsWith("$subject|$uid|") || it.startsWith("$subject.$uid.") } }
+        val templateScope = contactTemplateScope(subject)
+        listOf(candidate.dynamicTemplatePolicyByScope, candidate.liveTemplatePolicyByScope, candidate.liveCloseTemplatePolicyByScope)
+            .forEach { policies -> policies.remove(templateScope) }
+    }
+
+    /** 候选事务内删除旧过滤规则，不接触 live BiliData。 */
+    private fun removeFilterRow(candidate: BiliDataWrapper, key: ParsedFilterKey): Boolean {
+        val filter = candidate.filter[key.scope]?.get(key.uid) ?: return false
+        val removed = when (key.kind) {
+            "type" -> filter.typeSelect.list.removeAtOrNull(key.index)
+            "regex" -> filter.regularSelect.list.removeAtOrNull(key.index)
+            else -> null
+        } ?: return false
+        cleanupEmptyFilter(candidate, key.scope, key.uid)
+        return removed is DynamicFilterType || removed is String
+    }
+
     /**
      * 向指定过滤器容器追加一条规则，并同步更新对应列表的黑白名单模式。
      */
@@ -1229,13 +1268,16 @@ class WebUiSubscriptionManagementFacade(
      * 过滤器两类列表都为空时回收对应 UID 和 subject 桶，避免保存出空壳配置。
      */
     private fun cleanupEmptyFilter(scope: String, uid: Long) {
-        val byUid = BiliData.filter[scope] ?: return
+        mutateData { candidate -> cleanupEmptyFilter(candidate, scope, uid) }
+    }
+
+    /** 候选事务内回收空过滤器容器。 */
+    private fun cleanupEmptyFilter(candidate: BiliDataWrapper, scope: String, uid: Long) {
+        val byUid = candidate.filter[scope] ?: return
         val filter = byUid[uid] ?: return
         if (filter.typeSelect.list.isNotEmpty() || filter.regularSelect.list.isNotEmpty()) return
         byUid.remove(uid)
-        if (byUid.isEmpty()) {
-            BiliData.filter.remove(scope)
-        }
+        if (byUid.isEmpty()) candidate.filter.remove(scope)
     }
 
     /**
@@ -1381,13 +1423,42 @@ class WebUiSubscriptionManagementFacade(
      * 删除 @全体 后回收空 UID 桶和空 subject 桶，避免列表页误判仍有配置。
      */
     private fun cleanupEmptyAtAll(scope: String, uid: Long) {
-        val byUid = BiliData.atAll[scope] ?: return
-        if (byUid[uid].isNullOrEmpty()) {
-            byUid.remove(uid)
+        mutateData { candidate -> cleanupEmptyAtAll(candidate, scope, uid) }
+    }
+
+    /** 候选 wrapper 按模板类型选择对应策略表，避免通过 live 协调器提前安装。 */
+    private fun BiliDataWrapper.policyMap(type: String): MutableMap<String, MutableMap<Long, TemplatePolicy>> {
+        return when (type) {
+            "dynamic" -> dynamicTemplatePolicyByScope
+            "live" -> liveTemplatePolicyByScope
+            "liveClose" -> liveCloseTemplatePolicyByScope
+            else -> error("模板类型无效: $type")
         }
-        if (byUid.isEmpty()) {
-            BiliData.atAll.remove(scope)
+    }
+
+    /** 候选事务内回收空 @全体 容器。 */
+    private fun cleanupEmptyAtAll(candidate: BiliDataWrapper, scope: String, uid: Long) {
+        val byUid = candidate.atAll[scope] ?: return
+        if (byUid[uid].isNullOrEmpty()) byUid.remove(uid)
+        if (byUid.isEmpty()) candidate.atAll.remove(scope)
+    }
+
+    /** 把统一数据事务结果转换为 WebUI mutation DTO。 */
+    private fun BiliDataTransactionResult<WebUiSubscriptionMutationResultDto>.toMutationDto(): WebUiSubscriptionMutationResultDto {
+        return when (this) {
+            is BiliDataTransactionResult.Committed -> value
+            is BiliDataTransactionResult.PersistenceFailed -> persistenceFailure(reason)
+            is BiliDataTransactionResult.Rejected -> validationFailure(reason)
         }
+    }
+
+    /** 统一返回“候选未安装”的持久化失败结果。 */
+    private fun persistenceFailure(message: String): WebUiSubscriptionMutationResultDto {
+        return WebUiSubscriptionMutationResultDto(
+            success = false,
+            message = message,
+            validationErrors = listOf("BiliData save failed"),
+        )
     }
 
     /**

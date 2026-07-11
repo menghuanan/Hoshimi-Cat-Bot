@@ -1,7 +1,7 @@
 package top.bilibili.service
 
-import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
+import top.bilibili.core.BiliDataRuntimeCoordinator
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
 import top.bilibili.utils.parseCommandPlatformContact
@@ -50,9 +50,14 @@ object BlacklistCommandService {
             sendText(chatContact, "用户 $targetId 已在黑名单中")
             return
         }
-        BiliData.linkParseBlacklistContacts.add(normalizedTarget)
-        BiliConfigManager.saveData()
-        sendText(chatContact, "已将 $targetId 添加到链接解析黑名单\nBot 将忽略该用户的所有链接解析请求")
+        val committed = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.linkParseBlacklistContacts.add(normalizedTarget)
+        }.committed
+        sendText(
+            chatContact,
+            if (committed) "已将 $targetId 添加到链接解析黑名单\nBot 将忽略该用户的所有链接解析请求"
+            else "保存失败，黑名单未生效，请稍后重试",
+        )
     }
 
     /**
@@ -64,9 +69,10 @@ object BlacklistCommandService {
             sendText(chatContact, "用户 $targetId 不在黑名单中")
             return
         }
-        BiliData.linkParseBlacklistContacts.remove(normalizedTarget)
-        BiliConfigManager.saveData()
-        sendText(chatContact, "已将 $targetId 从链接解析黑名单移除")
+        val committed = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.linkParseBlacklistContacts.remove(normalizedTarget)
+        }.committed
+        sendText(chatContact, if (committed) "已将 $targetId 从链接解析黑名单移除" else "保存失败，黑名单未变更，请稍后重试")
     }
 
     /**

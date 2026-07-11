@@ -98,6 +98,9 @@ class LambdaResourcePartition(
  * 按阶段统一注册、观测并停止运行期资源。
  */
 class ResourceSupervisor {
+    companion object {
+        const val TOTAL_SHUTDOWN_TIMEOUT_MS: Long = 90_000L
+    }
     private val partitions = LinkedHashMap<String, ResourcePartition>()
     private val stopped = AtomicBoolean(false)
 
@@ -135,7 +138,7 @@ class ResourceSupervisor {
     /**
      * 按预定义阶段依次停止全部资源分区。
      */
-    suspend fun stopAll(): ResourceStopReport {
+    suspend fun stopAll(totalTimeoutMs: Long = TOTAL_SHUTDOWN_TIMEOUT_MS): ResourceStopReport {
         if (stopped.getAndSet(true)) {
             return ResourceStopReport(
                 success = true,
@@ -150,6 +153,7 @@ class ResourceSupervisor {
         val failures = mutableListOf<PartitionFailure>()
         var stoppedCount = 0
         val phaseReports = mutableListOf<PhaseStopReport>()
+        val shutdownDeadlineNanos = System.nanoTime() + totalTimeoutMs.coerceAtLeast(0L) * 1_000_000L
 
         for (phase in ShutdownPhase.entries) {
             // 显式分阶段停止是为了保证入口、工作协程、通道和底层依赖按依赖方向逆序回收。
@@ -163,8 +167,17 @@ class ResourceSupervisor {
             val phaseStartedAt = System.currentTimeMillis()
 
             for (partition in phasePartitions) {
+                // 每个资源只能使用共享总截止时间的剩余预算，避免各分区独立等待累加越过外层契约。
+                val remainingMs = ((shutdownDeadlineNanos - System.nanoTime()) / 1_000_000L).coerceAtLeast(0L)
+                val partitionTimeoutMs = minOf(partition.strictness.stopTimeoutMs, remainingMs)
+                if (partitionTimeoutMs <= 0L) {
+                    val failure = PartitionFailure(partition.id, "总停机预算已耗尽(${totalTimeoutMs}ms)")
+                    failures += failure
+                    phaseFailures += failure
+                    continue
+                }
                 try {
-                    withTimeout(partition.strictness.stopTimeoutMs) {
+                    withTimeout(partitionTimeoutMs) {
                         partition.stop()
                     }
                     stoppedCount++
@@ -172,7 +185,7 @@ class ResourceSupervisor {
                 } catch (_: TimeoutCancellationException) {
                     val failure = PartitionFailure(
                         partitionId = partition.id,
-                        error = "停止超时(${partition.strictness.stopTimeoutMs}ms)",
+                        error = "停止超时(${partitionTimeoutMs}ms，剩余总预算)",
                     )
                     failures += failure
                     phaseFailures += failure

@@ -46,7 +46,10 @@ suspend fun checkCookie() {
         }
     }
     // 仅在文件读取失败或缺失时回退配置项，是为了兼容旧部署方式并优先使用独立 Cookie 文件。
-    if (BiliBiliBot.cookie.isEmpty()) BiliBiliBot.cookie.parse(accountConfig.cookie)
+    if (BiliBiliBot.cookie.isEmpty()) {
+        // 冷启动与热重载使用同一完整替换解析规则，缺失字段不会继承旧进程状态。
+        BiliBiliBot.cookie.replaceWith(BiliBiliBot.cookie.fromHeader(accountConfig.cookie))
+    }
 
     try {
         BiliBiliBot.uid = biliClient.userInfo()?.mid!!

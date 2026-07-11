@@ -9,6 +9,8 @@ import top.bilibili.core.BiliBiliBot
 import top.bilibili.data.DynamicDetail
 import top.bilibili.data.DynamicList
 import top.bilibili.data.DynamicType
+import top.bilibili.delivery.DeliveryCoordinator
+import top.bilibili.delivery.DeliveryKind
 import top.bilibili.service.PushFanoutService
 import top.bilibili.utils.logger
 import top.bilibili.utils.sendAll
@@ -45,6 +47,7 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
 
     override fun init() {
         super.init()
+        DeliveryCoordinator.initialize()
         if (!historyFile.exists()) return
         try {
             historyFile.readLines()
@@ -96,23 +99,17 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
             }
         }
 
-        dynamics.map { it.did }.forEach { did ->
-            if (historyDynamic.size >= HISTORY_CAPACITY) {
-                historyDynamic.removeFirst()
-            }
-            historyDynamic.addLast(did)
-        }
-
         if (dynamics.isNotEmpty()) {
             lastDynamic = dynamics.last().time
-            saveHistory()
         }
 
         val details = dynamics.flatMap { item ->
-            PushFanoutService.dynamicDetailsForContacts(
-                item,
-                PushFanoutService.resolveDynamicContacts(item, dynamic, bangumi)
-            )
+            val contacts = PushFanoutService.resolveDynamicContacts(item, dynamic, bangumi)
+            PushFanoutService.dynamicDetailsForContacts(item, contacts).mapNotNull { detail ->
+                val contact = detail.contact ?: return@mapNotNull detail
+                val record = DeliveryCoordinator.discover(DeliveryKind.DYNAMIC, item.did, contact)
+                if (DeliveryCoordinator.isTerminal(record.id)) null else detail.copy(deliveryId = record.id)
+            }
         }
         dynamicChannel.sendAll(details)
     }
@@ -175,7 +172,7 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
     }
 
     /**
-     * 将最近已推送的动态 ID 持久化到历史文件。
+     * 将兼容历史写入旧文件；新交付去重以联系人级账本终态为准。
      */
     private fun saveHistory() {
         try {

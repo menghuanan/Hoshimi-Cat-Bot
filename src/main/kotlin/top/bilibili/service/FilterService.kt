@@ -8,6 +8,7 @@ import top.bilibili.FilterMode
 import top.bilibili.FilterType
 import top.bilibili.utils.findEquivalentSubjectKey
 import top.bilibili.utils.normalizeContactSubject
+import top.bilibili.core.BiliDataRuntimeCoordinator
 
 /**
  * 集中维护订阅过滤器存储，避免命令层直接处理筛选结构细节。
@@ -35,24 +36,24 @@ object FilterService {
             val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
             if (!isFollow(uid, normalizedSubject)) return@withLock "还未订阅此人哦"
 
-            if (!filter.containsKey(normalizedSubject)) filter[normalizedSubject] = mutableMapOf()
-            if (!filter[normalizedSubject]!!.containsKey(uid)) filter[normalizedSubject]!![uid] = DynamicFilter()
-
-            val dynamicFilter = filter[normalizedSubject]!![uid]!!
+            val mappedType = if (type == FilterType.TYPE && !regex.isNullOrEmpty()) {
+                when (regex) {
+                    "动态" -> DynamicFilterType.DYNAMIC
+                    "转发动态" -> DynamicFilterType.FORWARD
+                    "视频" -> DynamicFilterType.VIDEO
+                    "音乐" -> DynamicFilterType.MUSIC
+                    "专栏" -> DynamicFilterType.ARTICLE
+                    "直播" -> DynamicFilterType.LIVE
+                    else -> return@withLock "没有这个类型 $regex"
+                }
+            } else null
+            val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            val dynamicFilter = candidate.filter.getOrPut(normalizedSubject) { mutableMapOf() }.getOrPut(uid) { DynamicFilter() }
             when (type) {
                 FilterType.TYPE -> {
                     if (mode != null) dynamicFilter.typeSelect.mode = mode
                     if (!regex.isNullOrEmpty()) {
-                        val mapped = when (regex) {
-                            "动态" -> DynamicFilterType.DYNAMIC
-                            "转发动态" -> DynamicFilterType.FORWARD
-                            "视频" -> DynamicFilterType.VIDEO
-                            "音乐" -> DynamicFilterType.MUSIC
-                            "专栏" -> DynamicFilterType.ARTICLE
-                            "直播" -> DynamicFilterType.LIVE
-                            else -> return@withLock "没有这个类型 $regex"
-                        }
-                        dynamicFilter.typeSelect.list.add(mapped)
+                        dynamicFilter.typeSelect.list.add(requireNotNull(mappedType))
                     }
                 }
                 FilterType.REGULAR -> {
@@ -60,7 +61,8 @@ object FilterService {
                     if (!regex.isNullOrEmpty()) dynamicFilter.regularSelect.list.add(regex)
                 }
             }
-            "设置成功"
+            }
+            if (result.committed) "设置成功" else "保存失败，过滤器未生效，请稍后重试"
         }
 
     /**
@@ -117,8 +119,16 @@ object FilterService {
         if (selectedList.size <= i) return@withLock "索引超出范围"
 
         val removed = selectedList[i]
-        selectedList.removeAt(i)
-        cleanupEmptyFilter(storedSubject, uid)
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            val candidateFilter = candidate.filter[storedSubject]?.get(uid) ?: return@mutateAndPersist
+            val candidateList = if (index.first() == 't') candidateFilter.typeSelect.list else candidateFilter.regularSelect.list
+            candidateList.removeAt(i)
+            if (candidateFilter.typeSelect.list.isEmpty() && candidateFilter.regularSelect.list.isEmpty()) {
+                candidate.filter[storedSubject]?.remove(uid)
+                if (candidate.filter[storedSubject].isNullOrEmpty()) candidate.filter.remove(storedSubject)
+            }
+        }
+        if (!result.committed) return@withLock "保存失败，过滤器未变更，请稍后重试"
 
         if (removed is DynamicFilterType) {
             "已删除 ${removed.value} 类型过滤"

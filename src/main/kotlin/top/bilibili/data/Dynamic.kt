@@ -33,7 +33,9 @@ data class DynamicDetail(
     @SerialName("item")
     val item: DynamicItem,
     @SerialName("contact")
-    val contact: String? = null
+    val contact: String? = null,
+    @SerialName("delivery_id")
+    val deliveryId: String? = null,
 )
 
 /**

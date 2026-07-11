@@ -12,13 +12,14 @@ class WebUiTokenService(
     private val random: SecureRandom = SecureRandom(),
     private val clock: () -> Long = { System.currentTimeMillis() / 1000L },
 ) {
+    private val sessionLock = Any()
     private val sessionCapacity = maxSessions.coerceAtLeast(1)
     private val sessions = linkedMapOf<String, WebUiTokenSession>()
 
     /**
      * 为当前 tokenVersion 签发新的会话 token，并附带同源 CSRF 材料供 double-submit 校验使用。
      */
-    fun issueToken(tokenVersion: Long): WebUiTokenSession {
+    fun issueToken(tokenVersion: Long): WebUiTokenSession = synchronized(sessionLock) {
         pruneExpiredSessions()
         val issuedAt = clock()
         val session = WebUiTokenSession(
@@ -30,15 +31,15 @@ class WebUiTokenService(
         )
         evictOldestIfNeeded()
         sessions[session.token] = session
-        return session
+        session
     }
 
     /**
      * 校验 token 是否仍然存在、未过期且与当前凭据版本匹配。
      */
-    fun verifyToken(token: String, expectedTokenVersion: Long): WebUiTokenSession? {
+    fun verifyToken(token: String, expectedTokenVersion: Long): WebUiTokenSession? = synchronized(sessionLock) {
         pruneExpiredSessions()
-        val session = sessions[token] ?: return null
+        val session = sessions[token] ?: return@synchronized null
         return when {
             session.tokenVersion != expectedTokenVersion -> {
                 sessions.remove(token)
@@ -51,23 +52,19 @@ class WebUiTokenService(
     /**
      * 登出只撤销当前浏览器持有的 token，避免影响同一账号的其他有效会话。
      */
-    fun revokeToken(token: String): Boolean {
-        return sessions.remove(token) != null
-    }
+    fun revokeToken(token: String): Boolean = synchronized(sessionLock) { sessions.remove(token) != null }
 
     /**
      * 当前只有单一 WebUI 本地账号，因此改密时直接清空全部会话即可。
      */
-    fun revokeAll() {
-        sessions.clear()
-    }
+    fun revokeAll() = synchronized(sessionLock) { sessions.clear() }
 
     /**
      * 当前内存会话数用于测试和容量回收自检，不对外暴露具体会话内容。
      */
-    fun activeSessionCount(): Int {
+    fun activeSessionCount(): Int = synchronized(sessionLock) {
         pruneExpiredSessions()
-        return sessions.size
+        sessions.size
     }
 
     /**

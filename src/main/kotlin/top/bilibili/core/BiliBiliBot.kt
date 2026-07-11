@@ -27,6 +27,7 @@ import top.bilibili.core.resource.ResourceStopReport
 import top.bilibili.core.resource.ResourceStrictness
 import top.bilibili.core.resource.ResourceSupervisor
 import top.bilibili.core.resource.ShutdownPhase
+import top.bilibili.delivery.DeliveryCoordinator
 import top.bilibili.data.BiliCookie
 import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicDetail
@@ -501,11 +502,17 @@ object BiliBiliBot : CoroutineScope {
             if (config.webui.enabled) {
                 logger.info("正在启动 WebUI...")
                 // WebUI 仅作为可选管理面启动，具体服务器与路由细节保持在 webui 包内部。
-                webUiManager = WebUiManager(
-                    config.webui.toSettings(),
-                    logWindowStartEpochMillis = startTime,
-                ).also { manager ->
-                    manager.start()
+                runCatching {
+                    WebUiManager(
+                        config.webui.toSettings(),
+                        logWindowStartEpochMillis = startTime,
+                    ).also { manager -> manager.start() }
+                }.onSuccess { manager ->
+                    webUiManager = manager
+                }.onFailure { error ->
+                    // 管理面凭据或监听故障不得阻止平台与核心 Tasker 启动，但必须留下强诊断告警。
+                    webUiManager = null
+                    logger.error("WebUI 启动失败，已禁用本次进程的管理面；核心 Bot 将继续启动: ${error.message}", error)
                 }
             } else {
                 logger.info("WebUI 未启用，跳过启动")
@@ -623,10 +630,11 @@ object BiliBiliBot : CoroutineScope {
 
         var report: ResourceStopReport? = null
         var usedFallback = false
+        val shutdownDeadlineNanos = System.nanoTime() + ResourceSupervisor.TOTAL_SHUTDOWN_TIMEOUT_MS * 1_000_000L
 
         try {
             report = runCatching {
-                runBlocking { resourceSupervisor.stopAll() }
+                runBlocking { resourceSupervisor.stopAll(ResourceSupervisor.TOTAL_SHUTDOWN_TIMEOUT_MS) }
             }.onFailure {
                 logger.error("资源总管停止失败: ${it.message}", it)
             }.getOrNull()
@@ -634,7 +642,7 @@ object BiliBiliBot : CoroutineScope {
             // 资源总管缺报告、未覆盖资源或出现失败时，仍要继续兜底回收，避免残留后台任务和连接。
             if (report == null || report.totalPartitions == 0 || !report.success) {
                 usedFallback = true
-                runBlocking { fallbackStopResources() }
+                runBlocking { fallbackStopResources(shutdownDeadlineNanos) }
             }
 
             if (::config.isInitialized) {
@@ -804,6 +812,22 @@ object BiliBiliBot : CoroutineScope {
 
         resourceSupervisor.register(
             LambdaResourcePartition(
+                id = "critical-state-checkpoint",
+                owns = listOf("BiliData", "DeliveryLedger"),
+                strictness = ResourceStrictness.STRICT,
+                shutdownPhase = ShutdownPhase.WORKERS,
+                stopAction = {
+                    // 登记在 taskers 之后，逆序回收时会先保存关键状态再取消 worker。
+                    if (::config.isInitialized && !BiliConfigManager.saveData()) {
+                        error("停机关键 BiliData 保存失败")
+                    }
+                    DeliveryCoordinator.flush()
+                },
+            ),
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
                 id = "taskers",
                 owns = listOf("BiliTasker.*"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
@@ -898,16 +922,14 @@ object BiliBiliBot : CoroutineScope {
     /**
      * 在资源总管异常或覆盖不足时，按旧流程兜底回收关键资源。
      */
-    private suspend fun fallbackStopResources() {
-        runCatching {
+    private suspend fun fallbackStopResources(shutdownDeadlineNanos: Long) {
+        runFallbackStep("启动延迟协程", shutdownDeadlineNanos) {
             // 兜底路径同样要先取消启动延迟协程，避免停机后又触发初始化/拉起任务器。
             startupTaskBootstrapJob?.cancelAndJoin()
             startupTaskBootstrapJob = null
-        }.onFailure {
-            logger.warn("兜底停止启动延迟协程失败: ${it.message}", it)
         }
 
-        runCatching {
+        runFallbackStep("WebUI", shutdownDeadlineNanos) {
             // 兜底停机同样先关闭本地管理入口，避免停机期间继续接入新的 HTTP 请求。
             webUiReloadJob?.cancelAndJoin()
             webUiReloadJob = null
@@ -915,77 +937,76 @@ object BiliBiliBot : CoroutineScope {
             webUiManagerPendingStop = null
             webUiManager?.stop()
             webUiManager = null
-        }.onFailure {
-            logger.warn("兜底停止 WebUI 失败: ${it.message}", it)
         }
 
-        runCatching {
+        runFallbackStep("WebUI 配置热重载协调器", shutdownDeadlineNanos) {
             // 协调器即使不随 WebUI manager 生命周期重建，也必须在兜底路径中显式关闭。
             webUiConfigHotReloadCoordinator?.closeForShutdown(timeoutMs = 10_000)
             webUiConfigHotReloadCoordinator = null
-        }.onFailure {
-            logger.warn("兜底停止 WebUI 配置热重载协调器失败: ${it.message}", it)
         }
 
-        runCatching {
+        runFallbackStep("入口资源", shutdownDeadlineNanos) {
             if (isPlatformAdapterInitialized()) {
                 requireConnectorManager().stop()
             }
             connectorManager = null
             MessageGatewayProvider.unregister()
-        }.onFailure {
-            logger.warn("兜底停止入口资源失败: ${it.message}", it)
         }
 
-        runCatching {
+        runFallbackStep("事件收集器", shutdownDeadlineNanos) {
             eventCollectorJob?.cancelAndJoin()
             eventCollectorJob = null
-        }.onFailure {
-            logger.warn("兜底停止事件收集器失败: ${it.message}", it)
         }
 
-        runCatching {
+        runFallbackStep("关键状态检查点", shutdownDeadlineNanos) {
+            if (::config.isInitialized && !BiliConfigManager.saveData()) error("BiliData 保存失败")
+            DeliveryCoordinator.flush()
+        }
+
+        runFallbackStep("任务器", shutdownDeadlineNanos) {
             val report = BiliTasker.cancelAll(timeoutMs = 10_000)
             if (!report.success) {
                 logger.warn("兜底停止任务器存在失败项: ${report.failures}")
             }
-        }.onFailure {
-            logger.warn("兜底停止任务器失败: ${it.message}", it)
         }
 
-        runCatching {
+        runFallbackStep("通道", shutdownDeadlineNanos) {
             dynamicChannel.close()
             liveChannel.close()
             messageChannel.close()
-        }.onFailure {
-            logger.warn("兜底关闭通道失败: ${it.message}", it)
         }
 
-        runCatching { ImageCache.close() }
-            .onFailure { logger.warn("兜底关闭图片缓存失败: ${it.message}", it) }
+        runFallbackStep("图片缓存", shutdownDeadlineNanos) { ImageCache.close() }
 
-        runCatching { closeUtilsClient() }
-            .onFailure { logger.warn("兜底关闭 biliClient 失败: ${it.message}", it) }
+        runFallbackStep("biliClient", shutdownDeadlineNanos) { closeUtilsClient() }
 
-        runCatching { closeServiceClient() }
-            .onFailure { logger.warn("兜底关闭服务共享客户端失败: ${it.message}", it) }
+        runFallbackStep("服务共享客户端", shutdownDeadlineNanos) { closeServiceClient() }
 
-        runCatching { BiliCheckTasker.closeSharedClient() }
-            .onFailure { logger.warn("兜底关闭 BiliCheckTasker 客户端失败: ${it.message}", it) }
+        runFallbackStep("BiliCheckTasker 客户端", shutdownDeadlineNanos) { BiliCheckTasker.closeSharedClient() }
 
-        runCatching { top.bilibili.skia.SkiaManager.shutdown() }
-            .onFailure { logger.warn("兜底关闭 Skia 失败: ${it.message}", it) }
+        runFallbackStep("Skia", shutdownDeadlineNanos) { top.bilibili.skia.SkiaManager.shutdown() }
 
-        runCatching {
-            withTimeout(10_000) {
-                job?.cancelAndJoin()
-            }
-        }.onFailure {
-            logger.warn("兜底停止根协程作用域失败: ${it.message}", it)
-            // join 超时时直接取消即可，避免停机线程被永久阻塞在根作用域回收上。
-            job?.cancel()
+        runFallbackStep("根协程作用域", shutdownDeadlineNanos) {
+            job?.cancelAndJoin()
         }
         job = null
+    }
+
+    /**
+     * fallback 每一步只消费共享 deadline 的剩余预算，失败后继续尝试后续逆依赖阶段。
+     */
+    private suspend fun runFallbackStep(
+        name: String,
+        shutdownDeadlineNanos: Long,
+        action: suspend () -> Unit,
+    ) {
+        val remainingMs = ((shutdownDeadlineNanos - System.nanoTime()) / 1_000_000L).coerceAtLeast(0L)
+        if (remainingMs <= 0L) {
+            logger.warn("兜底停止 {} 已跳过：共享 90 秒预算耗尽", name)
+            return
+        }
+        runCatching { withTimeout(remainingMs) { action() } }
+            .onFailure { error -> logger.warn("兜底停止 $name 失败: ${error.message}", error) }
     }
 
     /**

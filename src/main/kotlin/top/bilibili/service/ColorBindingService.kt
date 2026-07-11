@@ -4,6 +4,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import top.bilibili.BiliData
 import top.bilibili.core.BiliBiliBot
+import top.bilibili.core.BiliDataRuntimeCoordinator
 import top.bilibili.utils.normalizeContactSubject
 
 private val colorBindingMutex = Mutex()
@@ -66,7 +67,10 @@ object ColorBindingService {
                 "格式错误，请输入16进制颜色，如: #d3edfa 或 #d3edfa;#fde8ed，最多支持 ${MAX_GRADIENT_COLOR_STOPS} 个颜色",
             )
 
-        BiliData.dynamicColorByUid.getOrPut(normalizedSubject) { mutableMapOf() }[uid] = normalization.normalizedColor
+        val mutation = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.dynamicColorByUid.getOrPut(normalizedSubject) { mutableMapOf() }[uid] = normalization.normalizedColor
+        }
+        if (!mutation.committed) return@withLock ColorBindingResult.failure("保存失败，主题色未生效，请稍后重试")
         runCatching {
             DrawCacheMaintenanceService.clearSubjectScopedDrawCaches(uid, normalizedSubject)
         }.onFailure {

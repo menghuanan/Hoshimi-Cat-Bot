@@ -700,7 +700,7 @@ object BiliConfigManager {
         val wrapper = BiliDataWrapper.from(
             biliData = dataToSave,
             templatePolicies = TemplateRuntimeCoordinator.snapshotPolicies(),
-        )
+        ).deepCopy()
         return saveDataWrapper(wrapper)
     }
 

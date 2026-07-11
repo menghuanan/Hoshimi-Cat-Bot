@@ -23,6 +23,10 @@ Logback 为主日志和错误日志配置 30 天滚动上限。`LogClearTasker` 
 
 ## Tasker 健康
 
+除 worker 快照外，还要观察主 Job 状态、30 分钟恢复次数和熔断状态。任一核心 Tasker 进入熔断均按降级故障告警；`ProcessGuardian` 失败由根生命周期告警，不进入自恢复循环。
+
+交付监控应统计 `RETRY_WAIT`、重试年龄和 `PERMANENT_FAILURE`。永久失败表示联系人已耗尽 6 次或 24 小时预算，需要结合平台回执错误排查，不能通过清空旧动态历史掩盖。
+
 监控内容：
 
 - 已注册 tasker 数量。

@@ -6,6 +6,7 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.Group
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parseContactId
+import top.bilibili.core.BiliDataRuntimeCoordinator
 
 /**
  * 维护旧分组模型的增删改查接口，供历史命令和测试继续复用。
@@ -26,8 +27,8 @@ object GroupService {
     suspend fun createGroup(name: String, operator: Long) = mutex.withLock {
         if (!group.containsKey(name)) {
             if (name.matches("^[0-9]*$".toRegex())) return@withLock "分组名不能全为数字"
-            group[name] = Group(name, operator)
-            "创建成功"
+            val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate -> candidate.group[name] = Group(name, operator) }
+            if (result.committed) "创建成功" else "保存失败，分组未创建"
         } else {
             "分组名称重复"
         }
@@ -40,15 +41,15 @@ object GroupService {
         if (!group.containsKey(name)) return@withLock "没有此分组 [$name]"
         if (group[name]!!.creator != operator) return@withLock "无权删除"
 
-        dynamic.forEach { (_, s) -> s.contacts.remove(name) }
-        // 分组删除后同步移除 groupRef scope 的模板策略，避免遗留悬空配置继续参与选择。
-        TemplateRuntimeCoordinator.removeScope("dynamic", "groupRef:$name")
-        TemplateRuntimeCoordinator.removeScope("live", "groupRef:$name")
-        TemplateRuntimeCoordinator.removeScope("liveClose", "groupRef:$name")
-        filter.remove(name)
-        atAll.remove(name)
-        group.remove(name)
-        "删除成功"
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            DynamicService.deleteGroupRefIn(candidate, name)
+            candidate.filter.remove(name)
+            candidate.atAll.remove(name)
+            candidate.group.remove(name)
+            listOf(candidate.dynamicTemplatePolicyByScope, candidate.liveTemplatePolicyByScope, candidate.liveCloseTemplatePolicyByScope)
+                .forEach { policies -> policies.remove("groupRef:$name") }
+        }
+        if (result.committed) "删除成功" else "保存失败，分组未删除"
     }
 
     /**
@@ -73,7 +74,7 @@ object GroupService {
         if (group[name]!!.creator != operator) return@withLock "无权添加"
 
         var failMsg = ""
-        group[name]?.admin?.addAll(contacts.split(",", "，").mapNotNull { raw ->
+        val adminsToAdd = contacts.split(",", "，").mapNotNull { raw ->
             val normalized = normalizeSubject(raw)
             if (normalized == null) {
                 failMsg += "$raw, "
@@ -87,8 +88,9 @@ object GroupService {
                     null
                 }
             }
-        }.toSet())
-        if (failMsg.isEmpty()) "添加成功" else "[$failMsg] 添加失败"
+        }.toSet()
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate -> candidate.group[name]?.admin?.addAll(adminsToAdd) }
+        if (!result.committed) "保存失败，管理员未变更" else if (failMsg.isEmpty()) "添加成功" else "[$failMsg] 添加失败"
     }
 
     /**
@@ -99,8 +101,8 @@ object GroupService {
         if (group[name]!!.creator != operator) return@withLock "无权删除"
 
         var failMsg = ""
-        val admins = group[name]!!.admin
-        contacts.split(",", "，").mapNotNull { raw ->
+        val admins = group[name]!!.admin.toSet()
+        val adminIds = contacts.split(",", "，").mapNotNull { raw ->
             val normalized = normalizeSubject(raw)
             if (normalized == null) {
                 failMsg += "$raw, "
@@ -108,11 +110,10 @@ object GroupService {
             } else {
                 parseContactId(normalized)?.id
             }
-        }.toSet().forEach {
-            if (!admins.remove(it)) failMsg += "$it, "
-        }
-
-        if (failMsg.isEmpty()) "删除成功" else "[$failMsg] 删除失败"
+        }.toSet()
+        adminIds.forEach { if (it !in admins) failMsg += "$it, " }
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate -> candidate.group[name]?.admin?.removeAll(adminIds) }
+        if (!result.committed) "保存失败，管理员未变更" else if (failMsg.isEmpty()) "删除成功" else "[$failMsg] 删除失败"
     }
 
     /**
@@ -123,7 +124,7 @@ object GroupService {
         if (!checkGroupPerm(name, operator)) return@withLock "无权添加"
 
         var failMsg = ""
-        group[name]?.contacts?.addAll(contacts.split(",", "，").mapNotNull { raw ->
+        val contactsToAdd = contacts.split(",", "，").mapNotNull { raw ->
             val normalized = normalizeSubject(raw)
             if (normalized == null) {
                 failMsg += "$raw, "
@@ -131,9 +132,12 @@ object GroupService {
             } else {
                 normalized
             }
-        }.toSet())
-
-        if (failMsg.isEmpty()) "添加成功" else "[$failMsg] 添加失败"
+        }.toSet()
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.group[name]?.contacts?.addAll(contactsToAdd)
+            DynamicService.refreshGroupRefIn(candidate, name)
+        }
+        if (!result.committed) "保存失败，联系人未变更" else if (failMsg.isEmpty()) "添加成功" else "[$failMsg] 添加失败"
     }
 
     /**
@@ -144,7 +148,7 @@ object GroupService {
         if (!checkGroupPerm(name, operator)) return@withLock "无权删除"
 
         var failMsg = ""
-        group[name]?.contacts?.removeAll(contacts.split(",", "，").mapNotNull { raw ->
+        val contactsToRemove = contacts.split(",", "，").mapNotNull { raw ->
             val normalized = normalizeSubject(raw)
             if (normalized == null) {
                 failMsg += "$raw, "
@@ -152,9 +156,12 @@ object GroupService {
             } else {
                 normalized
             }
-        }.toSet())
-
-        if (failMsg.isEmpty()) "删除成功" else "[$failMsg] 删除失败"
+        }.toSet()
+        val result = BiliDataRuntimeCoordinator.mutateAndPersist { candidate ->
+            candidate.group[name]?.contacts?.removeAll(contactsToRemove)
+            DynamicService.refreshGroupRefIn(candidate, name)
+        }
+        if (!result.committed) "保存失败，联系人未变更" else if (failMsg.isEmpty()) "删除成功" else "[$failMsg] 删除失败"
     }
 
     /**
