@@ -2,6 +2,7 @@
 
 **状态**：已采纳  
 **日期**：2026-04-22  
+**最后复核**：2026-07-12
 **决策者**：项目当前实现  
 
 ## 问题背景
@@ -27,16 +28,19 @@
 
 - `PlatformAdapter` 定义平台中立事件、发送、能力、运行态和可达性接口。
 - `PlatformConnectorManager` 根据 `BotConfig.selectedAdapterKind()` 创建具体 adapter。
+- WebUI 配置热切换由 `RuntimeConfigApplier` 调用 `prepareReload()` 先启动并验证候选 adapter，再通过 `commitReload()` 原子替换运行代际；失败候选必须 `closeUncommitted()`，旧 adapter 保持服务。
 - 业务层发送消息走 `MessageGatewayProvider` 或 `BiliBiliBot.sendMessage(contact, parts)`。
 - 能力判断走 `PlatformCapabilityService` 和 `CapabilityGuard`。
 - 入站事件统一为 `PlatformInboundMessage`，发送出站统一为 `OutgoingPart`。
+- 跨平台原始消息日志统一先映射为 `MessageLogPart`，再由 connector 层 `MessageLogSimplifier` 脱敏和压缩；OneBot11 只保留 vendor segment 到中立日志段的转换。
 - vendor DTO 只允许存在于 connector vendor/core 包内部。
 
 ## 已知权衡
 
-- 迁移期仍保留 deprecated Long 群号/私聊入口，以兼容历史调用链。
+- 部分 deprecated Long 群号/私聊入口仍用于兼容历史调用链，不得作为新业务入口继续扩散。
 - Generic OneBot11 采用保守能力声明，例如默认不支持 @全体，本地/二进制图片会降级。
 - 新增平台时需要先补齐平台中立模型映射，不能直接把 vendor 能力暴露给业务层。
+- 平台连接参数只有通过 WebUI 候选代际协调器保存时支持在线切换；手工修改 `bot.yml` 不会触发 reload。
 
 ## 若要修改此决策
 
@@ -47,4 +51,3 @@
 - [`../../development/red-lines.md`](../../development/red-lines.md) 中 `RL-004`、`RL-005`
 - [`../../modules/connector.md`](../../modules/connector.md)
 - 平台相关测试，如 `PlatformConnectorManagerTest`、`ConnectorBoundaryRegressionTest`
-

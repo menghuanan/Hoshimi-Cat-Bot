@@ -2,6 +2,8 @@
 
 这些约束不接受“但是这个场景下...”的例外。若确实需要改变，必须先改对应 ADR、模块文档和不变量，并经人类确认。
 
+_最后复核：2026-07-12_
+
 ## RL-001: 禁止删除、缩减或覆盖根目录 AGENTS.md
 
 **禁止**：删除、移动、覆盖、改写或弱化根目录 `AGENTS.md` 中已有内容。
@@ -16,7 +18,7 @@
 
 **原因**：配置写入必须保留迁移、归一化、快照和版本处理。直接写文件会绕过 `BiliConfigManager` 或 `ConfigManager`。
 
-**正确做法**：主配置和业务数据走 `BiliConfigManager.saveConfig/saveData/saveAll`；平台配置走 `ConfigManager.saveConfig()`。
+**正确做法**：主配置快照走 `BiliConfigManager`，运行期业务数据变更走 `BiliDataRuntimeCoordinator.mutateAndPersist*`，平台配置走 `ConfigManager`；候选持久化成功后才能安装运行态。
 
 ## RL-003: 禁止绕过 SkiaManager.executeDrawing 创建绘图主流程
 
@@ -105,3 +107,19 @@
 **原因**：高频创建 JSON 实例会增加分配和 GC 压力，尤其在轮询、链接解析和绘图路径叠加时更明显。
 
 **正确做法**：复用 `utils.json`、类内单例或已有客户端级 `json` 实例；新增例外必须说明调用频率和生命周期。
+
+## RL-014: 禁止绕过候选代际直接热切换平台连接
+
+**禁止**：WebUI 保存 `bot.yml` 后直接停止当前 adapter、覆盖全局配置或创建并安装未经连通验证的候选 adapter。
+
+**原因**：`RuntimeConfigApplier` 与 `PlatformConnectorManager.prepareReload/commitReload` 保证候选失败时旧平台连接和管理入口继续服务；绕过会把可回滚配置更新变成运行中断。
+
+**正确做法**：通过 `WebUiConfigHotReloadCoordinator` 串行提交，先持久化候选并 prepare，成功后 commit；失败候选调用 `closeUncommitted()` 并执行磁盘/运行态回滚。
+
+## RL-015: 禁止绕过共享下载器获取远程绘图资源
+
+**禁止**：在 draw、service、tasker 或图片缓存路径中另建自动重定向 HTTP client，或在未复检 DNS 与重定向目标时下载远程图片。
+
+**原因**：`BoundedRemoteResourceDownloader` 统一承担 SSRF 防护、逐跳公网校验、25 MiB 响应上限、超时与全局并发闸门；旁路会恢复内网探测和无界内存风险。
+
+**正确做法**：所有远程绘图和缓存资源都通过 `BoundedRemoteResourceDownloader`，策略变化同步更新 `RemoteResourcePolicy` 及其回归测试。

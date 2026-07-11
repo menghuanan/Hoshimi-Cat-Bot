@@ -1,5 +1,7 @@
 # Client 模块
 
+_最后复核：2026-07-12_
+
 ## 模块定位
 
 Client 模块封装 B 站 HTTP 请求、重试、超时、代理、连接池资源和运行期观测。它是 API 层和 Tasker 轮询链路的网络边界。
@@ -9,6 +11,7 @@ Client 模块封装 B 站 HTTP 请求、重试、超时、代理、连接池资�
 - `src/main/kotlin/top/bilibili/client/BiliClient.kt`
 - `src/main/kotlin/top/bilibili/api/*`
 - 共享关闭入口：`closeUtilsClient()`、`closeServiceClient()`、`BiliCheckTasker.closeSharedClient()`
+- 运行期观测入口：`BiliClient.runtimeSnapshot()`、`ProcessGuardian`
 
 ## 主要职责
 
@@ -25,11 +28,12 @@ Client 模块封装 B 站 HTTP 请求、重试、超时、代理、连接池资�
 
 ## 重试策略
 
-- 最大重试次数：1 次。
+- `request()` 默认最大重试次数：1 次；调用方显式传入的 `maxRetries` 仍受非负校验。
 - 重试等待：3 秒。
 - 可重试：`IOException`、`HttpRequestTimeoutException`。
 - 超时不轮换 retry slot。
 - 连接类错误才轮换 retry slot。
+- retry slot 容量固定为 2，并按需创建；首个请求使用主 client，发生连接类重试时才轮换到底层独立 slot。
 
 ## 资源与生命周期
 
@@ -41,6 +45,8 @@ Client 模块封装 B 站 HTTP 请求、重试、超时、代理、连接池资�
 - 关闭已创建的底层 `HttpClient`。
 
 close 后 `ensureClientOpen()` 会阻断后续请求和 retry slot 创建。
+
+`runtimeSnapshot()` 只汇总当前仍活跃的弱引用实例，按 `ownerTag` 暴露主连接池和已创建 retry slot 的连接、空闲连接、排队调用与运行调用数量；快照不包含 Cookie、请求体或响应内容。
 
 ## 配置与数据
 

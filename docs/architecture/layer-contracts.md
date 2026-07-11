@@ -2,6 +2,8 @@
 
 本文定义各层允许做什么、禁止做什么，以及跨层调用的正确路径。
 
+_最后复核：2026-07-12_
+
 ## 启动层
 
 **入口**：`Main.kt`、`BiliBiliBot`
@@ -67,7 +69,9 @@
 
 - 创建 vendor adapter。
 - 封装 start/stop 生命周期。
+- 通过 prepare/commit/rollback 管理 WebUI 触发的平台运行代际切换。
 - 暴露平台中立事件、发送、能力和观测模型。
+- 在 connector 内完成原始消息日志的中立化简化，禁止向 service 泄露 vendor segment。
 
 **禁止**：
 
@@ -92,6 +96,7 @@
 - 直接创建 vendor adapter 或底层 transport。
 - 直接保存配置文件。
 - 在模板策略变更时绕过 `TemplateRuntimeCoordinator`。
+- 直接修改 `BiliData` 可变集合，绕过 `BiliDataRuntimeCoordinator` 的候选快照持久化。
 
 **原因**：服务层是业务编排层，不是资源拥有者。
 
@@ -193,6 +198,7 @@
 
 - 提供低依赖、可复用、调用方可控的轻量工具。
 - 封装字体、图片预处理、联系人 subject 和 JSON 复用实例等辅助能力。
+- 通过 `BoundedRemoteResourceDownloader` 统一远程资源的公网校验、重定向复检、响应上限和并发闸门。
 
 **禁止**：
 
@@ -230,9 +236,11 @@
 | 发送消息 | `MessageGatewayProvider.require()` | 直接调用 vendor client |
 | 判断平台能力 | `PlatformCapabilityService` | 业务层手写 adapter 类型判断 |
 | 修改模板策略 | `TemplateRuntimeCoordinator` | 直接改 `BiliData.*PolicyByScope` |
+| 修改业务数据 | `BiliDataRuntimeCoordinator.mutateAndPersist*` | 先改运行态再直接保存 |
 | 绘制图片 | `SkiaManager.executeDrawing` | 裸建 Skia native 对象 |
 | 保存主配置/数据 | `BiliConfigManager` | 业务层写 YAML |
 | 保存平台配置 | `ConfigManager` | 业务层写 `bot.yml` |
+| WebUI 热切换平台 | `RuntimeConfigApplier` + connector prepare/commit | 保存后直接覆盖当前 adapter |
 | WebUI 管理配置/日志 | `WebUiConfigFacade`、`WebUiConfigWriteFacade`、`WebUiLogFacade`、`WebUiAuditService` | 直接写 YAML、直读任意日志文件、绕过确认或审计 |
 | 新增后台任务 | `BiliTasker` + `TaskResourcePolicyRegistry` | 裸协程或未登记 tasker |
 | 新增启动逻辑 | `Main.kt` / `BiliBiliBot` 装配入口 | 在启动层写业务规则 |

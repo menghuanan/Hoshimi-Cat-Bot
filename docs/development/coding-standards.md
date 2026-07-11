@@ -2,6 +2,8 @@
 
 本文记录本项目在通用 Kotlin 之外的专属编码要求。
 
+_最后复核：2026-07-12_
+
 ## 编码与文件
 
 - 所有文本文件必须使用 UTF-8。
@@ -38,12 +40,15 @@
 - 主配置/业务数据走 `BiliConfigManager`。
 - 平台配置走 `ConfigManager`。
 - 模板策略走 `TemplateRuntimeCoordinator`。
+- 业务数据的运行期变更走 `BiliDataRuntimeCoordinator.mutateAndPersist*`，只有候选快照持久化成功后才能替换运行态。
+- 登录或 WebUI 配置更新先持久化候选快照，再通过运行代际安装；失败时不得污染旧运行配置。
 
 ## 平台抽象
 
 - 业务层只使用 `PlatformContact`、`PlatformInboundMessage`、`OutgoingPart`、`ImageSource`。
 - vendor DTO 只允许在 connector 实现内部。
 - 能力判断统一走 `PlatformCapabilityService`。
+- 原始消息日志先转换为平台中立 `MessageLogPart`，再交给 connector 层 `MessageLogSimplifier`，不得在 service 新建 vendor 日志分支。
 
 ## 日志
 
@@ -51,4 +56,4 @@
 - 网络请求应包含任务来源和接口名。
 - 停机期间的预期取消不要升级为 ERROR。
 - 资源清理失败要带 owner/operation 或资源分区信息。
-
+- 日志不得输出完整 Cookie、Authorization、access token、WebUI 密码或未经简化的超长消息载荷。

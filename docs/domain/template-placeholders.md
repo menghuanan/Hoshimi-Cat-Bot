@@ -2,6 +2,8 @@
 
 本文记录 `TemplateRenderService` 当前实际支持的模板占位符、特殊消息段占位符和不适用时的行为。这里的内容是模板业务契约，不是示例文案。
 
+_最后复核：2026-07-12_
+
 如果修改了占位符集合、适用消息类型或特殊行为，必须同时同步：
 
 - `src/main/kotlin/top/bilibili/service/TemplateRenderService.kt`
@@ -12,6 +14,7 @@
 
 - 模板渲染入口是 `TemplateRenderService.buildSegments()`。
 - 模板先按 `\r` 拆段，再逐段做占位符替换和消息段解析。
+- 每个 `\r` 分段之间会插入独立的换行文本消息段；普通 `\n` 保留在原文本段内。
 - `replacePlaceholders()` 只替换本文列出的文本占位符。
 - `{draw}` 和 `{images}` 不会被替换成文本，而是在 `parseContent()` 中转成 `OutgoingPart.image(...)`。
 - 未识别占位符会原样保留在文本里发送，不会自动报错。
@@ -90,6 +93,7 @@
 
 - 只有 `DynamicMessage` 且 `message.images` 非空时才会生效。
 - 每张图片会先经过 `ImageCache.cacheImage(imageUrl)`，缓存成功后才追加图片消息段。
+- 远程图片实际下载统一进入 `BoundedRemoteResourceDownloader`，受公网地址、逐跳重定向、25 MiB 和并发限制约束。
 - 无论图片列表是否存在，`{images}` 都会从文本中被移除。
 - `LiveMessage` 和 `LiveCloseMessage` 中使用 `{images}` 不会报错，但也不会产生图片消息段。
 

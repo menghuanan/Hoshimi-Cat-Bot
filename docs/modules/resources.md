@@ -1,5 +1,7 @@
 # Resources 模块
 
+_最后复核：2026-07-12_
+
 ## 模块定位
 
 Resources 模块约束 `src/main/resources` 下字体、图标、兜底图片和日志配置等随包资源。它不是业务逻辑层，但会直接影响绘图效果、部署包体积、运行内存和日志行为。
@@ -12,6 +14,8 @@ Resources 模块约束 `src/main/resources` 下字体、图标、兜底图片和
 - `src/main/resources/webui/react/*`
 - `src/main/resources/logback.xml`
 - 相关加载代码：`FontUtils`、`ImageCache`、`draw/*`、`skia/*`、`webui/*`
+
+当前随包资源包括 `FansCard.ttf`、`SourceHanSansSC-Regular.otf` 及字体授权，Bilibili/动态类型 SVG 图标，`admin_help.png`、`HELP.png`、`IMAGE_MISS.png`、`Blocked_BG_Day.png`，以及 WebUI 的 `index.html`、`assets/app.css`、`assets/app.js`。
 
 ## 主要职责
 
@@ -31,7 +35,7 @@ Resources 模块约束 `src/main/resources` 下字体、图标、兜底图片和
 
 ## 关键流程
 
-新增资源前先判断它是否属于运行时必需资源。绘图资源必须能由现有加载工具找到；日志配置变更必须兼容 Docker 和裸机运行；字体变更必须同时考虑 Skia 段落布局、fallback 和 native 内存。
+新增资源前先判断它是否属于运行时必需资源。绘图资源必须能由现有加载工具找到；日志配置变更必须兼容 Docker 和裸机运行；字体变更必须同时考虑 Skia 段落布局、fallback 和 native 内存。WebUI 静态文件由 `webui-frontend` 构建复制，只能从前端源代码重新生成。
 
 ## 资源与生命周期
 
@@ -44,7 +48,7 @@ Resources 不写配置。资源路径若暴露为配置项，必须在 config �
 ## 测试与验证
 
 - 修改字体、图标或兜底图片后，运行资源加载、绘图或打包相关检查。
-- 修改 WebUI 静态资源后，运行 `webui-frontend` 的 build/test/e2e 和 `./gradlew processResources` 检查。
+- 修改 WebUI 前端后，运行 `webui-frontend` 的 test/build；需要浏览器流程保证时再运行 e2e，并用 `./gradlew processResources` 检查静态产物进入 JVM 资源目录。
 - 修改 `logback.xml` 后，检查 Docker 和裸机日志路径、敏感信息屏蔽和错误日志策略。
 - 新增随包资源后，检查包体积、授权来源、路径大小写和代码加载入口。
 
