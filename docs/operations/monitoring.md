@@ -25,7 +25,9 @@ Logback 为主日志和错误日志配置 30 天滚动上限。`LogClearTasker` 
 
 除 worker 快照外，还要观察主 Job 状态、30 分钟恢复次数和熔断状态。任一核心 Tasker 进入熔断均按降级故障告警；`ProcessGuardian` 失败由根生命周期告警，不进入自恢复循环。
 
-交付监控应统计 `RETRY_WAIT`、重试年龄和 `PERMANENT_FAILURE`。永久失败表示联系人已耗尽 6 次或 24 小时预算，需要结合平台回执错误排查，不能通过清空旧动态历史掩盖。
+交付监控应按构建阶段与发送阶段分别统计 `BUILD_QUEUED`、`BUILD_RETRY_WAIT`、`READY`、`RETRY_WAIT`、最老记录年龄和 `PERMANENT_FAILURE`。`BUILD_QUEUED` 或 `READY` 持续超过 5 分钟表示对应 channel 租约已过期且重试任务未正常推进；`BUILD_RETRY_WAIT` 表示绘图、模板或构建入队失败，`RETRY_WAIT` 表示发送入队或平台发送失败。永久失败表示联系人已耗尽构建与发送共享的 6 次或 24 小时预算，需要结合 `lastError` 和同时间窗口日志排查，不能通过清空旧动态历史掩盖。
+
+`data/delivery-ledger.json` 是交付状态的权威持久化来源，`data/dynamic_history.txt` 只是最多 200 条的旧版本去重副本。当前守护快照没有直接导出各阶段计数时，应结合账本、`DeliveryRetryTasker` 健康状态和三条业务 channel 填充率判断，不得把“队列为空”单独解释为全部送达。
 
 监控内容：
 

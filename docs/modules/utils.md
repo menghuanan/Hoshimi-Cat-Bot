@@ -12,6 +12,8 @@ Utils 模块提供跨模块复用的轻量工具，包括联系人 subject、字
 - `src/main/kotlin/top/bilibili/utils/General.kt`
 - `src/main/kotlin/top/bilibili/utils/ImageCache.kt`
 - `src/main/kotlin/top/bilibili/utils/ImagePreprocessing.kt`
+- `src/main/kotlin/top/bilibili/utils/BoundedRemoteResourceDownloader.kt`
+- `src/main/kotlin/top/bilibili/utils/RemoteResourcePolicy.kt`
 - `src/main/kotlin/top/bilibili/utils/Json2DataClass.kt`
 - `src/main/kotlin/top/bilibili/utils/JsonUtils.kt`
 - `src/main/kotlin/top/bilibili/utils/translate/*`
@@ -21,6 +23,7 @@ Utils 模块提供跨模块复用的轻量工具，包括联系人 subject、字
 - 提供联系人 subject 与平台中立联系人之间的转换辅助。
 - 管理字体加载、段落缓存和图片缓存辅助能力。
 - 提供图片尺寸检测、预处理和降级链路辅助能力。
+- 统一远程资源的 URL、DNS、重定向、超时、并发和响应体安全边界。
 - 提供稳定的 JSON 配置和调试转换工具。
 - 封装少量独立外部工具调用。
 
@@ -41,6 +44,8 @@ Utils 模块提供跨模块复用的轻量工具，包括联系人 subject、字
 
 `FontUtils`、`ImageCache` 和图片预处理工具可能影响 native/heap 资源。新增缓存、全局 map 或外部客户端时，必须提供清理入口，并把清理入口接入对应 tasker、Skia 清理或 core 停机流程。
 
+`BoundedRemoteResourceDownloader` 是绘图与图片缓存共享的唯一远程下载入口，持有全局并发为 2 的闸门和禁止自动重定向的 OkHttp client。初始 URL、DNS 全部结果与每跳重定向都经 `RemoteResourcePolicy` 复检，响应最多 25 MiB、重定向最多 5 次。修改地址范围、上限、并发或超时时，必须同步检查 [`draw.md`](draw.md)、[`../operations/memory-tuning.md`](../operations/memory-tuning.md) 和 downloader/policy 回归测试；调用方不得自行创建另一套远程图片客户端。
+
 ## 配置与数据
 
 Utils 不拥有配置写入权。工具可以读取调用方传入的配置值，但不得自行决定迁移、保存或热重载策略。
@@ -50,6 +55,7 @@ Utils 不拥有配置写入权。工具可以读取调用方传入的配置值�
 - 修改联系人 subject、图片预处理、字体工具或 JSON 共享实例后，运行对应 utils、connector、draw 或 config 测试。
 - 新增缓存、全局状态或外部 IO 后，验证清理入口、超时和错误处理路径。
 - 修改热路径工具后，检查是否引入重复分配、隐藏业务依赖或未登记资源。
+- 修改远程下载策略后，运行 `RemoteResourcePolicyTest` 与 `BoundedRemoteResourceDownloaderTest`，覆盖 DNS rebinding、重定向复检、声明长度和分块实际读取超限。
 
 ## 查询 checklist
 

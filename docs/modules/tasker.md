@@ -60,6 +60,23 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 
 启动阶段由 `TaskBootstrapService` 按固定顺序创建 tasker，并通过 `startAndAwaitInitialization()` 等待每个 `init()` 明确成功；提交协程、初始化拒绝、异常或超时都不能被报告为整体启动成功。每个 tasker 启动前必须能从 `TaskResourcePolicyRegistry` 查到资源策略。长生命周期循环通过 `launchManagedWorker` 接入自愈和退避；停机时由 `ResourceSupervisor` 按资源分区回收，tasker 不能自行绕过分区顺序。
 
+### 联系人级交付状态机
+
+动态、开播和下播按“业务事件 × 联系人”写入 `data/delivery-ledger.json`。发现阶段必须同时持久化动态或直播详情，消息构建与平台发送使用两段独立、可过期的 channel 租约：
+
+| 阶段 | 含义 | 恢复入口 |
+| --- | --- | --- |
+| `DISCOVERED` | 已持久化业务事件和联系人，尚未取得构建租约 | 初次轮询或 `DeliveryRetryTasker` |
+| `BUILD_QUEUED` | 构建输入已进入 `dynamicChannel` 或 `liveChannel`，租约为 5 分钟 | 租约过期后重新进入构建重试 |
+| `BUILD_RETRY_WAIT` | 构建或构建入队失败，等待下次退避 | `DeliveryRetryTasker` 按原始详情回投构建链 |
+| `READY` | 完整 `BiliMessage` 已持久化并进入发送链，租约为 5 分钟 | 租约过期后重新进入发送重试 |
+| `RETRY_WAIT` | 平台发送或发送入队失败，等待下次退避 | `DeliveryRetryTasker` 按消息快照回投发送链 |
+| `DELIVERED` | `SendTasker` 收到平台成功结果 | 终态，不再重试 |
+| `PERMANENT_FAILURE` | 构建和发送共享的 6 次或 24 小时预算已耗尽 | 终态，需人工排查根因 |
+| `INVALID` | 业务输入确定性无效，不应继续尝试 | 终态，只隔离当前联系人记录 |
+
+前 5 次失败的重试退避依次为 30 秒、2 分钟、10 分钟、30 分钟和 2 小时，并带最多基础延迟 20% 的稳定正抖动；第 6 次失败直接进入 `PERMANENT_FAILURE`。进程重启时，持有过期构建或发送租约的记录会回到相应重试链；不得把 channel 入队、消息构建或写入旧 `dynamic_history.txt` 当作交付成功。旧动态历史只用于升级去重，同一动态的已发现联系人全部终态后才写回最多 200 条兼容历史。
+
 ## 生命周期规则
 
 - `BiliTasker.start()` 在停机阶段会拒绝启动。

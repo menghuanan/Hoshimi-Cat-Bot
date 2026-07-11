@@ -76,7 +76,14 @@ Draw 模块负责把 B 站动态、直播、视频、专栏、用户等业务模
 
 ## SSRF 防护边界
 
-绘图相关下载链当前在 `General.kt` 与 `ImageCache.kt` 都有 SSRF 拒绝逻辑。判断结果默认偏保守，解析异常按拒绝处理。
+绘图相关远程下载由 `BoundedRemoteResourceDownloader` 和 `RemoteResourcePolicy` 统一执行网络边界校验，`General.kt` 与 `ImageCache.kt` 只是调用入口。判断结果默认偏保守，解析或 DNS 校验异常按拒绝处理。
+
+共享下载契约包括：
+
+- 只接受无 userinfo 且带有效主机的 `http`/`https` URL。
+- 初始地址、DNS 返回的全部地址和最多 5 次重定向的每一跳都必须是公网目标；混合公网/私网 DNS 结果整体拒绝。
+- 单响应按声明长度和实际读取双重限制为 25 MiB，全局最多同时下载 2 个远程资源。
+- 连接、读取和整体调用均有超时；非成功 HTTP 响应、空响应体和超限响应按拒绝处理。
 
 当前拒绝范围：
 
@@ -93,7 +100,7 @@ Draw 模块负责把 B 站动态、直播、视频、专栏、用户等业务模
 额外约束：
 
 - 文件名落盘前会经过 `sanitizeFileName()`，去掉 `..`、路径分隔符和空字节，避免路径穿越。
-- 不要新增第三套图片下载 helper。只要绕过现有 helper，就等于绕过 SSRF 和文件名清洗。
+- 不要新增绕过 `BoundedRemoteResourceDownloader` 的图片下载 helper。只要绕过共享入口，就等于绕过 DNS/重定向复检、响应上限和并发闸门。
 
 ## 图片降级链路
 

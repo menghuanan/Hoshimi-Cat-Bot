@@ -38,7 +38,21 @@
 
 ### 消息持续重试或出现永久失败
 
-检查 `data/delivery-ledger.json`、平台发送错误和联系人范围。不要直接删除账本；`RETRY_WAIT` 会跨重启恢复，`PERMANENT_FAILURE` 表示已耗尽次数或时间预算。
+检查 `data/delivery-ledger.json` 中的阶段、`attempts`、`nextRetryAtEpochMillis`、`lastError`、联系人和业务 ID，再对照 `DeliveryRetryTasker`、构建 Tasker、`SendTasker` 与平台发送日志。不要直接删除或手工改写账本；构建和发送等待状态都会跨重启恢复，`PERMANENT_FAILURE` 表示共享次数或时间预算已耗尽。
+
+- 长时间停在 `BUILD_QUEUED`：检查 `dynamicChannel`/`liveChannel`、`DynamicMessageTasker`/`LiveMessageTasker` 和 5 分钟构建租约是否被 `DeliveryRetryTasker` 回收。
+- 反复进入 `BUILD_RETRY_WAIT`：检查远程图片拒绝、绘图/模板构建异常和原始 `dynamicDetail`/`liveDetail` 是否存在。
+- 长时间停在 `READY`：检查 `messageChannel`、`SendTasker` 健康和 5 分钟发送租约。
+- 反复进入 `RETRY_WAIT`：检查平台连接、联系人有效性、能力降级和平台发送返回值。
+- 进入 `PERMANENT_FAILURE`：保留账本和日志证据，修复根因；删除 `dynamic_history.txt` 不会恢复该联系人记录，删除账本反而可能造成重复推送。
+
+若账本来自仅包含第一版联系人交付实现的中间版本，重复轮询会为仍处于 `DISCOVERED` 且缺少构建输入的记录原位补齐恢复材料。确认升级到包含构建重试状态的版本后再判断记录是否不可恢复。
+
+### 远程图片被拒绝或退化为文本
+
+检查错误是否属于 URL scheme、userinfo、主机、DNS、公网地址、重定向次数、HTTP 状态或 25 MiB 响应上限。下载入口只允许 `http`/`https` 公网资源，DNS 任一结果落入回环、私网、链路本地、保留地址或 IPv4-mapped IPv6 非公网范围时整次拒绝；最多跟随 5 次重定向，每一跳都会重新校验。
+
+内网图床、NAS、宿主回环地址和超大图片不属于可恢复网络故障，不能通过重复重试解决。应把资源迁移到可信公网地址并压缩到限制以内；不要为单个模板新增绕过共享下载器的 helper，也不要在诊断包中上传未脱敏内网 URL。
 
 ### Tasker 进入熔断
 

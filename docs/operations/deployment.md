@@ -89,7 +89,7 @@ Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 L
 - 固定 `-Dfile.encoding=UTF-8`。
 - 固定 `-Duser.timezone=Asia/Shanghai`。
 - 可选启用 RSS watchdog。
-- 捕获 SIGTERM/SIGINT 并给 JVM 最多 8 秒优雅退出窗口。
+- 捕获 SIGTERM/SIGINT 并给 JVM 最多 100 秒优雅退出窗口，超时后发送 `SIGKILL`。
 
 RSS watchdog 只有在 `MEMORY_THRESHOLD_MB` 为正数时启用。
 

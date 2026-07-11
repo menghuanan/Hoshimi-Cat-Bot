@@ -136,9 +136,12 @@
 - `LoginService`
 - `StartupDataInitService`
 - `BiliCookie`
-- `BiliConfigManager.saveData()`
+- `LoginService.commitLoginConfigForGeneration()`
+- `BiliConfigManager.persistConfigSnapshot()` / `installConfigRuntimeSnapshot()`
 
 **原因**：Cookie 与 UID 影响所有后续 B 站 API 调用，错误保存会导致轮询、关注和链接解析同时失败。
+
+二维码登录使用单一 active generation；进入提交阶段后新的登录流程不得替换它，迟到代际也不得覆盖后来者。Cookie 必须先写入候选 `BiliConfig` 快照，持久化成功后一次安装运行态；失败时旧运行配置保持不变。Cookie 解析与冷/热重载采用完整替换，输入缺少 `SESSDATA` 或 `bili_jct` 时对应旧字段会被清空，不能依赖部分字符串保留历史凭据。
 
 ## 已知 quirks
 
