@@ -14,7 +14,9 @@ Draw 模块负责把 B 站动态、直播、视频、专栏、用户等业务模
 - `src/main/kotlin/top/bilibili/draw/LiveDraw.kt`
 - `src/main/kotlin/top/bilibili/draw/ContentDescLayout.kt`
 - `src/main/kotlin/top/bilibili/draw/FontManager.kt`
+- `src/main/kotlin/top/bilibili/draw/General.kt`
 - `src/main/kotlin/top/bilibili/draw/LoginQrCodeRenderer.kt`
+- `src/main/kotlin/top/bilibili/draw/QrCodeDraw.kt`
 - `src/main/kotlin/top/bilibili/utils/ImagePreprocessing.kt`
 - `src/main/kotlin/top/bilibili/utils/General.kt`
 - `src/main/kotlin/top/bilibili/utils/ImageCache.kt`
@@ -29,6 +31,8 @@ Draw 模块负责把 B 站动态、直播、视频、专栏、用户等业务模
 ## 关键流程
 
 业务层准备 data 模型和展示配置后进入 Draw 模块，Draw 通过 `SkiaManager.executeDrawing` 获取 `DrawingSession`，按动态类型选择主体渲染、下载或降级图片资源，最终输出可发送的图片路径或字节。新增渲染分支必须先确认动态类型、资源下载、降级和缓存键是否已有统一入口。
+
+`QrCodeDraw.kt` 保留 `loginQrCode`、`loginQrCodeBytes` 和 `qrCode` 兼容入口；当前登录热路径委托 `LoginQrCodeRenderer`。不要在兼容入口重新实现另一套二维码 native 生命周期。
 
 ## 图片下载与大图预处理
 
@@ -130,6 +134,8 @@ Draw 模块应在调用方提供的 `DrawingSession` 内创建资源。新增绘
 
 Draw 模块会触发图片下载、字体访问、Skia native 对象创建、缓存读写和临时文件输出，但长期资源归属 Skia、utils、cache tasker 或调用方。新增缓存、全局 map、临时文件或 native 对象必须明确清理入口，并避免绕过 `DrawingSession`。
 
+`createImageWithSession()`、`createImageWithArea()` 和 `DrawingSession.drawToImage()` 返回未追踪的 `Image`，调用方必须关闭或转交给仍存活的外层 session。完整所有权表见 [`../development/skiko-object-lifecycle.md#返回-image-的所有权转移-helper`](../development/skiko-object-lifecycle.md#返回-image-的所有权转移-helper)。
+
 ## 配置与数据
 
 Draw 读取图片质量、主题、缓存和展示相关配置，但不拥有配置写入权。新增展示字段必须优先落在 data/domain 文档，新增可配置项必须同步 config 文档并说明默认值、兼容旧配置和缺失降级。
@@ -137,6 +143,7 @@ Draw 读取图片质量、主题、缓存和展示相关配置，但不拥有配
 ## 测试与验证
 
 - 修改布局、字体、颜色、动态类型分支或图片降级后，运行对应 draw、service 或 snapshot 回归测试。
+- 修改动态附加卡片时，运行 `DynamicAdditionalCardRegressionTest`；已撤销且只剩空字段的预约卡片必须返回 `null`，不能绘制空白卡。
 - 修改图片下载、预处理阈值或缓存键后，运行 `ImagePreprocessPolicyTest`、`DrawCacheKeyNormalizationTest` 或相关缓存测试。
 - 新增 Skiko 对象后，检查 [`../development/skiko-object-lifecycle.md`](../development/skiko-object-lifecycle.md) 并运行相关 Skia 生命周期测试。
 
@@ -163,6 +170,7 @@ Draw 读取图片质量、主题、缓存和展示相关配置，但不拥有配
 - [ ] 图片输入是否仍走现有 URL 规范化、SSRF 防护和文件名清洗？
 - [ ] 大图预处理是否仍保持 `4000x3000` 双阈值与 `2800` 长边缩放上限？
 - [ ] 图片输入是否在 assemble/cache 后正确关闭？
+- [ ] 返回未追踪 `Image` 的 helper 是否在调用方显式关闭或转移所有权？
 - [ ] 字体资源是否仍由 `FontManager` 管理？
 - [ ] 是否影响模板 `{draw}` 或链接解析文本回退？
 - [ ] 是否运行 draw 相关测试，如 `ContentDescLayoutTest`、`PgcCardLayoutRegressionTest`、`LoginQrCodeBytesFeatureTest`？

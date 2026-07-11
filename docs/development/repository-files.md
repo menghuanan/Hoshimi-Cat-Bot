@@ -41,6 +41,8 @@
 
 `.env.example` 只能保存无敏感值的示例变量和安全默认值；真实运行配置仍归属 `config` 模块和部署文档。修改忽略规则或属性规则时，必须确认不会隐藏应提交的源码、文档、资源或测试 fixture。
 
+`.gitignore` 当前显式放行 `docs/AGENTS.md`、`docs/bugs.md`、`architecture`、`context`、`development`、`domain`、`modules`、`operations` 和 `release`。新增当前维护文档必须能被 Git 发现；`docs/plans`、`docs/规则` 与 `docs/过期文档` 仍保持忽略，不能把取消忽略当作改变其权威级别的捷径。
+
 ## 测试与验证
 
 - README 或示例命令变更后，至少检查命令、路径和版本描述是否与构建、部署文档一致。

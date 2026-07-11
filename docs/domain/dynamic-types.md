@@ -40,6 +40,12 @@ val type: DynamicType get() = try {
 
 **规则**：新增或未知动态类型必须平稳降级为 `DYNAMIC_TYPE_UNKNOWN`。不得让新类型导致整个动态列表解析失败。
 
+## 列表逐项容错
+
+`getNewDynamic()` 与 `getUserNewDynamic()` 使用 `decodeDynamicListSkippingInvalidItems()`。它先解码不含 items 的列表外层，再逐条解码 `DynamicItem`：单条字段异常只丢弃当前 item，保留同页其它动态和分页元数据；响应根对象或分页元数据异常仍按整体失败处理。
+
+跳过日志只记录稳定调试摘要，不输出完整原始 payload。修改该边界时运行 `DynamicListSafeDecodeTest`，并确认日志不会包含 Cookie 或大段用户内容。
+
 ## 轮询过滤规则
 
 `DynamicCheckTasker` 当前过滤：
@@ -99,6 +105,8 @@ PGC 路由规则：
 
 **核心约束**：动态渲染必须处于 `SkiaManager.executeDrawing` 会话内，不能让 `Image`、`Surface`、`Paragraph` 等 native 对象逃逸。
 
+预约附加卡片在撤销后可能只剩 `rid=0`、`state=-1` 和空字段。`DynamicModuleDraw` 会把这种空壳识别为无卡片并返回 `null`，避免生成空白附加图；正常预约、视频预约、直播预约和首映预告仍按现有标签绘制。
+
 ## 新增动态类型 checklist
 
 - [ ] 在 `DynamicType` 中增加枚举或确认继续走 `DYNAMIC_TYPE_UNKNOWN`。
@@ -107,4 +115,5 @@ PGC 路由规则：
 - [ ] 检查 `TemplateRenderService` 占位符是否足够表达新类型。
 - [ ] 检查绘图层是否需要新增 major/additional 模块。
 - [ ] 增加或更新解析/渲染/发送回归测试。
-
+- [ ] 是否保持单条坏 item 跳过、列表外层严格失败的两层容错？
+- [ ] 是否检查撤销预约等空壳附加卡片不会生成空白图？

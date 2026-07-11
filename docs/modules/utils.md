@@ -31,6 +31,8 @@ Utils 模块提供跨模块复用的轻量工具，包括联系人 subject、字
 - 禁止在 utils 中持有未登记的长期协程、网络客户端或 native 资源。原因：停机无法追踪。
 - 禁止在渲染热路径反复创建新的 `Json` 配置块。原因：会增加热路径分配和行为分歧。
 
+当前兼容例外：`General.kt` 的 `actionNotify()` 仍直接调用 capability service 和 message gateway。该入口不得作为新代码范例，也不得继续扩展；迁移债务见 [`../bugs.md#bug-008-utils-管理员通知跨越平台发送边界`](../bugs.md#bug-008-utils-管理员通知跨越平台发送边界)。
+
 ## 关键流程
 
 工具函数应由调用方决定业务语义。涉及联系人归一化时遵守 [`domain/platform-adapters.md`](../domain/platform-adapters.md)；涉及图片和字体时遵守 [`modules/draw.md`](draw.md) 与 [`modules/skia.md`](skia.md)；涉及 JSON 序列化时优先复用已有共享实例。

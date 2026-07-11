@@ -28,7 +28,7 @@
 - 使用 Vite 构建 React 应用，并把产物输出到 `src/main/resources/webui/react`。
 - 负责登录页、仪表盘页、设置页、订阅页和日志页的前端交互。
 - 用统一的 `requestJson`、CSRF 头和错误归一逻辑访问后端 API。
-- 维护本地主题、导航、确认弹窗和若干浏览器持久化状态。
+- 维护本地主题、导航、确认弹窗、全局 Toast 和若干浏览器持久化状态。
 - 组装设置、订阅和日志的页面级 payload，而不直接接触后端文件格式。
 - 通过 Vitest 和 Playwright 验证前端契约、页面行为和 bundled runtime。
 
@@ -39,10 +39,11 @@
 | 登录与改密 | `pages/LoginPage.tsx`、`api/auth.ts`、`types/auth.ts` | `/api/auth/*` | 登录结果只依赖 cookie-backed session，不把 bearer token 存入浏览器状态 |
 | 仪表盘 | `pages/DashboardPage.tsx`、`hooks/useRuntimeSummary.ts`、`types/runtime.ts` | `/api/runtime/summary` | 展示生命周期、账号、平台连接、推送统计、宿主 CPU/内存/磁盘和最近推送记录 |
 | 设置 | `pages/SettingsPage.tsx`、`settings/*`、`api/settings.ts` | `/api/config/*`、`/api/config/save-batch`、`/api/config/save-jobs/{jobId}` | schema 控制字段、分组、校验和 payload，保存需要确认密码并轮询热重载 job |
-| 订阅 | `pages/SubscriptionsPage.tsx`、`components/subscriptions/*`、`hooks/useSubscriptions.ts`、`subscriptions/*` | `/api/subscriptions*` | 支持动态、分组和番剧卡片，以及 targets、uids、filters、templates、atall、theme 子编辑器 |
-| 日志 | `pages/LogsPage.tsx`、`hooks/useLogs.ts`、`api/logs.ts`、`types/logs.ts` | `/api/logs/*` | sourceId 来自后端白名单，清空日志需要确认密码，自动刷新状态保存在 cookie |
+| 订阅 | `pages/SubscriptionsPage.tsx`、`components/subscriptions/*`、`hooks/useSubscriptions.ts`、`subscriptions/*` | `/api/subscriptions*` | `SubscriptionEditorModal` 统一承载 targets、uids、filters、templates、atall、theme 编辑；弹窗经 `ModalPortal` 挂到 body，避免被页面容器裁剪 |
+| 日志 | `pages/LogsPage.tsx`、`hooks/useLogs.ts`、`api/logs.ts`、`types/logs.ts` | `/api/logs/*` | sourceId 来自后端白名单；当前“清空”只清空 React 窗口，未调用已有服务端 clear helper；“导出”由 hook 下载当前过滤结果，没有服务端 export helper |
 | 页面壳与导航 | `components/Shell.tsx`、`router/webuiRouter.ts`、`contexts/WebUiNavigationContext.tsx` | Ktor 静态路由 | `/login` 是独立路径，其他页面可 hash 切换并支持直接刷新 |
 | 高风险确认 | `contexts/ConfirmationContext.tsx`、`hooks/useHighRiskConfirmation.ts` | 所有写操作 DTO 的 `confirmationPassword` | 确认弹窗是前端交互壳，真正授权只以后端当前密码校验为准 |
+| 全局反馈 | `contexts/ToastContext.tsx`、`hooks/useToast.ts` | 设置、订阅等已迁移写操作与保存 job 结果 | 已迁移流程优先进入 Toast；登录、账户操作和订阅编辑器内部状态仍保留局部反馈，迁移前不要假设所有页面只有一套消息状态 |
 
 ## 请求与 payload 契约
 
@@ -53,6 +54,8 @@
 - `subscriptions/subscriptionPayloads.ts` 是订阅写操作 payload 来源；新增订阅子编辑器时必须同步 hook、payload、类型和后端 DTO。
 - `utils/errorMessages.ts` 负责把 HTTP、英文异常和密码策略错误归一成可见文案；页面不应直接展示原始 exception 对象。
 - `utils/storage.ts` 只读取前端所需 cookie，例如 CSRF token；不能尝试读取 HttpOnly session cookie。
+- `ModalPortal` 当前负责把订阅创建和编辑弹窗挂到 `document.body`；高风险确认仍由 `ConfirmationContext` 内联渲染。新增或迁移 modal 时必须保持 Escape、焦点和遮罩层级测试。
+- `api/logs.ts` 提供服务端 clear helper，但当前 `LogsPage` 未接线；导出逻辑由 `useLogs.ts` 在浏览器内生成 Blob。修改按钮语义前必须同步后端高风险确认、审计和 E2E 契约。
 
 ## 日常开发入口
 
@@ -62,7 +65,7 @@
 ## 关键流程
 
 1. `src/main.tsx` 只挂载 React 根节点并引入全局样式。
-2. `App.tsx` 通过导航和确认上下文分发到 `LoginPage`、`DashboardPage`、`SettingsPage`、`SubscriptionsPage` 和 `LogsPage`。
+2. `App.tsx` 通过导航、确认和 Toast 上下文分发到 `LoginPage`、`DashboardPage`、`SettingsPage`、`SubscriptionsPage` 和 `LogsPage`。
 3. 页面通过 `src/hooks/*` 读取运行态、订阅、日志和设置数据，再调用 `src/api/*` 发起 JSON 请求。
 4. `src/api/http.ts` 统一附带 Accept、CSRF 和 JSON 头，并在认证失效时跳回登录页。
 5. `src/router/webuiRouter.ts` 只用路径与 hash 处理页面切换，避免引入更重的前端路由库；`/login` 保持独立路径，`/`、`/settings`、`/subscriptions` 和 `/logs` 可以直接刷新直达，壳内跳转则只改 hash。
@@ -91,6 +94,8 @@
 - `cd webui-frontend; npm run test:e2e`
 - `cd webui-frontend; npm run build`
 - `cd webui-frontend; npm run preview`
+
+修改 Toast、Portal 或订阅编辑器时，至少运行 `npm run test` 和 `npm run build`；直接交互主要由 `App.test.tsx` 等单测覆盖。若变更影响打包后路由、静态资源或浏览器流程，再补跑 `npm run test:e2e`，不要把 bundled runtime 场景当作所有交互的直接覆盖。
 
 ## 禁止事项
 

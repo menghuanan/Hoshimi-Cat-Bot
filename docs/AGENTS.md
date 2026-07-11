@@ -21,6 +21,7 @@
 - [ ] 变更是否跨越平台适配边界？必读 [`architecture/layer-contracts.md`](architecture/layer-contracts.md) 和 [`domain/platform-adapters.md`](domain/platform-adapters.md)。
 - [ ] 变更是否新增或修改 Tasker？必读 [`modules/tasker.md`](modules/tasker.md)，并检查 `TaskResourcePolicyRegistry` 覆盖。
 - [ ] 变更是否影响部署、JVM 参数、Docker 或内存策略？必读 [`operations/deployment.md`](operations/deployment.md) 和 [`operations/memory-tuning.md`](operations/memory-tuning.md)。
+- [ ] 是否正在调查启动失败、消息不推送、平台断连、队列背压、内存或 WebUI 故障？必读 [`operations/troubleshooting.md`](operations/troubleshooting.md)。
 - [ ] 是否需要更新 [`context/current-state.md`](context/current-state.md) 或 [`context/known-issues.md`](context/known-issues.md)？
 
 ## 项目核心约束摘要
@@ -72,9 +73,12 @@
 | Utils | `utils/*` | [`modules/utils.md`](modules/utils.md) | [`modules/draw.md`](modules/draw.md)、[`modules/connector.md`](modules/connector.md)、[`development/coding-standards.md`](development/coding-standards.md) |
 | Resources | `src/main/resources/*` | [`modules/resources.md`](modules/resources.md) | [`modules/draw.md`](modules/draw.md)、[`modules/skia.md`](modules/skia.md) |
 | Tests | `src/test/*` | [`development/testing-strategy.md`](development/testing-strategy.md) | 根目录 `AGENTS.md`、[`development/red-lines.md`](development/red-lines.md) |
-| Build/CI/Release | Gradle、Docker、`.github/workflows/*` | [`development/build-ci-release.md`](development/build-ci-release.md) | [`operations/deployment.md`](operations/deployment.md)、[`operations/memory-tuning.md`](operations/memory-tuning.md) |
+| Build/CI/Release | Gradle、`gradle/wrapper/*`、Docker、`.github/workflows/*` | [`development/build-ci-release.md`](development/build-ci-release.md) | [`operations/deployment.md`](operations/deployment.md)、[`operations/memory-tuning.md`](operations/memory-tuning.md) |
+| 运行故障排查 | 启动、日志、Tasker、平台、队列、Skia、RSS、WebUI | [`operations/troubleshooting.md`](operations/troubleshooting.md) | [`operations/monitoring.md`](operations/monitoring.md)、[`operations/incident-log.md`](operations/incident-log.md)、[`context/known-issues.md`](context/known-issues.md) |
+| 术语与上下文 | 跨模块术语、运行状态、已知问题 | [`context/glossary.md`](context/glossary.md) | [`context/current-state.md`](context/current-state.md)、[`context/known-issues.md`](context/known-issues.md) |
+| 仓库执行规范 | 根目录 `AGENTS.md` | 根目录 `AGENTS.md` | [`development/documentation-maintenance.md`](development/documentation-maintenance.md) |
 | 仓库根目录文件 | `README*`、`LICENSE`、`.editorconfig`、`.gitattributes`、`.gitignore`、`.env.example`、`.dockerignore` | [`development/repository-files.md`](development/repository-files.md) | [`development/documentation-maintenance.md`](development/documentation-maintenance.md)、[`development/build-ci-release.md`](development/build-ci-release.md) |
-| Docs 维护 | `docs/*` | [`development/documentation-maintenance.md`](development/documentation-maintenance.md) | 根目录 `AGENTS.md`、本文档 |
+| Docs 维护 | `docs/*` | [`development/documentation-maintenance.md`](development/documentation-maintenance.md) | 根目录 `AGENTS.md`、本文档、[`modules/_template.md`](modules/_template.md) |
 
 ## 推荐阅读顺序
 
@@ -87,13 +91,15 @@
 7. 与任务相关的 [`domain/`](domain/) 或 [`operations/`](operations/) 文档
 8. [`context/current-state.md`](context/current-state.md) 与 [`context/known-issues.md`](context/known-issues.md)
 
+调查运行故障时，在读取模块文档后直接进入 [`operations/troubleshooting.md`](operations/troubleshooting.md)，再按症状读取监控、部署或内存文档。
+
 ## 当前迭代焦点
 
 见 [`context/current-state.md`](context/current-state.md)。
 
-## 当前文档补齐状态
+## 长期文档覆盖图
 
-本轮文档体系按当前代码入口补齐时，长期维护文档的覆盖边界如下：
+长期维护文档按当前代码入口划分如下。迭代进度只在 [`context/current-state.md`](context/current-state.md) 维护，避免入口页复制一次性状态。
 
 | 子系统 | 当前代码入口 | 长期维护文档 | 补齐重点 |
 | --- | --- | --- | --- |
@@ -104,4 +110,4 @@
 | 资源与绘图 | `draw/*`、`skia/*`、`src/main/resources/*` | `modules/draw.md`、`modules/skia.md`、`modules/resources.md` | DrawingSession、图片降级、字体/图标/静态产物和 native 生命周期 |
 | 后台任务 | `tasker/*`、`TaskBootstrapService`、`TaskResourcePolicyRegistry` | `modules/tasker.md`、`architecture/invariants.md`、`operations/monitoring.md` | 启动顺序、worker 自愈、队列容量、推送统计、清理和守护 |
 
-`docs/plans/`、`docs/release/`、`docs/规则/` 和 `docs/过期文档/` 中已有内容本轮不作为当前规则改写来源；若需要追溯历史，只能回到当前维护文档确认是否已经落地。
+`docs/plans/`、`docs/release/`、`docs/规则/` 和 `docs/过期文档/` 不作为当前规则改写来源；若需要追溯历史，只能回到当前维护文档确认是否已经落地。

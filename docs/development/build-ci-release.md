@@ -11,6 +11,8 @@
 - `gradle.properties`
 - `gradlew`
 - `gradlew.bat`
+- `gradle/wrapper/gradle-wrapper.jar`
+- `gradle/wrapper/gradle-wrapper.properties`
 - `Dockerfile`
 - `docker-compose.yml`
 - `docker-entrypoint.sh`
@@ -40,6 +42,7 @@
 - 新增 Gradle task 必须有清晰输入、输出和是否参与 CI/Release 的说明。
 - 变更 `gradle.properties` 时必须确认 JVM 参数是否只影响构建期，还是也影响运行期。
 - `webui-frontend` 是独立 Node/Vite 工程；`npm run build` 会把 React 静态产物输出到 `src/main/resources/webui/react`，随后再由 Gradle `processResources` 打入后端发行包。
+- `processResources` 依赖前端构建；干净 checkout 中 Gradle 会先执行 npm 依赖安装，再执行 Vite build。不要假设已有 `node_modules` 或旧静态产物可替代这条链路。
 - 前端依赖、TypeScript、Tailwind、Vite 或 Playwright 升级时，必须同时验证 `npm run lint`、`npm run test`、`npm run build` 和 `npm run test:e2e` 的影响。
 
 ## CI 约束
@@ -47,12 +50,15 @@
 - CI workflow 必须保持可重复执行，不依赖本地未提交文件。
 - 新增缓存必须有 key 失效策略，不能缓存 secrets 或临时诊断输出。
 - 新增矩阵维度必须说明覆盖目的，避免无意义拉长反馈时间。
+- 当前 CI 的 `Check WebUI Frontend` 阶段直接运行 npm 依赖安装、lint 和 Vitest，不直接运行 Vite build 或 Playwright E2E。后续 Gradle `test` 与 `shadowJar` 链路会通过 `processResources` 触发 Vite build；修改 bundled runtime 页面流时必须在本地或专项任务补跑 `npm run test:e2e`。
 
 ## Docker 与发布约束
 
 - Dockerfile 和 entrypoint 变更必须同步核对 `JAVA_TOOL_OPTIONS`、jemalloc、NMT、Skia 软件渲染和平台库依赖。
 - `docker-compose.yml` 变更必须考虑已有用户的 volume、环境变量和升级兼容。
 - 发布 workflow 变更必须同步核对 release notes、tag 命名和产物命名。
+- 发布 workflow 只接受 `v*` tag；版本号带连字符时标记为 prerelease，只有正式版推送 Docker `latest`。
+- Docker 发布当前只构建 `linux/amd64`；新增架构前必须验证 Skiko、jlink runtime、jemalloc 路径和原生依赖。
 - 裸机发布包若内置 `jlink` runtime，Windows/Linux 必须分别在对应平台 runner 上打包，再聚合到 GitHub Release。
 - Windows 本地需要交叉产出 Linux 裸机包时，必须通过 `linuxJdkHome` 或 `LINUX_JDK_HOME` 显式提供 Linux x64 JDK 17，并确保 tar 中保留 Linux runtime 与 `start.sh` 的可执行权限。
 - 若发布产物包含 WebUI 静态资源，必须确认 `src/main/resources/webui/react/index.html` 和 `assets/app.js`、`assets/app.css` 来自当前前端构建，而不是手工编辑或旧产物残留。

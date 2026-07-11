@@ -17,7 +17,7 @@ Bootstrap 模块负责进程启动、运行目录初始化、Skiko 初始化、�
 - 初始化 Skiko、配置目录、日志和必要运行目录。
 - 创建并启动 `BiliBiliBot`。
 - 注册 shutdown hook 并触发有序停机。
-- 把启动阶段异常明确暴露到日志和进程退出状态。
+- 把启动阶段异常明确写入日志并维护生命周期状态；当前并非所有失败都会转换为非零进程退出状态。
 
 ## 禁止事项
 
@@ -30,12 +30,14 @@ Bootstrap 模块负责进程启动、运行目录初始化、Skiko 初始化、�
 
 启动链路按以下顺序理解：
 
-1. 准备运行目录和基础环境。
-2. 初始化 Skiko 与绘图相关 native 环境。
-3. 加载配置和数据。
-4. 装配 `BiliBiliBot`、connector、service、tasker 和 channel。
-5. 注册停机 hook。
-6. 启动平台连接和后台任务。
+1. `Main.main()` 初始化 Skiko 与绘图相关 native 环境。
+2. 解析命令行参数并注册 shutdown hook。
+3. `BiliBiliBot.start()` 加载主配置，再准备运行目录并加载 `bot.yml`。
+4. 按配置启动可选 WebUI，装配 connector、message gateway 和事件收集器。
+5. 启动平台连接并注册 `ResourceSupervisor` 分区。
+6. 延迟初始化业务数据，再按固定顺序启动 Tasker 和运行期预热。
+
+`BiliBiliBot.start()` 当前会捕获部分启动失败并返回，`Main.main()` 仍无条件等待当前线程。维护者不能只用 PID 判断启动成功，必须检查生命周期与“Bot 启动成功”日志；该缺口见 [`../context/known-issues.md#ki-003-启动失败可能不会结束进程`](../context/known-issues.md#ki-003-启动失败可能不会结束进程)。
 
 修改启动流程时必须同步核对 [`modules/core.md`](core.md)、[`modules/config.md`](config.md)、[`modules/connector.md`](connector.md)、[`modules/tasker.md`](tasker.md) 和 [`operations/deployment.md`](../operations/deployment.md)。
 
@@ -52,6 +54,7 @@ Bootstrap 可以触发配置加载，但不得绕过 `BiliConfigManager`、`Conf
 - 修改启动顺序、初始化入口或装配依赖后，运行启动、配置初始化和平台装配相关测试。
 - 修改 Docker、JVM 参数或资源初始化路径后，同步检查 [`../operations/deployment.md`](../operations/deployment.md) 与 [`../development/build-ci-release.md`](../development/build-ci-release.md)。
 - 新增启动逻辑后，验证它不会绕过 config、connector、core 或 tasker 的生命周期入口。
+- 修改启动失败处理后，验证主配置失败、平台配置无效和 connector 启动异常都会产生明确进程状态。
 
 ## 查询 checklist
 

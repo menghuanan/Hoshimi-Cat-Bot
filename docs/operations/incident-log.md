@@ -1,10 +1,11 @@
-# 故障记录与根因
+# 运行风险与故障记录
 
-本文件记录已确认的故障案例、根因和处理约束。不要把猜测写成已发生事故；未确认项应放到 [`../bugs.md`](../bugs.md) 或 [`../context/known-issues.md`](../context/known-issues.md)。
+本文件保留已确认的运行风险、历史故障和对应防复发约束。每条必须标明类型；不要把推测写成事故，仍开放的问题应放到 [`../context/known-issues.md`](../context/known-issues.md)。
 
 ## INC-001: Skia native 资源长期运行风险
 
 **状态**：已形成架构约束  
+**类型**：已确认运行风险
 **范围**：Skia 绘图、字体、图片缓存  
 
 **现象**：Skiko `Managed` 对象包装 native 资源，JVM heap 指标无法完整反映 native 内存压力。
@@ -15,14 +16,15 @@
 
 - 绘图统一进入 `SkiaManager.executeDrawing`。
 - 单次绘图使用 `DrawingSession` 追踪资源。
-- `SkiaCleanupTasker` 周期和阈值清理 Skia/图片/段落缓存。
-- Docker 和裸机默认启用软件渲染与 jemalloc。
+- `SkiaCleanupTasker` 在空闲或周期条件下执行普通清理，在当前 JVM heap 比例达到临界阈值时执行紧急清理；该阈值不是 Skia native 指标。
+- Docker、Windows 和 Linux 裸机默认使用软件渲染；Docker 强制启用 jemalloc，Linux 裸机要求 jemalloc 可用，Windows 不使用 jemalloc。
 
 **防复发文档**：[`../architecture/decisions/adr-002-skia-lifecycle.md`](../architecture/decisions/adr-002-skia-lifecycle.md)
 
 ## INC-002: 平台 adapter 边界迁移风险
 
 **状态**：已形成架构约束  
+**类型**：已确认架构风险
 **范围**：OneBot11/NapCat/LlBot/QQ 官方平台  
 
 **现象**：多平台适配过程中，如果业务层直接依赖 vendor 类型，会导致平台替换困难。
@@ -40,6 +42,7 @@
 ## INC-003: 长时间静默场景 heap committed 高水位
 
 **状态**：已通过启动参数缓解  
+**类型**：已确认运行风险
 **范围**：Docker 与平台发行包启动参数  
 
 **现象**：长时间静默后，JVM committed heap 可能保持高位。
@@ -52,4 +55,3 @@
 - 保持 `-Xms64m -Xmx160m` 默认策略。
 
 **防复发文档**：[`memory-tuning.md`](memory-tuning.md)
-

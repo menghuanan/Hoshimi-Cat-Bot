@@ -39,6 +39,8 @@ API 模块定义 B 站接口常量和 `BiliClient` 扩展函数，负责把业�
 
 API 调用由 service 或 tasker 发起，经 `BiliClient` 发送请求，再由本模块把响应解码为 `data` 模型。新增接口必须先确认 B 站返回结构、错误码和重试语义，再决定是否需要更新 [`../domain/bilibili-api.md`](../domain/bilibili-api.md)。
 
+动态列表是当前特殊解码入口：外层分页结构保持严格，`items` 按条容错并记录脱敏摘要。不要把通用 `decode()` 全部替换为逐项吞错，也不要在 tasker 再复制一套坏 item 过滤。
+
 ## 资源与生命周期
 
 API 模块不持有长期网络客户端、协程、缓存或文件句柄。网络连接生命周期归属 `BiliClient`；新增临时资源必须在调用作用域内关闭，不能把资源泄漏给调用方隐式管理。
@@ -52,6 +54,7 @@ API 模块只读取调用方传入的 cookie、参数和 `BiliClient` 配置结�
 - 修改 API 参数或响应模型后，运行对应 API decode、client trace 或 service/tasker 调用测试。
 - 新增接口后，至少验证 `ApiRequestTrace`、错误响应和可重试异常路径。
 - 涉及领域语义变化时，同步检查 [`../domain/bilibili-api.md`](../domain/bilibili-api.md)。
+- 修改动态列表解码时，运行 `DynamicListSafeDecodeTest` 和 `DynamicListDecodeTest`。
 
 ## 查询 checklist
 

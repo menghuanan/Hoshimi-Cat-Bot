@@ -29,7 +29,7 @@ Skiko 的 `Managed` 对象包装 native Skia 资源。JVM heap 指标不能完�
 - `DrawingSession.close()` 逆序关闭已追踪资源，并清空资源列表。
 - Skiko 对象级 close/cache/no-close 分类以 [`../../development/skiko-object-lifecycle.md`](../../development/skiko-object-lifecycle.md) 为当前维护细则；新增对象必须先纳入该细则，再决定是否扩展 `DrawingSession`。
 - `FontManager` 管理全局字体资源，随 `SkiaManager.shutdown()` 关闭。
-- `SkiaCleanupTasker` 在空闲、周期或内存阈值触发时调用 `performCleanup()` 或 `performEmergencyCleanup()`。
+- `SkiaCleanupTasker` 在空闲或周期条件下调用 `performCleanup()`，在临界内存阈值下调用 `performEmergencyCleanup()`；警告阈值只记录日志。
 - 清理会重置 `FontUtils` paragraph cache、调用 `Graphics.purgeResourceCache()` 或 `Graphics.purgeAllCaches()`，并触发多轮 GC/finalization。
 
 ## 已知权衡
@@ -37,6 +37,7 @@ Skiko 的 `Managed` 对象包装 native Skia 资源。JVM heap 指标不能完�
 - 绘图代码需要传递 `DrawingSession`，比直接创建 Skia 对象更啰嗦。
 - 部分全局资源如字体由 `FontManager` 持有，必须保持全局生命周期和 shutdown 顺序一致。
 - `SkiaConfig` 中存在 worker process 预留配置；worker process 为预留/未实现能力，当前仅支持 in-process。
+- 当前 `SkiaManager` 只在等待 active 绘图时持有清理闸门，实际 cache purge 发生在闸门释放之后；该已知差距记录在 [`../../context/known-issues.md`](../../context/known-issues.md)。
 
 ## 若要修改此决策
 

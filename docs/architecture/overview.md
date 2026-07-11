@@ -127,6 +127,6 @@ WebUI Dashboard 通过 `WebUiRuntimeFacade` 读取同一批公开快照，并额
 
 ## 架构风险
 
-- Skia worker process 为预留/未实现能力，当前仅支持 in-process。见 [`../bugs.md`](../bugs.md)。
+- Skia worker process 为预留/未实现能力，当前仅支持 in-process。工程偏差见 [`../bugs.md#bug-001-skia-worker-process-配置与实际实现不一致`](../bugs.md#bug-001-skia-worker-process-配置与实际实现不一致)，运行影响见 [`../context/known-issues.md#ki-001-skia-worker-process-配置尚未落地`](../context/known-issues.md#ki-001-skia-worker-process-配置尚未落地)。
 - 平台迁移仍保留部分 deprecated Long 群号/私聊入口，新逻辑应优先使用 `PlatformContact`。
 - 主配置与平台配置双 manager 并存，修改配置相关逻辑时必须明确文件归属。

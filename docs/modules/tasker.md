@@ -18,7 +18,7 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 - 用 `TaskBootstrapService` 固定启动顺序。
 - 用 `TaskResourcePolicyRegistry` 强制新增任务声明资源策略。
 - 用 `launchManagedWorker` 管理长生命周期子循环并支持自愈。
-- 用 `ProcessGuardian` 监控任务健康、内存、平台连接、channel 背压和资源快照。
+- 用 `ProcessGuardian` 监控任务健康、内存、平台连接、平台入站/出站 pressure 和资源快照。
 
 ## 当前启动顺序
 
@@ -40,7 +40,7 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 
 | Tasker | 类型 | 主要职责 | 关键资源 |
 | --- | --- | --- | --- |
-| `ListenerTasker` | 长生命周期 worker | 消费平台入站消息并交给 service 分发 | 平台入口、`messageChannel` |
+| `ListenerTasker` | 长生命周期 worker | 独立消费平台 `eventFlow`，对群消息执行统一链接匹配、策略判断和响应 | 平台入口、链接解析 service |
 | `DynamicCheckTasker` | 周期轮询 | 检查动态更新，支持手动 `/check` | 共享 `BiliClient`、`dynamicChannel` |
 | `LiveCheckTasker` | 周期轮询 | 检查开播状态 | 共享 `BiliClient`、`liveChannel` |
 | `LiveCloseCheckTasker` | 周期轮询 | 检查下播状态 | 共享 `BiliClient`、`liveChannel` |
@@ -51,6 +51,8 @@ Tasker 模块负责所有后台常驻任务，包括平台消息监听、B 站�
 | `LogClearTasker` | 周期维护 | 清理日志文件 | `logs/*` |
 | `SkiaCleanupTasker` | 周期维护 | 触发 Skia 普通或紧急清理 | `SkiaManager`、Skia native cache |
 | `ProcessGuardian` | 周期守护 | 汇总健康、资源、平台、NMT/RSS、channel 和 tasker 自愈 | 管理/观测快照，不直接替代资源 owner |
+
+命令和快捷消息由 `BiliBiliBot.eventCollectorJob` 消费同一稳定 `eventFlow`，再交给 `MessageEventDispatchService`；不要把这条分发链误写成 `ListenerTasker` 消费 `messageChannel`。`PushStatistics` 是进程内有界辅助状态，维护当日推送计数和最近 4 条记录，不是独立 Tasker，也不需要单独停机分区。
 
 ## 关键流程
 
@@ -94,6 +96,8 @@ Tasker 拥有后台协程、轮询循环、channel 消费者、发送队列、�
 - `messageChannel`：容量 20。
 
 `SendTasker` 内部还有容量 100 的发送队列。新增生产者必须考虑这些容量限制和停机退出路径。
+
+当前 `ProcessGuardian` 不读取这四个本地队列的填充度；实时背压告警只来自平台 runtime status 的 inbound/outbound pressure 与 dropped 计数。本地容量只用于内存估算，观测缺口见 [`../context/known-issues.md#ki-005-本地队列与-skia-native-压力存在观测盲区`](../context/known-issues.md#ki-005-本地队列与-skia-native-压力存在观测盲区)。
 
 ## 配置与数据
 

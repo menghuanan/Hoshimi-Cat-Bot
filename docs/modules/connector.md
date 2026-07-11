@@ -44,7 +44,7 @@ Connector 模块把平台 vendor 协议转换为项目平台中立模型，并�
 
 ## 运行态观测
 
-- `PlatformRuntimeStatus` 只描述连接是否可用和重连次数，供 Dashboard、ProcessGuardian 和业务 guard 使用。
+- `PlatformRuntimeStatus` 描述连接、重连次数、inbound/outbound pressure 和 dropped 计数，供 Dashboard、ProcessGuardian 与热重载 readiness 使用；能力 guard 读取 adapter 声明能力，不依赖该快照。
 - `PlatformObservabilitySnapshot` 聚合 adapter、transport、WebSocket session、HTTP client、dispatcher 和 note；实现层需要清洗或避免暴露 token、header、完整 URL 中的敏感参数。
 - 新增 transport 或 vendor client 时，必须提供 `runtimeObservability()`，即使当前只能返回 `PlatformObservabilitySnapshot.empty(note)`，也要说明不可观测原因。
 - 停机后 `PlatformConnectorManager.currentAdapter()` 不得隐式创建新实例；发送失败应表现为平台未初始化或不可用，而不是重新拉起连接。
@@ -65,6 +65,8 @@ WebUI 保存 `bot.yml` 平台配置时，connector 热切换必须走 manager-ow
 ## 关键流程
 
 启动层调用 `PlatformConnectorManager.initialize()` 选择平台并创建 adapter，随后由 `start()` 建立底层连接；入站消息转换为 `PlatformInboundMessage` 后交给 service，出站消息由 gateway 和 capability service 转为 vendor 请求；停机时统一走 `stop()`，不得由业务层直接关闭 vendor client。
+
+QQ 官方 adapter 在 connector 内执行轻量入站门禁：只放行精确 `/login` 和命中 B 站链接候选预筛的文本；群聊 `/login` 必须来自 AT 事件，私聊可直接使用。其他斜杠命令和普通文本不会进入业务链。链接候选通过门禁后，真正解析、去重、冷却和用户频率限制仍由 service 层统一处理，connector 不得反向依赖 `ResolveLinkService`。
 
 ## 资源与生命周期
 

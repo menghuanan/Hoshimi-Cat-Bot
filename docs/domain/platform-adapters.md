@@ -101,8 +101,11 @@
 **行为差异**：
 
 - 网关 identify 同时请求公域消息与群成员事件 intent，用于接收 `GROUP_MESSAGE_CREATE`、`GROUP_AT_MESSAGE_CREATE`、`C2C_MESSAGE_CREATE`、群成员变更和主动消息接收/拒收等开发平台已订阅事件。
-- `GROUP_MESSAGE_CREATE`、`GROUP_AT_MESSAGE_CREATE` 和 `C2C_MESSAGE_CREATE` 会归一化为 `PlatformInboundMessage` 并进入命令/监听链；群成员、主动消息状态和订阅消息授权状态事件只更新运行态或日志，不会伪装成用户消息。
+- `GROUP_MESSAGE_CREATE`、`GROUP_AT_MESSAGE_CREATE` 和 `C2C_MESSAGE_CREATE` 会先归一化为 `PlatformInboundMessage`，通过下述入站门禁后才进入命令/监听链；群成员、主动消息状态和订阅消息授权状态事件只更新运行态或日志，不会伪装成用户消息。
 - 群 AT 消息正文开头指向机器人的 `<@...>` 标记会在 connector 内剥离后交给命令链；原始正文仍保留在 `searchTexts`，避免影响链接解析。
+- 入站门禁只放行精确 `/login` 和命中 B 站链接候选预筛的文本；群聊 `/login` 必须来自 AT 事件，私聊可直接使用。其他斜杠命令和普通文本不会进入业务链。
+- 表情占位文本和 attachments URL 不作为用户显式输入的链接搜索词；真正的链接解析、去重、冷却和用户频率限制仍由 service 层执行。
+- 远程 HTTP/HTTPS 图片可直接上传；本地文件与二进制图片会转换为官方 `file_data`。群富媒体请求即使没有正文也会发送平台要求的非空 content 占位。
 - 回复消息使用官方 `msg_id` 与按消息递增的 `msg_seq`，避免同一消息多次回复时重复使用序号 1。
 
 **约束**：不要把 QQ 官方平台适配成 Long 群号模型；必须使用 `PlatformContact`。

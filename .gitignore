@@ -153,9 +153,24 @@ webui-frontend/dist/
 webui-frontend/test-results/
 
 # Exclude docs markdown files, keep only images
+# Current maintenance docs stay trackable; plans, supplemental rules, and archives remain ignored.
 AGENTS.md
 docs/**
 !docs/
+!docs/AGENTS.md
+!docs/bugs.md
+!docs/architecture/
+!docs/architecture/**
+!docs/context/
+!docs/context/**
+!docs/development/
+!docs/development/**
+!docs/domain/
+!docs/domain/**
+!docs/modules/
+!docs/modules/**
+!docs/operations/
+!docs/operations/**
 !docs/release/
 !docs/release/**
 !docs/dynamic.png

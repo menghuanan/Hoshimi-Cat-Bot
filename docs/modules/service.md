@@ -95,14 +95,15 @@ Service 模块是业务编排层，负责命令、订阅、模板、链接解析
 | `template` | `tpl` | 超级管理员、本群普通管理员 | 超级管理员 | 子命令别名：`list/ls`、`preview/pv`、`del/delete/rm`、`explain/exp` |
 | `atall` | `aa` | 超级管理员、本群普通管理员 | 超级管理员 | 子命令别名：`add/set`、`del/remove/rm`、`list/ls`；实际写入仅群聊有意义 |
 | `config` | `cfg` | 超级管理员、本群普通管理员 | 超级管理员 | `config color` 仅超级管理员允许，普通 `config [uid]` 可由群管理员查看 |
-| `admin` | 无 | 仅超级管理员 | 仅超级管理员 | 子命令别名：`remove/rm`、`list/ls`；`add/remove/list` 仅群聊可执行 |
+| `admin` | 无 | 仅超级管理员 | 仅超级管理员 | 子命令别名：`remove/rm`、`list/ls`；`add/remove/list` 仅群聊可执行，`all` 可在群聊或私聊查询全部普通管理员 |
 | `blacklist` | `bl` | 仅超级管理员 | 仅超级管理员 | 子命令别名：`remove/rm/del`、`list/ls` |
 | `help` | 无 | 超级管理员、本群普通管理员 | 超级管理员 | 帮助内容会按权限返回不同版本 |
 
 ### 权限边界约束
 
 - 超级管理员判断统一走 `CommandPermission.isSuperAdmin(senderContact)`，数据来源是规范化后的管理员 subject。
-- 群普通管理员判断统一走 `CommandPermission.isGroupAdmin(groupContact, senderContact)`，只对当前群生效，不得复用到跨群写操作。
+- 群普通管理员判断统一走 `CommandPermission.isGroupAdmin(groupContact, senderContact)`，长期约束是只对当前群生效，不得复用到跨群写操作。
+- 当前 `template ... group <分组名>` 只校验发送者是当前群管理员、目标分组存在且订阅了 UID，没有校验当前群属于目标分组；这是已知权限缺口，不得据此扩展其他跨群写入口。见 [`../context/known-issues.md#ki-007-群管理员可修改任意已有分组的模板策略`](../context/known-issues.md#ki-007-群管理员可修改任意已有分组的模板策略)。
 - `/bili` 的“可路由”不等于“可完整执行”。例如群管理员可以进入 `config`、`list`、`add`，但仍会在具体服务里被限制跨群参数或超管专属子功能。
 - 帮助文案、命令解析器和各命令服务的权限判断必须保持一致；只改其中一处会造成“命令可见但不可用”或“绕过帮助暴露超权命令”。
 
@@ -133,6 +134,8 @@ Service 模块是业务编排层，负责命令、订阅、模板、链接解析
 ## 资源与生命周期
 
 Service 通常不拥有长期协程或底层连接，但会协调模板缓存、绘图缓存键、消息网关引用和启动预热。新增缓存、批处理状态或维护任务必须说明清理入口、所属模块和停机行为；需要周期运行的逻辑应进入 tasker。
+
+当前源码仍有平台迁移后的命名与依赖债务：`SendTasker`、`ConversationStateStore` 的 KDoc 保留 OneBot11/NapCat 表述，`MessageLogSimplifier` 还委托 OneBot11 core。它们不是新增 vendor 依赖的依据，工程登记见 [`../bugs.md#bug-010-平台中立迁移仍残留-onebot11napcat-命名与依赖`](../bugs.md#bug-010-平台中立迁移仍残留-onebot11napcat-命名与依赖)。
 
 ## 配置与数据
 

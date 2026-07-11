@@ -72,7 +72,7 @@
 
 ## Native/RSS 策略
 
-Linux Docker 与裸机都优先使用 jemalloc。当前 `MALLOC_CONF` 的重点约束是：
+Docker 镜像通过 `LD_PRELOAD` 强制使用 jemalloc；Linux 裸机启动脚本要求 `libjemalloc.so.2` 可用，不可用时尝试交互安装或失败退出；Windows 裸机不使用 jemalloc。当前 `MALLOC_CONF` 的重点约束是：
 
 - `background_thread:true`：后台回收线程常驻，避免空闲页长期滞留。
 - `dirty_decay_ms=2000`、`muzzy_decay_ms=2000`：2 秒内加速把脏页/惰性页归还给系统。
@@ -104,3 +104,4 @@ Linux Docker 与裸机都优先使用 jemalloc。当前 `MALLOC_CONF` 的重点�
 - Skia native 证据：`./gradlew.bat skiaNativeMemoryEvidenceTest`
 - 容器：观察 `/app/logs/daemon/Daemon_*.log`
 - Linux：确认 NMT summary 可由 `jcmd <pid> VM.native_memory summary` 采样
+- Linux 裸机：确认 `start.sh` 能解析 `libjemalloc.so.2`；非交互部署应在启动前由系统包管理器安装

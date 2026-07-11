@@ -6,7 +6,7 @@
 
 - JDK 17。
 - Gradle wrapper。
-- Node.js 22+ 与 npm，用于 WebUI 前端打包和静态检查。
+- Node.js `^20.19.0` 或 `>=22.12.0` 与 npm，用于 WebUI 前端打包和静态检查；该下限来自当前 Vite 锁定版本。
 - Kotlin JVM 单模块项目。
 - 主类：`top.bilibili.MainKt`。
 
@@ -63,7 +63,7 @@ Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 L
 
 `docker-compose.yml` 当前默认：
 
-- 镜像：`menghuanan/dynamic-bot:latest`
+- 镜像：`menghuanan/hoshimi-cat-bot:latest`
 - `restart: unless-stopped`
 - `TZ=Asia/Shanghai`
 - `mem_limit: 512m`
@@ -91,12 +91,27 @@ Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 L
 
 RSS watchdog 只有在 `MEMORY_THRESHOLD_MB` 为正数时启用。
 
+Docker `HEALTHCHECK` 只检查 Java 进程是否存在，不调用 WebUI `/api/health`，也不能证明 Bot 已进入 `RUNNING`、平台已连接或 Tasker 正常。
+
+`.env.example` 当前不会被仓库 Compose 自动加载：`docker-compose.yml` 没有 `env_file`，也没有引用其中的变量。运行配置仍以挂载的 `config/*.yml`、Compose `environment` 和镜像启动参数为准。
+
+## Docker 中启用 WebUI
+
+WebUI 默认关闭并监听 `127.0.0.1:18080`，仓库 Compose 默认不映射该端口。容器外访问需要同时完成：
+
+1. 在挂载的 `config/bot.yml` 设置 `webui.enabled: true`
+2. 把容器内 `webui.host` 设置为 `0.0.0.0`
+3. 在 Compose 增加受控端口映射，例如仅绑定宿主回环地址的 `127.0.0.1:18080:18080`
+4. 从首次启动日志读取初始密码，登录后立即修改
+
+若要跨主机访问，优先让可信反向代理或虚拟专用网络（VPN）终止传输加密并限制来源。不要直接把 WebUI 端口暴露到公网；代理必须覆盖外部传入的 `Forwarded` 与 `X-Forwarded-*`，避免客户端伪造来源信息。
+
 ## 裸机发行包
 
 Gradle 会生成：
 
-- Windows：`dynamic-bot-windows-x64-v<version>.zip`
-- Linux：`dynamic-bot-linux-x64-v<version>.tar.gz`
+- Windows：`hoshimi-cat-bot-windows-x64-v<version>.zip`
+- Linux：`hoshimi-cat-bot-linux-x64-v<version>.tar.gz`
 
 Windows `start.bat`：
 
@@ -111,9 +126,19 @@ Linux `start.sh`：
 - 优先使用发行包内 `./runtime/bin/java`，不再依赖系统 PATH 中的 Java
 - 启动前探测 `libjemalloc.so.2`
 - jemalloc 可用时会自动启用并设置 `LD_PRELOAD` 和默认 `MALLOC_CONF`
-- 缺少 jemalloc 时会继续使用系统默认分配器启动，只留下告警
+- 缺少 jemalloc 时，交互终端会询问是否通过受支持的系统包管理器安装；拒绝安装、非交互运行、安装失败或安装后仍不可用都会以状态码 1 退出
 - 使用与 Windows 类似的 JVM heap/G1/Skiko 参数
 - 发行包内置 runtime 会额外携带 `jdk.charsets`，以保证二维码生成等依赖 GB2312 字符集的路径在精简运行时内可用
+
+## 运行环境差异
+
+| 环境 | JVM/NMT | jemalloc | 退出后的恢复 |
+| --- | --- | --- | --- |
+| Docker | 使用 Dockerfile 完整 `JAVA_TOOL_OPTIONS`，默认启用 NMT summary | 镜像内置并通过 `LD_PRELOAD` 强制启用 | Compose `restart: unless-stopped` 可在状态码 78 后重新拉起 |
+| Linux 裸机发行包 | 使用 `start.sh` 的 heap shrink、编码、时区和 software rendering 参数，不保证与 Docker 完整参数相同 | 启动前必须可用，否则尝试交互安装或失败退出 | 启动脚本不自动重启，需要 systemd 等外部管理器 |
+| Windows 裸机发行包 | 使用 `start.bat` 的 heap shrink、编码、时区和 software rendering 参数 | 不使用 jemalloc | 启动脚本不自动重启，需要外部管理器或人工处理 |
+
+Linux 的 RSS 软限制依赖 `/proc` 指标。连续超过 300 MB 达 30 分钟时，`ProcessGuardian` 会先执行停机，再以状态码 78 退出；该动作本身不负责拉起新进程。WebUI `request-restart` 默认也只返回需要人工或外部管理器接管的结果。
 
 发布流程约束：
 
@@ -125,7 +150,8 @@ Linux `start.sh`：
 - [ ] 是否已构建最新 `shadowJar`？
 - [ ] Docker 镜像是否包含目标版本 jar？
 - [ ] 是否挂载 `config`、`data`、`temp`、`logs`？
-- [ ] Linux 裸机是否希望启用 jemalloc 优化？
+- [ ] Linux 裸机是否已安装并可解析 `libjemalloc.so.2`？
 - [ ] 是否保持 UTF-8 和 Asia/Shanghai 时区参数？
 - [ ] 是否保留 software rendering 参数？
+- [ ] Docker 外访问 WebUI 时，是否同时配置监听地址、端口映射、反向代理和访问控制？
 - [ ] 修改 JVM 参数后是否更新 [`memory-tuning.md`](memory-tuning.md)？

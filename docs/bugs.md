@@ -1,16 +1,22 @@
-# 文档与实现待确认事项
+# 实现与文档偏差登记
 
-_最后更新：2026-04-22_
+_最后更新：2026-07-11_
 
-## BUG-001: Skia worker process 配置与实际实现不一致（文档已收敛）
+本文件是工程偏差及其处理状态的登记入口，记录源码、架构约束与维护文档之间已确认的不一致。面向运行人员的症状、影响和临时绕过维护在 [`context/known-issues.md`](context/known-issues.md)；活跃条目通过 BUG/KI 编号互链，不复制同一类说明。
+
+## BUG-001: Skia worker process 配置与实际实现不一致
+
+**状态**：开放，对应 [`KI-001`](context/known-issues.md#ki-001-skia-worker-process-配置尚未落地)。
 
 **现象**：`SkiaConfig.enableWorkerProcess` 默认值为 `true`，并存在 worker 进程相关配置项；但 `SkiaManager.currentMode` 当前固定初始化为 `IN_PROCESS`，`WORKER_PROCESS` 分支会抛出 `UnsupportedOperationException("Worker process mode not implemented yet")`。
 
 **处理**：文档描述统一为：worker process 为预留/未实现能力，当前仅支持 in-process。
 
-**后续**：如需启用 worker process，必须补齐 worker process 实现、切换逻辑和对应测试后再更新文档。
+**收敛条件**：如需启用 worker process，必须补齐 worker process 实现、切换逻辑和对应测试后再更新文档。
 
 ## BUG-002: SendTasker 存在疑似乱码注释（已修复）
+
+**状态**：已关闭。
 
 **现象**：`src/main/kotlin/top/bilibili/tasker/SendTasker.kt` 中曾存在乱码注释，疑似原意为“发送间隔”。
 
@@ -18,8 +24,74 @@ _最后更新：2026-04-22_
 
 ## BUG-003: 当前文档体系新入口与根 AGENTS.md 可能被误解为同级（已修复）
 
+**状态**：已关闭。
+
 **现象**：本轮新增 `docs/AGENTS.md`，但根目录已存在仓库级 `AGENTS.md`。
 
 **影响**：AI 或人工开发者可能只读 `docs/AGENTS.md` 而跳过根目录强制规范。
 
 **处理**：`docs/AGENTS.md` 与根目录 `AGENTS.md` 均已明确声明根目录 `AGENTS.md` 优先，且不得删除、覆盖或弱化。
+
+## BUG-004: deprecated Long 联系人入口仍处于迁移期
+
+**状态**：开放，仅影响开发迁移边界，不对应运行期 KI。
+
+**偏差**：平台中立边界已经要求使用 `PlatformContact`，但 `BiliBiliBot`、`PlatformAdapter` 和 `PlatformCapabilityService` 仍保留 Long 群号/私聊兼容入口。
+
+**收敛条件**：确认无旧调用链，移除兼容入口并更新平台回归测试。
+
+## BUG-005: 启动失败状态没有稳定传递到进程退出码
+
+**状态**：开放，对应 [`KI-003`](context/known-issues.md#ki-003-启动失败可能不会结束进程)。
+
+**偏差**：`BiliBiliBot.start()` 可以记录失败并返回 `STOPPED`，`Main.main()` 随后仍进入无条件 `join()`，与启动层应暴露失败状态的目标不一致。
+
+**收敛条件**：启动入口返回明确结果或抛出异常，主入口以非零状态退出，并补失败启动回归测试。
+
+## BUG-006: Skia cache purge 不在完整清理闸门内
+
+**状态**：开放，对应 [`KI-004`](context/known-issues.md#ki-004-skia-purge-未保持在清理闸门窗口内)。
+
+**偏差**：`awaitAllCompleted()` 在空 block 结束后释放 `isCleaning`，`SkiaManager` 随后才执行 paragraph、Skia 和图片 cache 清理，无法保证清理全过程与新绘图互斥。
+
+**收敛条件**：把 cache 清理放入 `runExclusiveCleanup()` block，并补并发进入与超时回归测试。
+
+## BUG-007: 本地业务队列和 Skia native 压力缺少直接快照
+
+**状态**：开放，对应 [`KI-005`](context/known-issues.md#ki-005-本地队列与-skia-native-压力存在观测盲区)。
+
+**偏差**：`ProcessGuardian` 的实时背压检测只读取平台 pressure；三条业务 channel 与 `SendTasker` 队列没有填充度快照，`SkiaManagerStatus.memoryUsage` 也只是 JVM heap 比例。
+
+**收敛条件**：为本地队列和 Skia native 指标提供只读观测接口，并让监控文档与告警字段一一对应。
+
+## BUG-008: Utils 管理员通知跨越平台发送边界
+
+**状态**：开放，仅影响架构层边界，不对应运行期 KI。
+
+**偏差**：`utils/General.kt` 的 `actionNotify()` 直接依赖 capability service 与 message gateway，违反 utils 低依赖且不承载消息发送的层边界。
+
+**收敛条件**：把管理员通知迁移到 service，utils 只保留纯格式化辅助。
+
+## BUG-009: 群管理员可写入不属于当前群的分组模板策略
+
+**状态**：开放，对应 [`KI-007`](context/known-issues.md#ki-007-群管理员可修改任意已有分组的模板策略)。
+
+**偏差**：模板命令只校验当前群管理员身份以及目标分组存在并订阅 UID，没有校验当前群属于目标分组，弱于文档规定的群内权限边界。
+
+**收敛条件**：在命令或 scope 解析处验证当前群归属目标分组，并补跨群拒绝测试。
+
+## BUG-010: 平台中立迁移仍残留 OneBot11/NapCat 命名与依赖
+
+**状态**：开放，仅影响维护边界，不对应运行期 KI。
+
+**偏差**：`SendTasker` KDoc 仍描述“转换为 OneBot v11 并通过 NapCat 发送”，`ConversationStateStore` KDoc 仍写成 NapCat 会话状态；`service/MessageLogSimplifier` 还直接委托 `connector.onebot11.core.OneBot11MessageLogSimplifier`。当前发送路径已经走平台中立 `OutgoingPart`、capability guard 和 message gateway，这些命名会误导后续维护者把 vendor 逻辑重新带回 service/tasker。
+
+**收敛条件**：在保留注释意图的前提下修正平台特定 KDoc，并把通用日志简化能力放到不要求 service 反向依赖 OneBot11 core 的位置；同步运行 connector boundary 与消息日志测试。
+
+## BUG-011: 两个绘图基线测试源码不是严格 UTF-8
+
+**状态**：开放，仅影响仓库编码与测试维护，不对应运行期 KI。
+
+**偏差**：`src/test/kotlin/top/bilibili/draw/DrawLabelCardBaselineTest.kt` 与 `src/test/kotlin/top/bilibili/draw/DynamicMediaLabelBaselineTest.kt` 当前无法通过启用异常回退的 UTF-8 解码器读取，违反仓库所有文件读写使用 UTF-8 的约束。本轮只修缮文档，未改写这两个测试文件。
+
+**收敛条件**：确认原字符意图后以 UTF-8 无损转码，保留全部注释和测试语义，再运行对应绘图基线测试与严格 UTF-8 扫描。

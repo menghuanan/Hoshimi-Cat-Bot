@@ -32,6 +32,18 @@
 
 `drawToImage()` 这类返回 `Image` 的能力表示所有权转移给调用方；新增调用点必须说明由谁关闭返回的 `Image`，否则优先使用 `drawToBytes()`。
 
+## 返回 Image 的所有权转移 helper
+
+以下 helper 返回的 `Image` 没有加入最终关闭的 session 追踪列表，调用方接管所有权：
+
+| Helper | 内部资源行为 | 返回值责任 |
+| --- | --- | --- |
+| `createImageWithSession()` | 内部 `executeDrawing` 会关闭 `DrawingSession` 与 `Surface`，快照不调用 `track()` | 调用方必须在使用结束后 `close()` 或立即放入明确外层 session 的 `track()` |
+| `createImageWithArea()` | 局部 `Surface` 在 `finally` 中关闭 | 调用方必须关闭区域快照 |
+| `DrawingSession.drawToImage()` | 方法内部创建并关闭独立 `Surface`，返回快照不属于当前 session | 调用方必须关闭快照；方法名位于 session 上不代表自动追踪 |
+
+同一条规则适用于其它返回未追踪 `Image`、`Data`、`Picture` 或 `Managed` 对象的 helper：返回 native 对象前必须在 KDoc 说明所有权，调用点必须在紧邻作用域 `use {}`、`close()` 或转交给仍存活的 `DrawingSession.track()`。如果调用方只需要编码结果，优先返回 `ByteArray`，避免让 native 所有权跨层传播。
+
 ## 渲染核心对象
 
 | 对象 | 管理方式 | 项目约束 |
@@ -141,6 +153,7 @@ fun render(width: Int, height: Int): ByteArray {
 - [ ] `Paint` 绑定对象是否独立追踪，而不是依赖 `Paint.close()`？
 - [ ] 全局缓存是否由 `FontManager`、`SkiaManager.shutdown()` 或资源分区释放？
 - [ ] 返回 native 对象的函数是否明确所有权转移和关闭责任？
+- [ ] 是否检查 `createImageWithSession()`、`createImageWithArea()` 和 `drawToImage()` 的返回值由调用方关闭？
 - [ ] 是否更新 [`../modules/skia.md`](../modules/skia.md)、[`../modules/draw.md`](../modules/draw.md) 或 ADR-002？
 
 ## 新建 checklist

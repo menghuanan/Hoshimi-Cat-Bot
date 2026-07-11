@@ -9,6 +9,8 @@ Core 模块承载 bot 运行期骨架、命令入口、数据存储协调和资�
 - `src/main/kotlin/top/bilibili/core/BiliBiliBot.kt`
 - `src/main/kotlin/top/bilibili/core/BiliCommandProcessor.kt`
 - `src/main/kotlin/top/bilibili/core/DataStorage.kt`
+- `src/main/kotlin/top/bilibili/core/RuntimeConfigGeneration.kt`
+- `src/main/kotlin/top/bilibili/core/RuntimeConfigApplier.kt`
 - `src/main/kotlin/top/bilibili/core/resource/BusinessLifecycleManager.kt`
 - `src/main/kotlin/top/bilibili/core/resource/ResourceStrictness.kt`
 - `src/main/kotlin/top/bilibili/core/resource/ResourceSupervisor.kt`
@@ -40,6 +42,8 @@ Core 模块承载 bot 运行期骨架、命令入口、数据存储协调和资�
 Core 是长期资源的协调层，不应隐藏拥有者。新增 channel、scope、worker、manager 或 registry 项时，必须明确：创建点、关闭点、所属分区、超时策略、监控暴露方式。
 
 WebUI 配置热重载协调器由 `BiliBiliBot` 根生命周期持有，并登记在 `webui-config-hot-reload` 入口分区；停机时必须先拒收新保存、等待或取消当前 worker，并把所有未终态 job 标记失败。WebUI 自身 host/port/enabled 等运行面变化只由 Bot scope 在保存响应返回后延迟调度，避免当前 HTTP 请求被自己的 `stop()` 中断。
+
+`RuntimeConfigGeneration` 描述可准备、提交和回滚的运行代际；`RuntimeConfigApplier` 负责按代际应用 connector、Tasker、WebUI 和调试日志变更。`DataStorage.kt` 当前没有生产子类，只保留旧数据存储抽象的兼容入口；新代码不得重新通过它写入 `data/*.yml`，持久化仍按 config 模块的 owner 边界处理。
 
 ## 配置与数据
 

@@ -68,10 +68,10 @@ Skia native memory 证据测试：
 
 代表测试：
 
-- `ResourceSupervisorShutdownOrderTest`
+- `ResourceSupervisorTest`
 - `TaskResourcePolicyRegistryTest`
-- `BiliBiliBotLifecycleTest`
-- `CommandProcessorBoundaryTest`
+- `ResourceManagementRegressionGuardTest`
+- `BiliCommandProcessorTest`
 
 修改 core、资源分区、channel、命令入口或停机顺序时必须运行。若当前不存在精确测试，应选择最接近的 tasker/lifecycle 测试，并在变更说明中列出未覆盖风险。
 
@@ -119,14 +119,13 @@ Skia native memory 证据测试：
 
 代表测试：
 
-- `ImagePreprocessingTest`
-- `ImageCacheTest`
-- `FontUtilsTest`
-- `ContactSubjectTest`
-- `JsonUtilsTest`
+- `ImagePreprocessPolicyTest`
+- `LoadFontsRegressionTest`
+- `ContactIdNamespaceTest`
+- `DrawCacheKeyNormalizationTest`
 - 资源加载或绘图 smoke test
 
-修改 `utils/*`、字体、图片、SVG、日志配置或资源路径时必须运行相关测试。若新增资源影响发行包，必须同时检查打包产物。
+修改 `utils/*`、字体、图片、SVG、日志配置或资源路径时必须运行相关测试。`ImageCache` 与 `JsonUtils` 当前没有一一对应的专用测试类；修改它们时应运行调用链最接近的 draw/service/config 测试，并把直接覆盖缺口写入变更说明。若新增资源影响发行包，必须同时检查打包产物。
 
 ### WebUI 服务端
 
