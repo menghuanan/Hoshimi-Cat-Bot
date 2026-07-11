@@ -32,11 +32,11 @@ _最后更新：2026-07-11_
 
 ## BUG-004: deprecated Long 联系人入口仍处于迁移期
 
-**状态**：开放，仅影响开发迁移边界，不对应运行期 KI。
+**状态**：已关闭。
 
 **偏差**：平台中立边界已经要求使用 `PlatformContact`，但 `BiliBiliBot`、`PlatformAdapter` 和 `PlatformCapabilityService` 仍保留 Long 群号/私聊兼容入口。
 
-**收敛条件**：确认无旧调用链，移除兼容入口并更新平台回归测试。
+**处理**：移除 `BiliBiliBot`、`PlatformAdapter`、`PlatformConnectorManager`、`PlatformCapabilityService` 和 `MessageGateway` 的数字联系人兼容入口；OneBot11 数字 ID 只在协议实现内部解析和探测，并由平台边界回归测试约束。
 
 ## BUG-005: 启动失败状态没有稳定传递到进程退出码
 
@@ -64,11 +64,11 @@ _最后更新：2026-07-11_
 
 ## BUG-008: Utils 管理员通知跨越平台发送边界
 
-**状态**：开放，仅影响架构层边界，不对应运行期 KI。
+**状态**：已关闭。
 
 **偏差**：`utils/General.kt` 的 `actionNotify()` 直接依赖 capability service 与 message gateway，违反 utils 低依赖且不承载消息发送的层边界。
 
-**收敛条件**：把管理员通知迁移到 service，utils 只保留纯格式化辅助。
+**处理**：新增 service 层 `AdminNoticeService`，统一承担通知格式化、开关/能力判断和 message gateway 发送；全部调用方改用 service 入口，utils 不再依赖发送能力。
 
 ## BUG-009: 群管理员可写入不属于当前群的分组模板策略
 
@@ -80,16 +80,24 @@ _最后更新：2026-07-11_
 
 ## BUG-010: 平台中立迁移仍残留 OneBot11/NapCat 命名与依赖
 
-**状态**：开放，仅影响维护边界，不对应运行期 KI。
+**状态**：已关闭。
 
 **偏差**：`SendTasker` KDoc 仍描述“转换为 OneBot v11 并通过 NapCat 发送”，`ConversationStateStore` KDoc 仍写成 NapCat 会话状态；`service/MessageLogSimplifier` 还直接委托 `connector.onebot11.core.OneBot11MessageLogSimplifier`。当前发送路径已经走平台中立 `OutgoingPart`、capability guard 和 message gateway，这些命名会误导后续维护者把 vendor 逻辑重新带回 service/tasker。
 
-**收敛条件**：在保留注释意图的前提下修正平台特定 KDoc，并把通用日志简化能力放到不要求 service 反向依赖 OneBot11 core 的位置；同步运行 connector boundary 与消息日志测试。
+**处理**：修正 `SendTasker` 与 `ConversationStateStore` 的平台特定 KDoc；通用日志简化实现迁到 connector 根包，OneBot11 core 仅保留协议模型适配，service 不再反向依赖 OneBot11 core。
 
 ## BUG-011: 两个绘图基线测试源码不是严格 UTF-8
 
-**状态**：开放，仅影响仓库编码与测试维护，不对应运行期 KI。
+**状态**：已关闭。
 
 **偏差**：`src/test/kotlin/top/bilibili/draw/DrawLabelCardBaselineTest.kt` 与 `src/test/kotlin/top/bilibili/draw/DynamicMediaLabelBaselineTest.kt` 当前无法通过启用异常回退的 UTF-8 解码器读取，违反仓库所有文件读写使用 UTF-8 的约束。本轮只修缮文档，未改写这两个测试文件。
 
-**收敛条件**：确认原字符意图后以 UTF-8 无损转码，保留全部注释和测试语义，再运行对应绘图基线测试与严格 UTF-8 扫描。
+**处理**：按原 GB18030 字符内容无损转为 UTF-8（无 BOM），保留测试语义；两个基线测试与严格 UTF-8 解码检查均通过。
+
+## BUG-012: Metaspace 上限接近当前运行峰值
+
+**状态**：已关闭，保留长期运行观察，不对应开放 KI。
+
+**偏差**：当前 Metaspace 使用量约 42 MB，距离原 48 MB 上限余量偏小；同期 G1 周期回收、heap shrink 与默认 `-Xmx160m` 未观察到不足。
+
+**处理**：仅将 Docker `MaxMetaspaceSize` 提高到 56 MB，并同步部署、监控和内存调优文档；heap 与 G1 参数保持不变，后续继续观察长时间静默和业务峰值趋势。

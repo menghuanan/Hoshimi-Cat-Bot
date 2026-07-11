@@ -27,7 +27,7 @@ import top.bilibili.service.AtAllService
 import top.bilibili.service.SelectedTemplate
 import top.bilibili.service.TemplateSelectionService
 import top.bilibili.service.TemplateRenderService
-import top.bilibili.utils.actionNotify
+import top.bilibili.service.actionNotify
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.subjectsEquivalent
@@ -35,7 +35,7 @@ import top.bilibili.utils.toSubject
 
 /**
  * 消息发送任务
- * 从 messageChannel 接收消息，转换为 OneBot v11 格式并通过 NapCat 发送
+ * 从 messageChannel 接收业务消息，构建平台中立消息段并通过统一网关发送。
  */
 object SendTasker : BiliTasker("SendTasker") {
     override var interval: Int = 1
@@ -571,7 +571,7 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 构建 OneBot v11 消息段
+     * 构建平台中立消息段，具体协议转换由 connector 层完成。
      */
     private suspend fun buildMessageSegments(
         message: BiliMessage,

@@ -5,7 +5,6 @@ import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
-import top.bilibili.utils.actionNotify
 import top.bilibili.utils.findLocalIdOrName
 import top.bilibili.utils.toSubject
 

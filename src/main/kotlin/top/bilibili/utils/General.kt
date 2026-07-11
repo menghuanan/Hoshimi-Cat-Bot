@@ -4,7 +4,6 @@ import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.client.utils.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.serialization.Serializable
 import org.jetbrains.skia.Image
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.BiliBiliBot.dataFolderPath
@@ -802,51 +801,6 @@ internal fun String.fuzzyMatchWith(target: String): Double {
     val shorterLength = min(this.length, target.length)
 
     return match.toDouble() / (longerLength + (shorterLength - match))
-}
-
-/**
- * 管理员操作通知的结构化消息体。
- */
-@Serializable
-data class ActionMessage(
-    val operator: String,
-    val target: String,
-    val action: String,
-    val message: String,
-)
-
-// TODO: 以下通知函数需要使用新的消息发送机制重新实现
-/**
- * 按字段构造管理员操作通知并发送。
- */
-suspend fun actionNotify(subject: String?, operator: String, target: String, action: String, message: String) {
-    actionNotify(subject, ActionMessage(operator, target, action, message))
-}
-
-/**
- * 发送结构化管理员操作通知。
- */
-suspend fun actionNotify(subject: String?, message: ActionMessage) {
-    if (top.bilibili.connector.PlatformCapabilityService.canSendManagedAdminNotice(subject = subject)) {
-        actionNotify(buildString {
-            appendLine("操作人: ${message.operator}")
-            appendLine("目标: ${message.target}")
-            appendLine("操作: ${message.action}")
-            appendLine("消息: ${message.message}")
-        })
-    }
-}
-
-/**
- * 发送纯文本管理员通知；发送失败时回退为日志记录。
- */
-suspend fun actionNotify(message: String) {
-    if (!top.bilibili.connector.PlatformCapabilityService.canSendManagedAdminNotice()) return
-    val success = top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(message)
-    if (!success) {
-        // 回退到日志输出，是为了在网关不可用时仍保留关键管理审计信息。
-        logger.info("通知消息: $message")
-    }
 }
 
 /**

@@ -43,7 +43,7 @@ interface PlatformAdapter {
     }
 
     /**
-     * 统一的平台发送入口；业务层不再直接依赖 Long 型联系人。
+     * 统一的平台发送入口；业务层只通过平台联系人表达目标。
      */
     suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean
 
@@ -69,40 +69,6 @@ interface PlatformAdapter {
     }
 
     /**
-     * 为仍在迁移中的 OneBot11 调用方保留数字群号便捷入口。
-     */
-    @Deprecated(
-        message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
-        replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()), message)"),
-    )
-    /**
-     * 为旧群号调用链保留兼容发送入口，避免迁移期间重新分叉出独立的发送实现。
-     */
-    suspend fun sendGroupMessage(groupId: Long, message: List<OutgoingPart>): Boolean {
-        return sendMessage(
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()),
-            message,
-        )
-    }
-
-    /**
-     * 为仍在迁移中的 OneBot11 调用方保留数字私聊便捷入口。
-     */
-    @Deprecated(
-        message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
-        replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()), message)"),
-    )
-    /**
-     * 为旧私聊调用链保留兼容发送入口，避免迁移期间重新分叉出独立的发送实现。
-     */
-    suspend fun sendPrivateMessage(userId: Long, message: List<OutgoingPart>): Boolean {
-        return sendMessage(
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()),
-            message,
-        )
-    }
-
-    /**
      * 暴露适配器当前运行态，供监控、守护与能力判断统一读取连接健康度。
      */
     fun runtimeStatus(): PlatformRuntimeStatus
@@ -124,21 +90,4 @@ interface PlatformAdapter {
      */
     suspend fun canAtAll(contact: PlatformContact): Boolean
 
-    /**
-     * 为仍在迁移中的 OneBot11 群能力判断保留兼容入口。
-     */
-    suspend fun isGroupReachable(groupId: Long): Boolean {
-        return isContactReachable(
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()),
-        )
-    }
-
-    /**
-     * 为仍在迁移中的 OneBot11 群能力判断保留兼容入口。
-     */
-    suspend fun canAtAll(groupId: Long): Boolean {
-        return canAtAll(
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()),
-        )
-    }
 }

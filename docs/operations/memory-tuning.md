@@ -37,7 +37,7 @@
 | 8 | `-XX:G1PeriodicGCSystemLoadThreshold` | `0` | 不依赖系统负载门槛，静默时也可回收 |
 | 9 | `-XX:MaxDirectMemorySize` | `32m` | 限制 DirectByteBuffer/native NIO 缓冲 |
 | 10 | `-XX:MetaspaceSize` | `16m` | Metaspace 初始触发点 |
-| 11 | `-XX:MaxMetaspaceSize` | `48m` | Metaspace 上限 |
+| 11 | `-XX:MaxMetaspaceSize` | `56m` | Metaspace 上限；为当前约 42 MB 峰值保留扩展余量 |
 | 12 | `-XX:CompressedClassSpaceSize` | `16m` | 压缩类空间上限 |
 | 13 | `-XX:InitialCodeCacheSize` | `32m` | CodeCache 初始大小 |
 | 14 | `-XX:ReservedCodeCacheSize` | `32m` | CodeCache 总上限 |
@@ -69,6 +69,8 @@
 - `-Xmx160m`
 
 近期提交中已引入 G1 周期性回收和更积极 heap shrink 参数，用于长时间静默场景降低 committed heap 高水位。
+
+当前观测中 heap 与周期回收表现正常，`-Xmx160m` 暂无不足证据；此前主要压力来自 Metaspace 接近 48 MB 上限，因此只将其上限小幅提高到 56 MB，heap 和 G1 参数保持不变并继续长期观察。
 
 ## Native/RSS 策略
 

@@ -99,9 +99,9 @@ class DockerRuntimeConfigRegressionTest {
             dockerfile.contains("-XX:MaxRAM=512m"),
             "Dockerfile should remove fixed JVM MaxRAM=512m budget",
         )
-        // Metaspace 仍维持上限，避免类元数据膨胀导致长期 RSS 抖动。
+        // Metaspace 仍维持上限，并为当前观测峰值保留必要余量，避免类元数据膨胀导致长期 RSS 抖动。
         assertTrue(
-            dockerfile.contains("-XX:MaxMetaspaceSize=48m"),
+            dockerfile.contains("-XX:MaxMetaspaceSize=56m"),
             "Dockerfile should keep MaxMetaspaceSize guardrail for long-running stability",
         )
         // CodeCache 仍维持上限，避免低并发场景无效膨胀。

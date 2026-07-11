@@ -26,21 +26,31 @@ class PlatformCapabilitySourceRegressionTest {
     }
 
     @Test
-    fun `admin notice helper should route through platform capability service`() {
-        val source = read("src/main/kotlin/top/bilibili/utils/General.kt")
+    fun `admin notice helper should belong to service layer`() {
+        val utilitySource = read("src/main/kotlin/top/bilibili/utils/General.kt")
+        val serviceSource = read("src/main/kotlin/top/bilibili/service/AdminNoticeService.kt")
 
-        assertTrue(source.contains("PlatformCapabilityService.canSendManagedAdminNotice"))
-        assertFalse(source.contains("FeatureSwitchService.canSendManagedAdminNotice()"))
+        assertFalse(utilitySource.contains("actionNotify("))
+        assertFalse(utilitySource.contains("MessageGatewayProvider"))
+        assertFalse(utilitySource.contains("PlatformCapabilityService"))
+        assertTrue(serviceSource.contains("PlatformCapabilityService.canSendManagedAdminNotice"))
+        assertTrue(serviceSource.contains("MessageGatewayProvider.require().sendAdminMessage"))
     }
 
     @Test
-    fun `legacy numeric send helpers should be marked as compatibility only`() {
+    fun `platform neutral boundaries should not expose legacy numeric contact helpers`() {
         val adapterSource = read("src/main/kotlin/top/bilibili/connector/PlatformAdapter.kt")
         val gatewaySource = read("src/main/kotlin/top/bilibili/service/MessageGateway.kt")
         val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+        val capabilitySource = read("src/main/kotlin/top/bilibili/connector/PlatformCapabilityService.kt")
+        val managerSource = read("src/main/kotlin/top/bilibili/connector/PlatformConnectorManager.kt")
 
-        listOf(adapterSource, gatewaySource, botSource).forEach { source ->
-            assertTrue(source.contains("@Deprecated"), "legacy numeric send helpers should be deprecated")
+        listOf(adapterSource, gatewaySource, botSource, capabilitySource, managerSource).forEach { source ->
+            assertFalse(source.contains("sendGroupMessage(groupId: Long"))
+            assertFalse(source.contains("sendPrivateMessage(userId: Long"))
+            assertFalse(source.contains("isGroupReachable(groupId: Long"))
+            assertFalse(source.contains("canAtAllInGroup(groupId: Long"))
+            assertFalse(source.contains("canAtAll(groupId: Long"))
         }
     }
 

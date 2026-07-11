@@ -49,7 +49,7 @@ critical 会触发紧急清理。
 
 当前限制口径：
 
-- Metaspace：48 MB。
+- Metaspace：56 MB。
 - CodeCache：32 MB。
 - 非堆 warning threshold：80%。
 

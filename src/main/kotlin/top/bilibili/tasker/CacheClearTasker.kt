@@ -4,7 +4,7 @@ import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.ImageCache
-import top.bilibili.utils.actionNotify
+import top.bilibili.service.actionNotify
 import top.bilibili.utils.cachePath
 import java.nio.file.Path
 import kotlin.io.path.forEachDirectoryEntry

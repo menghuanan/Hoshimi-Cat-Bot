@@ -208,20 +208,6 @@ class PlatformConnectorManager(
     }
 
     /**
-     * 兼容仍在迁移中的群号能力判断入口，但实现依然收口在 connector manager。
-     */
-    suspend fun isGroupReachable(groupId: Long): Boolean {
-        return currentAdapter()?.isGroupReachable(groupId) ?: false
-    }
-
-    /**
-     * 兼容仍在迁移中的群 @全体 能力判断入口，但实现依然收口在 connector manager。
-     */
-    suspend fun canAtAll(groupId: Long): Boolean {
-        return currentAdapter()?.canAtAll(groupId) ?: false
-    }
-
-    /**
      * 将平台选择与 vendor 组装收口到 connector 层，避免业务启动入口继续直接 new adapter。
      */
     private fun createPlatformAdapter(

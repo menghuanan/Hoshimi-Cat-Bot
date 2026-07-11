@@ -33,6 +33,8 @@ Connector 模块把平台 vendor 协议转换为项目平台中立模型，并�
 | LlBot vendor | `onebot11/vendors/llbot/*` | vendor 差异只能通过 adapter/transport 封装，不得泄露到 service/tasker。 |
 | QQ Official | `qqofficial/*` | 新能力必须补齐 `declaredCapabilities()` 和发送降级路径。 |
 
+平台公共接口只接收 `PlatformContact`，不再暴露 Long 群号或私聊 ID 兼容入口。OneBot11 数字 ID 的解析与 vendor 探测只允许留在 `onebot11/*` 内部扩展点。
+
 ## 当前适配器矩阵
 
 | adapter kind | 平台类型 | 代码入口 | 发送/接收边界 | 当前能力要点 |

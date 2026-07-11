@@ -16,12 +16,10 @@ import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.connector.OutgoingPart
-import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformConnectorManager
 import top.bilibili.connector.PlatformConnectorPrepareResult
 import top.bilibili.connector.PlatformConnectorReloadResult
 import top.bilibili.connector.PlatformContact
-import top.bilibili.connector.PlatformType
 import top.bilibili.connector.PreparedPlatformConnector
 import top.bilibili.config.ConfigManager
 import top.bilibili.core.resource.LambdaResourcePartition
@@ -46,7 +44,6 @@ import top.bilibili.tasker.BiliCheckTasker
 import top.bilibili.tasker.BiliTasker
 import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.ImageCache
-import top.bilibili.utils.actionNotify
 import top.bilibili.utils.closeUtilsClient
 import top.bilibili.webui.config.WebUiConfig
 import top.bilibili.webui.config.WebUiSettings
@@ -633,34 +630,6 @@ object BiliBiliBot : CoroutineScope {
         } else {
             0L
         }
-    }
-
-    /**
-     * 为仍在迁移中的 OneBot11 调用方保留数字群消息发送入口。
-     */
-    @Deprecated(
-        message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
-        replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()), message)"),
-    )
-    suspend fun sendGroupMessage(groupId: Long, message: List<OutgoingPart>): Boolean {
-        return MessageGatewayProvider.require().sendMessage(
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()),
-            message,
-        )
-    }
-
-    /**
-     * 为仍在迁移中的 OneBot11 调用方保留数字私聊发送入口。
-     */
-    @Deprecated(
-        message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
-        replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()), message)"),
-    )
-    suspend fun sendPrivateMessage(userId: Long, message: List<OutgoingPart>): Boolean {
-        return MessageGatewayProvider.require().sendMessage(
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()),
-            message,
-        )
     }
 
     /**

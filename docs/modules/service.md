@@ -135,7 +135,7 @@ Service 模块是业务编排层，负责命令、订阅、模板、链接解析
 
 Service 通常不拥有长期协程或底层连接，但会协调模板缓存、绘图缓存键、消息网关引用和启动预热。新增缓存、批处理状态或维护任务必须说明清理入口、所属模块和停机行为；需要周期运行的逻辑应进入 tasker。
 
-当前源码仍有平台迁移后的命名与依赖债务：`SendTasker`、`ConversationStateStore` 的 KDoc 保留 OneBot11/NapCat 表述，`MessageLogSimplifier` 还委托 OneBot11 core。它们不是新增 vendor 依赖的依据，工程登记见 [`../bugs.md#bug-010-平台中立迁移仍残留-onebot11napcat-命名与依赖`](../bugs.md#bug-010-平台中立迁移仍残留-onebot11napcat-命名与依赖)。
+管理员通知由 `AdminNoticeService.kt` 统一执行功能开关、联系人能力判断和网关发送；utils 只保留纯辅助逻辑。通用消息日志简化规则位于 connector 根包，service 不得反向依赖 OneBot11 core。
 
 ## 配置与数据
 

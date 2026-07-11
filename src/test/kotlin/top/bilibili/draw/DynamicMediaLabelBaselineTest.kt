@@ -17,7 +17,7 @@ class DynamicMediaLabelBaselineTest {
         loadFonts()
 
         val labelFont = Font(mainTypeface, quality.subTitleFontSize)
-        val textLine = TextLine.make("¶¯Í¼", labelFont)
+        val textLine = TextLine.make("åŠ¨å›¾", labelFont)
         try {
             val rrect = RRect.makeXYWH(
                 0f,

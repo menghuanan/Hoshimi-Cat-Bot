@@ -17,7 +17,7 @@ class DrawLabelCardBaselineTest {
         loadFonts()
 
         val labelFont = Font(mainTypeface, quality.contentFontSize)
-        val textLine = TextLine.make("Ê±³¤ 00:42  1.2Íò¹Û¿´ 34µ¯Ä»", labelFont)
+        val textLine = TextLine.make("æ—¶é•¿ 00:42  1.2ä¸‡è§‚çœ‹ 34å¼¹å¹•", labelFont)
         try {
             val rrect = RRect.makeXYWH(
                 0f,

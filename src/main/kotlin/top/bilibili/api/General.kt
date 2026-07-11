@@ -8,6 +8,7 @@ import top.bilibili.client.BiliClient
 import top.bilibili.data.BiliResult
 import top.bilibili.data.ShortLinkData
 import top.bilibili.data.WbiImg
+import top.bilibili.service.actionNotify
 import top.bilibili.utils.*
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicBoolean

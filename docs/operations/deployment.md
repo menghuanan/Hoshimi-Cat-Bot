@@ -53,7 +53,7 @@ Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 L
 - G1GC。
 - `NativeMemoryTracking=summary`。
 - heap 默认 `-Xms64m -Xmx160m`。
-- Metaspace 上限 48m。
+- Metaspace 上限 56m。
 - CodeCache 上限 32m。
 - DirectMemory 上限 32m。
 - Skiko software rendering。

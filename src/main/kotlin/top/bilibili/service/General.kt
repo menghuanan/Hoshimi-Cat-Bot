@@ -63,7 +63,7 @@ fun isFollow(uid: Long, subject: String) =
     uid == 0L || (dynamic.containsKey(uid) && dynamic[uid]!!.contacts.any { subjectsEquivalent(it, subject) })
 
 /**
- * NapCat 会话状态仓库，用于替代 Mirai whileSelectMessages 的基础能力。
+ * 平台中立的会话状态仓库，用于保存多轮命令交互的临时上下文。
  * key 通常使用 "subject:operator" 形式。
  */
 object ConversationStateStore {

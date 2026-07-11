@@ -80,7 +80,7 @@ open class OneBot11Adapter(
         if (contact.platform != PlatformType.ONEBOT11) return false
         if (contact.type != PlatformChatType.GROUP) return true
         val groupId = contact.id.toLongOrNull() ?: return false
-        return isGroupReachable(groupId)
+        return probeGroupReachability(groupId)
     }
 
     /**
@@ -97,7 +97,7 @@ open class OneBot11Adapter(
     /**
      * 通用 OneBot11 默认只假设群上下文存在；vendor 如能精确查询可覆写该入口。
      */
-    override suspend fun isGroupReachable(groupId: Long): Boolean {
+    protected open suspend fun probeGroupReachability(groupId: Long): Boolean {
         return true
     }
 

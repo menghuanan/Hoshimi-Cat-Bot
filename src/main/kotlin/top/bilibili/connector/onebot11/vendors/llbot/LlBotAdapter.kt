@@ -16,7 +16,7 @@ class LlBotAdapter(
     /**
      * 群可达性判断收口到 llbot vendor client，未连接或探测失败时统一返回 false。
      */
-    override suspend fun isGroupReachable(groupId: Long): Boolean {
+    override suspend fun probeGroupReachability(groupId: Long): Boolean {
         return llBotClient.isBotInGroup(groupId)
     }
 

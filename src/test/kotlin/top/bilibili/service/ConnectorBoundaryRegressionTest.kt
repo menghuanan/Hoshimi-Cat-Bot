@@ -59,4 +59,12 @@ class ConnectorBoundaryRegressionTest {
         assertFalse(botSource.contains("val platformAdapter"))
         assertFalse(botSource.contains("fun requirePlatformAdapter("))
     }
+
+    @Test
+    fun `service layer should not depend on onebot11 core`() {
+        kotlinSourcesUnder("src/main/kotlin/top/bilibili/service").forEach { file ->
+            val source = Files.readString(file, StandardCharsets.UTF_8)
+            assertFalse(source.contains("connector.onebot11.core"), "${file.toString()} should not depend on OneBot11 core")
+        }
+    }
 }

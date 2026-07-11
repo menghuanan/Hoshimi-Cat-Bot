@@ -23,7 +23,7 @@ class NapCatAdapter(
     /**
      * 由 NapCat vendor 适配层保留群可达性查询，避免该能力再次泄漏回通用协议核心。
      */
-    override suspend fun isGroupReachable(groupId: Long): Boolean {
+    override suspend fun probeGroupReachability(groupId: Long): Boolean {
         return napCatClient.isBotInGroup(groupId)
     }
 

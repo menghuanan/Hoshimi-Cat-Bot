@@ -10,7 +10,6 @@ import top.bilibili.api.isFollow
 import top.bilibili.api.unfollow
 import top.bilibili.api.userInfo
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.utils.actionNotify
 import top.bilibili.utils.containsEquivalentSubject
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parseContactId

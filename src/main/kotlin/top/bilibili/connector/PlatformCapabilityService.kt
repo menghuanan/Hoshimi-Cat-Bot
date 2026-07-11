@@ -116,43 +116,10 @@ object PlatformCapabilityService {
     suspend fun isContactReachable(contact: PlatformContact): Boolean = canSendMessageTo(contact)
 
     /**
-     * 兼容旧的群号能力入口，后续新逻辑应优先传入 PlatformContact。
-     */
-    @Deprecated(
-        message = "使用 canSendMessageTo(PlatformContact(...)) 统一表达发送能力",
-        replaceWith = ReplaceWith("canSendMessageTo(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()))"),
-    )
-    /**
-     * 兼容旧的 Long 群号能力判断入口，避免新旧调用链在迁移期各自访问底层 adapter。
-     */
-    suspend fun isGroupReachable(groupId: Long): Boolean {
-        if (!BiliBiliBot.isPlatformAdapterInitialized()) {
-            return false
-        }
-        return BiliBiliBot.requireConnectorManager().isGroupReachable(groupId)
-    }
-
-    /**
      * 统一按平台联系人判断是否支持 @全体。
      */
     suspend fun canAtAllInContact(contact: PlatformContact): Boolean {
         return guardAtAllInContact(contact) is CapabilityGuardResult.Supported
     }
 
-    /**
-     * 兼容旧的群号 @全体 判断入口，后续新逻辑应优先传入 PlatformContact。
-     */
-    @Deprecated(
-        message = "使用 canAtAllInContact(contact) 统一表达联系人能力",
-        replaceWith = ReplaceWith("canAtAllInContact(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()))"),
-    )
-    /**
-     * 兼容旧的群号 @全体 判断入口，避免历史命令链在迁移完成前直接接触 connector 实现。
-     */
-    suspend fun canAtAllInGroup(groupId: Long): Boolean {
-        if (!BiliBiliBot.isPlatformAdapterInitialized()) {
-            return false
-        }
-        return BiliBiliBot.requireConnectorManager().canAtAll(groupId)
-    }
 }

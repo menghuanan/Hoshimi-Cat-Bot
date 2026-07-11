@@ -10,8 +10,7 @@ _最后更新：2026-07-11_
 
 ## 进行中
 
-- [ ] 继续验证 G1 周期性回收与 heap shrink 参数在长时间静默场景的效果。
-- [ ] 继续评估 `-Xmx160m` 作为 Docker/裸机默认值的充分性。
+- [ ] G1 周期回收、heap shrink 与默认 `-Xmx160m` 当前运行观测正常，继续积累长时间静默和峰值场景数据；Metaspace 因约 42 MB 使用量接近原 48 MB 上限，已单独提高到 56 MB。
 
 ## 当前实现基线
 
@@ -27,6 +26,7 @@ _最后更新：2026-07-11_
 - `ProcessGuardian` 直接采集三条 core 业务队列与 `SendTasker` 队列填充率，并记录 Skia Graphics native resource cache 字节数。
 - Docker 和发行包默认使用 software rendering。
 - Docker 默认内存限制为 512m，应用 heap 默认 `64m~160m`。
+- Docker Metaspace 上限为 56m；本轮未提高 heap 上限，也未调整 G1 周期回收和 heap shrink 参数。
 
 ## 当前维护约束
 

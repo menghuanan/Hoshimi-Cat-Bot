@@ -83,7 +83,7 @@ class EncodingRegressionGuardTest {
         assertTrue(sendTasker.contains("构建消息段"))
         assertTrue(sendTasker.contains("加入发送队列"))
         assertTrue(sendTasker.contains("消息间隔"))
-        assertTrue(sendTasker.contains("构建 OneBot v11 消息段"))
+        assertTrue(sendTasker.contains("构建平台中立消息段"))
     }
 
     @Test

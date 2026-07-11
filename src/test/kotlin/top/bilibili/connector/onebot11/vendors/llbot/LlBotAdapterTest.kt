@@ -32,6 +32,6 @@ class LlBotAdapterTest {
     fun `llbot adapter should treat disconnected group as unreachable`() = runBlocking {
         val adapter = LlBotAdapter(LlBotClient(NapCatConfig()))
 
-        assertFalse(adapter.isGroupReachable(100L))
+        assertFalse(adapter.isContactReachable(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, "100")))
     }
 }
