@@ -36,7 +36,7 @@ type AdminDraftPair = {
 export function SettingsPage() {
   const {loading, biliConfig, biliData, botConfig, saveBatch, patchBiliConfig, patchBiliData, patchBotConfig} = useSettingsFiles()
   const {showToast} = useToast()
-  const {dashboard, loading: runtimeLoading, refresh: refreshRuntime} = useRuntimeSummary({pollIntervalMs: 60_000})
+  const {refresh: refreshRuntime} = useRuntimeSummary({pollIntervalMs: 60_000})
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
   // 子配置切换只重挂载显示层，用来重播入场动效，不改变表单值来源或保存语义。
   const [categoryMotionToken, setCategoryMotionToken] = useState(0)
@@ -191,34 +191,6 @@ export function SettingsPage() {
   return (
     <div data-page="settings" className="space-y-6">
       <PageSection
-        title="B站账号"
-        description="管理动态、直播和订阅请求使用的 B站登录状态"
-        actions={(
-          <button
-            type="button"
-            className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-            disabled={biliLogin.loading || biliLogin.session?.phase === 'COMMITTING'}
-            onClick={() => void biliLogin.openLogin()}
-          >
-            {dashboard.accountLoggedIn ? '重新登录' : '扫码登录'}
-          </button>
-        )}
-      >
-        <div className="grid gap-4 border-y border-slate-200 bg-white px-4 py-4 sm:grid-cols-2">
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-slate-500">登录状态</p>
-            <p className={`mt-1 text-sm font-semibold ${dashboard.accountLoggedIn ? 'text-emerald-700' : 'text-rose-700'}`}>
-              {runtimeLoading ? '同步中' : dashboard.accountLoggedIn ? '已登录' : '未登录'}
-            </p>
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-slate-500">账号 UID</p>
-            <p className="mt-1 break-words text-sm font-semibold text-slate-950">{dashboard.accountUid || '--'}</p>
-          </div>
-        </div>
-      </PageSection>
-
-      <PageSection
         title="系统配置"
         description="保存后自动热重载生效"
         actions={(
@@ -245,6 +217,7 @@ export function SettingsPage() {
               fields={group.fields}
               values={values}
               onChange={updateValue}
+              biliLogin={activeCategoryId === 'bili' ? biliLogin : undefined}
             />
           ))}
         </div>
@@ -307,11 +280,12 @@ function fieldsByKeys(fields: SettingsFieldDefinition[], keys: string[]): Settin
 /**
  * 设置分组使用统一边框容器，标题贴在边框上并与字段左边缘对齐。
  */
-function SettingsGroup({title, fields, values, onChange}: {
+function SettingsGroup({title, fields, values, onChange, biliLogin}: {
   title: string
   fields: SettingsFieldDefinition[]
   values: SettingsFormValues
   onChange: (key: string, value: string | boolean) => void
+  biliLogin?: ReturnType<typeof useBiliQrLogin>
 }) {
   return (
     <section data-layout="single-column" className="settings-group-motion space-y-3">
@@ -319,15 +293,40 @@ function SettingsGroup({title, fields, values, onChange}: {
         <legend className="px-2 text-sm font-semibold text-slate-900">{title}</legend>
         <div className="grid gap-4">
           {fields.map((field) => (
-            <div key={field.key} className="settings-field-motion">
-              {field.key === 'adminsText'
-                ? <GroupAdminField value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
-                : <SettingsField field={field} value={values[field.key] ?? ''} onChange={onChange} />}
+            <div key={field.key} className="contents">
+              <div className="settings-field-motion">
+                {field.key === 'adminsText'
+                  ? <GroupAdminField value={String(values[field.key] || '')} onChange={(value) => onChange(field.key, value)} />
+                  : <SettingsField field={field} value={values[field.key] ?? ''} onChange={onChange} />}
+              </div>
+              {field.key === 'accountConfig.cookie' && biliLogin ? <BiliLoginField biliLogin={biliLogin} /> : null}
             </div>
           ))}
         </div>
       </fieldset>
     </section>
+  )
+}
+
+/**
+ * 扫码登录紧跟 Cookie 配置展示，并复用原登录会话能力，不参与配置表单保存。
+ */
+function BiliLoginField({biliLogin}: {biliLogin: ReturnType<typeof useBiliQrLogin>}) {
+  return (
+    <div className="settings-field-motion min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex min-w-0 items-center justify-between gap-4">
+        <p className="text-sm font-medium text-slate-800">扫码登录</p>
+        <button
+          type="button"
+          className="shrink-0 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+          disabled={biliLogin.loading || biliLogin.session?.phase === 'COMMITTING'}
+          onClick={() => void biliLogin.openLogin()}
+        >
+          扫码登录
+        </button>
+      </div>
+      <p className="settings-muted-helper">通过扫码登录的方式获取cookie</p>
+    </div>
   )
 }
 

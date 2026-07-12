@@ -130,8 +130,8 @@ function collectBotBatchPayloads(): {
 }
 
 describe('webui shell routing', () => {
-  /** 设置页账号区必须从运行态读取账号，并完成二维码弹窗的创建和取消请求。 */
-  it('starts and cancels BiliBili qr login from the settings account section', async () => {
+  /** 扫码登录必须位于 B站配置的 Cookie 下方，并完成二维码弹窗的创建和取消请求。 */
+  it('starts and cancels BiliBili qr login below the cookie setting', async () => {
     rememberSessionPassword('secret-password')
     const requests: Array<{url: string, method: string, body: string}> = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -164,8 +164,13 @@ describe('webui shell routing', () => {
     const user = userEvent.setup()
     renderAtPath('/settings')
 
-    expect(await screen.findByRole('heading', {name: 'B站账号'})).toBeInTheDocument()
-    expect(await screen.findByText('未登录')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', {name: 'B站配置'}))
+    expect(screen.queryByRole('heading', {name: 'B站账号'})).not.toBeInTheDocument()
+    expect(screen.queryByText('登录状态')).not.toBeInTheDocument()
+    expect(screen.queryByText('账号 UID')).not.toBeInTheDocument()
+    const cookieField = screen.getByLabelText('Cookie').closest('.settings-field-motion')
+    const qrLoginField = screen.getByText('通过扫码登录的方式获取cookie').closest('.settings-field-motion')
+    expect(cookieField?.nextElementSibling).toBe(qrLoginField)
     await user.click(screen.getByRole('button', {name: '扫码登录'}))
 
     expect(await screen.findByRole('dialog', {name: 'B站扫码登录'})).toBeInTheDocument()
@@ -208,6 +213,7 @@ describe('webui shell routing', () => {
     const user = userEvent.setup()
     renderAtPath('/settings')
 
+    await user.click(await screen.findByRole('button', {name: 'B站配置'}))
     await user.click(await screen.findByRole('button', {name: '扫码登录'}))
 
     const successMessages = await screen.findAllByText('BiliBili 登录成功')
@@ -239,6 +245,7 @@ describe('webui shell routing', () => {
     const user = userEvent.setup()
     renderAtPath('/settings')
 
+    await user.click(await screen.findByRole('button', {name: 'B站配置'}))
     await user.click(await screen.findByRole('button', {name: '扫码登录'}))
 
     const timeoutMessages = await screen.findAllByText('登录超时，请重新登录')
