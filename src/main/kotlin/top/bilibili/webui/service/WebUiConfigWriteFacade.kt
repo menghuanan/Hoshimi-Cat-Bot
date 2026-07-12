@@ -82,8 +82,8 @@ class WebUiConfigWriteFacade(
         }
 
         val updatedConfig = current.copy(
-            admin = request.admin,
-            adminContact = request.adminContact.trim(),
+            admin = request.admin ?: current.admin,
+            adminContact = request.adminContact?.trim() ?: current.adminContact,
             enableConfig = EnableConfig(
                 debugMode = request.debugMode,
                 drawEnable = request.drawEnable,
@@ -444,8 +444,8 @@ class WebUiConfigWriteFacade(
      */
     private fun validateBiliConfigRequest(request: WebUiBiliConfigWriteRequestDto): List<String> {
         val errors = mutableListOf<String>()
-        validateOptionalOneBot11PrivateContact("adminContact", request.adminContact, errors)
-        validateNonNegativeLong("admin", request.admin, errors)
+        validateOptionalAdminContact("adminContact", request.adminContact, errors)
+        request.admin?.let { admin -> validateNonNegativeLong("admin", admin, errors) }
         validateHourRange("lowSpeedTime", request.lowSpeedTime, errors)
         validateIntervalRange("lowSpeedRange", request.lowSpeedRange, errors)
         validateIntervalRange("normalRange", request.normalRange, errors)
@@ -528,23 +528,29 @@ class WebUiConfigWriteFacade(
     }
 
     /**
-     * 可选 OneBot11 私聊联系人只在填写时校验 QQ 数字，保留空管理员的旧配置兼容性。
+     * 管理员字段缺省表示保留，显式值只接受 OneBot11 正整数 QQ 或 QQ 官方非空 OpenID。
      */
-    private fun validateOptionalOneBot11PrivateContact(
+    private fun validateOptionalAdminContact(
         fieldName: String,
-        contact: String,
+        contact: String?,
         errors: MutableList<String>,
     ) {
-        val normalized = contact.trim()
+        val normalized = contact?.trim() ?: return
         if (normalized.isBlank()) {
             return
         }
-        val prefix = "onebot11:private:"
-        if (normalized.startsWith(prefix)) {
-            val qq = normalized.removePrefix(prefix).toLongOrNull()
-            if (qq == null || qq <= 0L) {
-                errors += "$fieldName is invalid"
+        val valid = when {
+            normalized.startsWith("onebot11:private:") -> {
+                val qq = normalized.removePrefix("onebot11:private:").toLongOrNull()
+                qq != null && qq > 0L
             }
+            normalized.startsWith("qq_official:private:") -> {
+                normalized.removePrefix("qq_official:private:").isNotBlank()
+            }
+            else -> false
+        }
+        if (!valid) {
+            errors += "$fieldName is invalid"
         }
     }
 

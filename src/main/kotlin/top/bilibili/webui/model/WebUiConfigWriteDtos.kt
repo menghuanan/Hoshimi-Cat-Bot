@@ -3,13 +3,13 @@ package top.bilibili.webui.model
 import kotlinx.serialization.Serializable
 
 /**
- * `BiliConfig.yml` 写请求保持文件级边界；空 secret 和 preserve 代理模式表示保留后端当前敏感配置。
+ * `BiliConfig.yml` 写请求保持文件级边界；管理员字段缺省表示保留，空 secret 和 preserve 代理模式表示保留后端当前敏感配置。
  */
 @Serializable
 data class WebUiBiliConfigWriteRequestDto(
     val snapshotToken: String,
-    val admin: Long = 0L,
-    val adminContact: String = "",
+    val admin: Long? = null,
+    val adminContact: String? = null,
     val debugMode: Boolean = false,
     val drawEnable: Boolean = true,
     val pushDrawEnable: Boolean = true,

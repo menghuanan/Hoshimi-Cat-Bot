@@ -903,7 +903,14 @@ describe('webui shell routing', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/api/config/bili-config')) {
-        return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliConfig.yml', snapshotToken: 'bili-token', fields: []})}
+        return {ok: true, status: 200, json: async () => ({
+          sourceFile: 'BiliConfig.yml',
+          snapshotToken: 'bili-token',
+          fields: [
+            {key: 'adminContact', label: 'adminContact', value: 'onebot11:private:42', capability: 'EDITABLE', editable: true},
+            {key: 'admin', label: 'admin', value: '42', capability: 'EDITABLE', editable: true},
+          ],
+        })}
       }
       if (url.includes('/api/config/bot')) {
         return {
@@ -913,6 +920,7 @@ describe('webui shell routing', () => {
             sourceFile: 'bot.yml',
             snapshotToken: 'bot-token',
             fields: [
+              {key: 'platform.type', label: '平台类型', value: 'onebot11', capability: 'EDITABLE', editable: true},
               {key: 'admins', label: 'admins', value: JSON.stringify([{groupId: 124515, userIds: [1245512]}]), capability: 'EDITABLE', editable: true},
             ],
           }),
@@ -924,6 +932,8 @@ describe('webui shell routing', () => {
     renderAtPath('/#settings')
     fireEvent.click(await screen.findByRole('button', {name: '管理员', pressed: false}))
 
+    expect(await screen.findByLabelText('超级管理员 QQ')).toHaveAttribute('type', 'number')
+    expect(screen.getByLabelText('超级管理员 QQ')).toHaveValue(42)
     expect(await screen.findByLabelText('群聊')).toHaveValue('124515')
     expect(screen.getByLabelText('个人QQ号')).toHaveValue('1245512')
     expect(screen.queryByText('群聊：124515 管理员：1245512')).not.toBeInTheDocument()
@@ -1203,8 +1213,8 @@ describe('webui shell routing', () => {
             sourceFile: 'BiliConfig.yml',
             snapshotToken: 'bili-token',
             fields: [
-              {key: 'adminContact', label: 'adminContact', value: 'onebot11:private:42', capability: 'EDITABLE', editable: true},
-              {key: 'admin', label: 'admin', value: '42', capability: 'EDITABLE', editable: true},
+              {key: 'adminContact', label: 'adminContact', value: 'qq_official:private:user_openid_demo', capability: 'EDITABLE', editable: true},
+              {key: 'admin', label: 'admin', value: '0', capability: 'EDITABLE', editable: true},
             ],
           }),
         }
@@ -1217,6 +1227,7 @@ describe('webui shell routing', () => {
             sourceFile: 'bot.yml',
             snapshotToken: 'bot-token-1',
             fields: [
+              {key: 'platform.type', label: '平台类型', value: 'qq_official', capability: 'EDITABLE', editable: true},
               {key: 'admins', label: 'admins', value: '[]', capability: 'EDITABLE', editable: true},
             ],
           }),
@@ -1237,6 +1248,134 @@ describe('webui shell routing', () => {
     await waitFor(() => expect(batchBodies).toHaveLength(1))
     expect(batchBodies[0].botConfig).toBeDefined()
     expect(batchBodies[0].biliConfig).toBeUndefined()
+  })
+
+  /**
+   * QQ 官方管理员不属于当前功能开关编辑，普通 BiliConfig 保存不得回传有损管理员投影。
+   */
+  it('omits qq official admin fields when saving unrelated bili settings', async () => {
+    const batchBodies: Array<Record<string, Record<string, unknown>>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {onBatchBody: (body) => batchBodies.push(body)})
+      if (settingsResponse) return settingsResponse
+      if (url.includes('/api/config/bili-config')) {
+        return {ok: true, status: 200, json: async () => ({
+          sourceFile: 'BiliConfig.yml',
+          snapshotToken: 'bili-token',
+          fields: [
+            {key: 'adminContact', label: 'adminContact', value: 'qq_official:private:user_openid_demo', capability: 'EDITABLE', editable: true},
+            {key: 'admin', label: 'admin', value: '0', capability: 'EDITABLE', editable: true},
+            {key: 'enableConfig.debugMode', label: '调试模式', value: 'false', capability: 'EDITABLE', editable: true},
+          ],
+        })}
+      }
+      if (url.includes('/api/config/bot')) {
+        return {ok: true, status: 200, json: async () => ({
+          sourceFile: 'bot.yml',
+          snapshotToken: 'bot-token',
+          fields: [{key: 'platform.type', label: '平台类型', value: 'qq_official', capability: 'EDITABLE', editable: true}],
+        })}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+    await user.click(await screen.findByRole('button', {name: '功能开关', pressed: false}))
+    await user.click(screen.getByLabelText('调试模式'))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(batchBodies).toHaveLength(1))
+    expect(batchBodies[0].biliConfig).not.toHaveProperty('admin')
+    expect(batchBodies[0].biliConfig).not.toHaveProperty('adminContact')
+  })
+
+  /**
+   * QQ 官方平台在管理员页展示 OpenID 文本输入，并按平台命名空间提交显式修改。
+   */
+  it('edits qq official super admin as an openid', async () => {
+    const batchBodies: Array<Record<string, Record<string, unknown>>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {onBatchBody: (body) => batchBodies.push(body)})
+      if (settingsResponse) return settingsResponse
+      if (url.includes('/api/config/bili-config')) {
+        return {ok: true, status: 200, json: async () => ({
+          sourceFile: 'BiliConfig.yml',
+          snapshotToken: 'bili-token',
+          fields: [
+            {key: 'adminContact', label: 'adminContact', value: 'qq_official:private:user_openid_demo', capability: 'EDITABLE', editable: true},
+            {key: 'admin', label: 'admin', value: '0', capability: 'EDITABLE', editable: true},
+          ],
+        })}
+      }
+      if (url.includes('/api/config/bot')) {
+        return {ok: true, status: 200, json: async () => ({
+          sourceFile: 'bot.yml',
+          snapshotToken: 'bot-token',
+          fields: [
+            {key: 'platform.type', label: '平台类型', value: 'qq_official', capability: 'EDITABLE', editable: true},
+            {key: 'admins', label: 'admins', value: '[]', capability: 'EDITABLE', editable: true},
+          ],
+        })}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+    await user.click(await screen.findByRole('button', {name: '管理员', pressed: false}))
+    const openIdInput = await screen.findByLabelText('超级管理员 OpenID')
+    expect(openIdInput).toHaveAttribute('type', 'text')
+    expect(openIdInput).toHaveValue('user_openid_demo')
+    await user.clear(openIdInput)
+    await user.type(openIdInput, 'next_openid')
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(batchBodies).toHaveLength(1))
+    expect(batchBodies[0].biliConfig).toMatchObject({
+      admin: 0,
+      adminContact: 'qq_official:private:next_openid',
+    })
+    await waitFor(() => expect(screen.getByRole('button', {name: '保存'})).toBeEnabled())
+    expect(screen.getByLabelText('超级管理员 OpenID')).toHaveValue('next_openid')
+  })
+
+  /**
+   * 当前平台与已保存 subject 不匹配时不得把旧标识当成新平台标识显示或自动转换。
+   */
+  it('does not project a mismatched admin subject into the active platform field', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/config/bili-data')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'BiliData.yml', snapshotToken: 'data-token', fields: []})}
+      }
+      if (url.includes('/api/config/bili-config')) {
+        return {ok: true, status: 200, json: async () => ({
+          sourceFile: 'BiliConfig.yml',
+          snapshotToken: 'bili-token',
+          fields: [
+            {key: 'adminContact', label: 'adminContact', value: 'onebot11:private:42', capability: 'EDITABLE', editable: true},
+            {key: 'admin', label: 'admin', value: '42', capability: 'EDITABLE', editable: true},
+          ],
+        })}
+      }
+      if (url.includes('/api/config/bot')) {
+        return {ok: true, status: 200, json: async () => ({
+          sourceFile: 'bot.yml',
+          snapshotToken: 'bot-token',
+          fields: [{key: 'platform.type', label: '平台类型', value: 'qq_official', capability: 'EDITABLE', editable: true}],
+        })}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#settings')
+    await user.click(await screen.findByRole('button', {name: '管理员', pressed: false}))
+
+    expect(await screen.findByLabelText('超级管理员 OpenID')).toHaveValue('')
   })
 
   /**

@@ -81,7 +81,7 @@ export const settingsFieldDescriptions: Record<string, string> = {
   'linkParseBlacklistContacts': '逐行填写联系人 subject，被列入的群聊或用户不会触发链接解析。',
 
   // 管理员
-  'adminContactQQ': '最高权限管理员 QQ，建议填写自己的号码。',
+  'adminContactIdentity': '最高权限管理员标识会按当前平台保存为对应的私聊联系人。',
   'adminsText': '按“群号:QQ号”逐行配置群聊内可操控 bot 的管理员。',
 
   // 翻译配置

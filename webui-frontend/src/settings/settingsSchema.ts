@@ -179,7 +179,7 @@ export const settingsCategories: SettingsCategoryDefinition[] = [
     id: 'admin',
     label: '管理员',
     fields: [
-      {key: 'adminContactQQ', label: '超级管理员 QQ', file: 'biliConfig', payloadKey: 'adminContact', type: 'number', min: 1},
+      {key: 'adminContactIdentity', label: '超级管理员标识', file: 'biliConfig', payloadKey: 'adminContact', type: 'text'},
       {key: 'adminsText', label: '群普通管理员', file: 'botConfig', payloadKey: 'admins', type: 'textarea'},
     ],
   },
@@ -204,7 +204,7 @@ export const settingsFieldByKey = new Map(
 /**
  * 设置页保存前执行浏览器侧纠错，先拦截明显非法值再交给后端做最终校验。
  */
-export function validateSettingsValues(values: Record<string, unknown>): string[] {
+export function validateSettingsValues(values: Record<string, unknown>, platformType = 'onebot11'): string[] {
   return [
     ...validateRequiredText('OneBot11 主机', values['platform.onebot11.host']),
     ...validatePort('OneBot11 端口', values['platform.onebot11.port']),
@@ -223,9 +223,20 @@ export function validateSettingsValues(values: Record<string, unknown>): string[
     ...['DRAW', 'IMAGES', 'EMOJI', 'USER', 'OTHER'].flatMap((key) => validatePositiveInteger(`缓存 ${key}`, values[`cacheConfig.expires.${key}`])),
     ...validatePositiveInteger('消息间隔', values['pushConfig.messageInterval']),
     ...validatePositiveInteger('推送间隔', values['pushConfig.pushInterval']),
-    ...validatePositiveInteger('超级管理员 QQ', values.adminContactQQ),
+    ...validateAdminIdentity(values.adminContactIdentity, platformType),
     ...validateAdminLines(values.adminsText),
   ]
+}
+
+/**
+ * 超级管理员标识按当前平台校验；缺省或显式空值分别表示未参与和清空配置。
+ */
+function validateAdminIdentity(value: unknown, platformType: string): string[] {
+  if (value === undefined) return []
+  const text = String(value ?? '').trim()
+  if (!text) return []
+  if (platformType === 'qq_official') return []
+  return validatePositiveInteger('超级管理员 QQ', text)
 }
 
 /**

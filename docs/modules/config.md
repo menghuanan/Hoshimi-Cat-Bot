@@ -68,6 +68,8 @@ WebUI 保存链路使用热重载协调器统一处理 `BiliConfig.yml`、`BiliD
 
 `BiliDataRuntimeCoordinator` 是业务数据运行态 mutation 的唯一事务边界：从深快照构建候选，候选成功落盘后才安装。`bot.yml` 仅在文件缺失时生成默认值；已有文件解析失败会保留原件并报告原文件及最近备份位置。Cookie 的冷启动、热重载和回滚都使用完整替换，输入缺失字段会清除旧值。
 
+WebUI 对超级管理员字段采用 patch 语义：`admin`/`adminContact` 未提交时保留 `BiliConfig.yml` 当前值；OneBot11 显式保存同步写入旧数字 `admin` 与 `onebot11:private:<QQ>`，QQ 官方显式保存把旧 `admin` 归零并写入 `qq_official:private:<OpenID>`。平台切换本身不跨命名空间转换管理员标识。
+
 ## 资源与生命周期
 
 Config 模块拥有配置文件和业务数据文件的写入权，但不拥有长期协程、网络客户端或 native 资源。文件写入必须保持原子语义和编码一致，运行期缓存由调用方或协调器负责刷新。

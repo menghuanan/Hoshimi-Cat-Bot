@@ -4,6 +4,7 @@ export type BuildSettingsSavePayloadInput = {
   file: SettingsFileId
   snapshotToken: string
   proxyUpdateMode?: 'preserve' | 'replace' | 'clear'
+  adminPlatformType?: string
   values?: Record<string, unknown>
 }
 
@@ -39,11 +40,17 @@ function coerceSettingsBool(value: unknown): boolean {
 }
 
 /**
- * 管理员 QQ 在页面展示为数字，提交时转换成平台联系人 subject。
+ * 管理员标识按当前平台转换为联系人 subject，并同步维护 OneBot11 旧数字字段。
  */
-function adminContactFromQQ(value: unknown): string {
+function adminFieldsFromIdentity(value: unknown, platformType: string): {admin: number, adminContact: string} {
   const text = String(value || '').trim()
-  return text ? `onebot11:private:${text}` : ''
+  if (!text) {
+    return {admin: 0, adminContact: ''}
+  }
+  if (platformType === 'qq_official') {
+    return {admin: 0, adminContact: `qq_official:private:${text}`}
+  }
+  return {admin: Number.parseInt(text, 10), adminContact: `onebot11:private:${text}`}
 }
 
 /**
@@ -135,9 +142,8 @@ export function buildSettingsSavePayload(input: BuildSettingsSavePayloadInput): 
       }
       return
     }
-    if (key === 'adminContactQQ') {
-      payload.adminContact = adminContactFromQQ(value)
-      payload.admin = Number(coerceSettingsValue('number', value))
+    if (key === 'adminContactIdentity') {
+      Object.assign(payload, adminFieldsFromIdentity(value, input.adminPlatformType || 'onebot11'))
       return
     }
     if (key === 'adminsText') {

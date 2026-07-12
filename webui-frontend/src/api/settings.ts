@@ -9,6 +9,7 @@ export type WebUiBiliConfigSaveInput = {
   snapshotToken: string
   proxyText?: string
   proxyUpdateMode?: 'preserve' | 'replace' | 'clear'
+  adminPlatformType?: string
   currentProxies?: string[]
   fields?: Record<string, unknown>
 }
@@ -77,6 +78,7 @@ export function buildBiliConfigSavePayload(input: WebUiBiliConfigSaveInput): Rec
     file: 'biliConfig',
     snapshotToken: input.snapshotToken,
     proxyUpdateMode: input.proxyUpdateMode,
+    adminPlatformType: input.adminPlatformType,
     values: {
       'proxyConfig.proxy': input.proxyText || '',
       ...(input.fields || {}),

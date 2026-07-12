@@ -111,7 +111,7 @@ describe('settings payload helpers', () => {
       'linkResolveConfig.triggerMode',
       'linkResolveConfig.drawEnable',
       'linkResolveConfig.returnLink',
-      'adminContactQQ',
+      'adminContactIdentity',
       'adminsText',
       'translateConfig.cutLine',
       'translateConfig.baidu.APP_ID',
@@ -135,8 +135,8 @@ describe('settings payload helpers', () => {
       'imageConfig.defaultColor': 'blue',
       'cacheConfig.expires.DRAW': '0',
       'pushConfig.messageInterval': '0',
-      adminContactQQ: '-1',
-    })).toEqual(expect.arrayContaining([
+      adminContactIdentity: '-1',
+    }, 'onebot11')).toEqual(expect.arrayContaining([
       'OneBot11 主机必须填写',
       'OneBot11 端口必须在 1-65535 之间',
       '心跳间隔 必须大于 0',
@@ -150,6 +150,69 @@ describe('settings payload helpers', () => {
       '消息间隔 必须大于 0',
       '超级管理员 QQ 必须大于 0',
     ]))
+  })
+
+  /**
+   * OneBot11 超级管理员输入必须同时生成旧数字字段和命名空间联系人字段。
+   */
+  it('maps onebot admin identity to legacy and contact fields', () => {
+    const payload = buildSettingsSavePayload({
+      file: 'biliConfig',
+      snapshotToken: 'bili-token',
+      adminPlatformType: 'onebot11',
+      values: {adminContactIdentity: '42'},
+    })
+
+    expect(payload).toMatchObject({
+      admin: 42,
+      adminContact: 'onebot11:private:42',
+    })
+  })
+
+  /**
+   * QQ 官方超级管理员输入保留非数字 OpenID，并清零仅供 OneBot11 兼容的旧字段。
+   */
+  it('maps qq official admin identity to openid contact', () => {
+    const payload = buildSettingsSavePayload({
+      file: 'biliConfig',
+      snapshotToken: 'bili-token',
+      adminPlatformType: 'qq_official',
+      values: {adminContactIdentity: 'user_openid_demo'},
+    })
+
+    expect(payload).toMatchObject({
+      admin: 0,
+      adminContact: 'qq_official:private:user_openid_demo',
+    })
+  })
+
+  /**
+   * 超级管理员输入被用户显式清空时，两套兼容字段都必须清空。
+   */
+  it('clears admin fields when identity is explicitly empty', () => {
+    const payload = buildSettingsSavePayload({
+      file: 'biliConfig',
+      snapshotToken: 'bili-token',
+      adminPlatformType: 'qq_official',
+      values: {adminContactIdentity: ''},
+    })
+
+    expect(payload).toMatchObject({admin: 0, adminContact: ''})
+  })
+
+  /**
+   * 普通 BiliConfig 保存没有管理员内部键时，不得向 nullable 后端字段发送默认值。
+   */
+  it('omits admin fields when identity was not submitted', () => {
+    const payload = buildSettingsSavePayload({
+      file: 'biliConfig',
+      snapshotToken: 'bili-token',
+      adminPlatformType: 'qq_official',
+      values: {'enableConfig.debugMode': true},
+    })
+
+    expect(payload).not.toHaveProperty('admin')
+    expect(payload).not.toHaveProperty('adminContact')
   })
 
   /**

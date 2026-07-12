@@ -65,6 +65,7 @@ export function SettingsPage() {
     biliData: readFieldValues(biliData),
     botConfig: readFieldValues(botConfig),
   }), [biliConfig, biliData, botConfig])
+  const adminPlatformType = fieldValues.botConfig.get('platform.type') === 'qq_official' ? 'qq_official' : 'onebot11'
 
   const initialValues = useMemo<SettingsFormValues>(() => {
     // 初始值来自快照，写入专用字段保持空值不回显。
@@ -90,7 +91,10 @@ export function SettingsPage() {
     ...editedValues,
   }), [editedValues, initialValues])
 
-  const visibleFieldGroups = useMemo(() => visibleGroupsForCategory(activeCategory, values), [activeCategory, values])
+  const visibleFieldGroups = useMemo(
+    () => visibleGroupsForCategory(activeCategory, values, adminPlatformType),
+    [activeCategory, adminPlatformType, values],
+  )
   const visibleSettingsFields = useMemo(() => visibleFieldGroups.flatMap((group) => group.fields), [visibleFieldGroups])
 
   /**
@@ -118,7 +122,11 @@ export function SettingsPage() {
       const biliValues = pickValuesForFile(visibleSettingsFields, values, 'biliConfig')
       const biliDataValues = pickValuesForFile(visibleSettingsFields, values, 'biliData')
       const botValues = pickValuesForFile(visibleSettingsFields, values, 'botConfig')
-      const validationErrors = validateSettingsValues({...biliValues, ...biliDataValues, ...botValues})
+      const submittedAdminIdentity = shouldSubmitAdminIdentity(visibleSettingsFields, editedValues)
+      const validationValues = submittedAdminIdentity
+        ? {...biliValues, ...biliDataValues, ...botValues}
+        : omitKey({...biliValues, ...biliDataValues, ...botValues}, 'adminContactIdentity')
+      const validationErrors = validateSettingsValues(validationValues, adminPlatformType)
       if (validationErrors.length > 0) {
         showToast('error', validationErrors.join('；'))
         return
@@ -140,10 +148,14 @@ export function SettingsPage() {
       }
       const batchPayload: Record<string, Record<string, unknown>> = {}
       if (biliToken && shouldSaveBili) {
+        const biliFields = submittedAdminIdentity
+          ? omitKey(completeBiliValues, 'proxyConfig.proxy')
+          : omitKeys(completeBiliValues, ['proxyConfig.proxy', 'adminContactIdentity'])
         batchPayload.biliConfig = buildBiliConfigSavePayload({
           snapshotToken: biliToken,
           proxyText: String(completeBiliValues['proxyConfig.proxy'] || ''),
-          fields: omitKey(completeBiliValues, 'proxyConfig.proxy'),
+          adminPlatformType,
+          fields: biliFields,
         })
       }
       if (biliDataToken && shouldSaveBiliData) {
@@ -173,7 +185,15 @@ export function SettingsPage() {
         return
       }
 
-      patchBiliConfig(completeBiliValues, outcomeToken(job, 'BILI_CONFIG'))
+      // 管理员内部表单键需要映射回后端快照键，避免保存成功并清空编辑态后回显旧 subject。
+      const biliSnapshotPatch = submittedAdminIdentity && batchPayload.biliConfig
+        ? {
+            ...completeBiliValues,
+            admin: batchPayload.biliConfig.admin,
+            adminContact: batchPayload.biliConfig.adminContact,
+          }
+        : completeBiliValues
+      patchBiliConfig(biliSnapshotPatch, outcomeToken(job, 'BILI_CONFIG'))
       patchBiliData(completeBiliDataValues, outcomeToken(job, 'BILI_DATA'))
       patchBotConfig(completeBotValues, outcomeToken(job, 'BOT_CONFIG'))
       setEditedValues({})
@@ -234,7 +254,11 @@ export function SettingsPage() {
 /**
  * 当前分区只展开可见字段，确保页面态和保存态使用同一组 field key。
  */
-function visibleGroupsForCategory(category: SettingsCategoryDefinition, values: SettingsFormValues): SettingsFieldGroup[] {
+function visibleGroupsForCategory(
+  category: SettingsCategoryDefinition,
+  values: SettingsFormValues,
+  adminPlatformType: string,
+): SettingsFieldGroup[] {
   if (category.id === 'integration') {
     const platformType = String(values['platform.type'] || 'onebot11')
     const platformKeys = platformType === 'qq_official'
@@ -259,6 +283,15 @@ function visibleGroupsForCategory(category: SettingsCategoryDefinition, values: 
       {title: '平台配置', fields: fieldsByKeys(category.fields, platformKeys)},
       {title: 'WebUI 配置', fields: fieldsByKeys(category.fields, webUiKeys)},
     ]
+  }
+  if (category.id === 'admin') {
+    const fields = category.fields.map((field) => {
+      if (field.key !== 'adminContactIdentity') return field
+      return adminPlatformType === 'qq_official'
+        ? {...field, label: '超级管理员 OpenID', type: 'text' as const, min: undefined}
+        : {...field, label: '超级管理员 QQ', type: 'number' as const, min: 1}
+    })
+    return [{title: category.label, fields}]
   }
   return [{title: category.label, fields: category.fields}]
 }
@@ -503,8 +536,13 @@ function readInitialFieldValue(field: SettingsFieldDefinition, fieldValues: Reco
   if (field.file === 'biliData') {
     return rawValue
   }
-  if (field.key === 'adminContactQQ') {
-    return qqFromAdminContact(fieldValues.biliConfig.get('adminContact') || '', fieldValues.biliConfig.get('admin') || '')
+  if (field.key === 'adminContactIdentity') {
+    const platformType = fieldValues.botConfig.get('platform.type') === 'qq_official' ? 'qq_official' : 'onebot11'
+    return adminIdentityFromContact(
+      fieldValues.biliConfig.get('adminContact') || '',
+      fieldValues.biliConfig.get('admin') || '',
+      platformType,
+    )
   }
   if (field.key === 'adminsText') {
     return adminLinesFromSnapshot(fieldValues.botConfig.get('admins') || '')
@@ -645,11 +683,26 @@ function shouldSubmitAdminProjection(fields: SettingsFieldDefinition[], values: 
 }
 
 /**
- * adminContact 读取时尽量还原成 QQ 数字，兼容旧 admin 数字字段作为兜底。
+ * 超级管理员只有在当前分区被用户实际编辑后才进入 payload，其他 BiliConfig 保存保留后端原值。
  */
-function qqFromAdminContact(contact: string, admin: string): string {
-  const matched = contact.trim().match(/^onebot11:private:(\d+)$/)
-  return matched ? matched[1] : admin
+function shouldSubmitAdminIdentity(fields: SettingsFieldDefinition[], values: SettingsFormValues): boolean {
+  return fields.some((field) => (
+    field.key === 'adminContactIdentity' && Object.prototype.hasOwnProperty.call(values, field.key)
+  ))
+}
+
+/**
+ * adminContact 只投影当前平台命名空间；OneBot11 在显式联系人为空时兼容旧 admin 数字字段。
+ */
+function adminIdentityFromContact(contact: string, admin: string, platformType: string): string {
+  const normalizedContact = contact.trim()
+  if (platformType === 'qq_official') {
+    const matched = normalizedContact.match(/^qq_official:private:(.+)$/)
+    return matched ? matched[1] : ''
+  }
+  const matched = normalizedContact.match(/^onebot11:private:(\d+)$/)
+  if (matched) return matched[1]
+  return normalizedContact ? '' : admin
 }
 
 /**

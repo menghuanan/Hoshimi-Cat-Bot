@@ -95,6 +95,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - `BiliConfig.yml`、`BiliData.yml`、`bot.yml` 只允许通过各自 manager/facade 写回，不允许 WebUI 直接写文件。
 - `logs/bilibili-bot.log`、`logs/error.log`、`logs/daemon/Daemon_*.log` 是当前固定只读日志来源，对应的 `GET /api/logs/{sourceId}/export` 只针对这些白名单 sourceId；页面“清空”不会改写这些文件。
 - `WebUiConfigWriteFacade` 对三个配置文件使用快照 token 和 dry-run 构建候选 payload；设置页一次点击应通过 `POST /api/config/save-batch` 触发一个热重载 job，前端轮询 job 到 `APPLIED` 或 `FAILED`。
+- `WebUiBiliConfigWriteRequestDto` 的 `admin` 与 `adminContact` 缺省时保留当前值，显式空值用于清空；非空 `adminContact` 只接受 OneBot11 正整数私聊 subject 或 QQ 官方非空 OpenID 私聊 subject。
 - 订阅编辑成功写入 `BiliData.yml` 后必须向同一协调器提交已持久化数据刷新信号，确保模板策略和运行态缓存同步清理。
 
 ## 测试与验证

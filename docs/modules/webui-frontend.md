@@ -51,6 +51,7 @@
 - 所有 JSON 请求必须经过 `src/api/http.ts` 的统一入口，unsafe 方法自动携带 CSRF 头。
 - `settings/settingsSchema.ts` 是设置页字段来源；`settings/settingsPayload.ts` 负责把表单值转换为后端 DTO。
 - 设置页一次保存必须把已变更的 `biliConfig`、`biliData` 和 `botConfig` 归并到同一个 batch payload；`BiliData.yml` 的链接解析黑名单按 textarea 非空行转换为 `linkParseBlacklistContacts` 数组。
+- 超级管理员输入以 `platform.type` 为准：OneBot11 系列显示正整数 QQ 并写出 `onebot11:private:<QQ>`，QQ 官方显示 OpenID 并写出 `qq_official:private:<OpenID>`；只有用户实际编辑该字段时才提交 `admin`/`adminContact`，平台切换和其他设置保存不得自动转换或覆盖原 subject。
 - 登录成功后只由 HttpOnly session cookie 维持认证；除改密外，设置、订阅、扫码登录和管理动作不得接收、缓存或转发 WebUI 登录密码，也不得把密码写入 `localStorage`、`sessionStorage`、cookie 或 URL。
 - B站扫码创建依赖当前 session 与 CSRF；浏览器不得读取或拼装二维码 URL、key、Cookie 或回调地址，只能渲染后端返回的 PNG Base64 和脱敏 phase。
 - `useSettingsFiles.saveBatch()` 只在 job 到达 `APPLIED` 后清理编辑态；`FAILED` 必须保留用户输入并展示后端 message，`webUiRedirectUrl` 需要作为新 WebUI 地址提示给用户。

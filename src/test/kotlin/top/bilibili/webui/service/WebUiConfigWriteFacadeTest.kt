@@ -1135,6 +1135,112 @@ class WebUiConfigWriteFacadeTest {
     }
 
     /**
+     * 管理员字段缺省表示本次保存与管理员无关，QQ 官方 subject 和旧数字字段都必须原样保留。
+     */
+    @Test
+    fun `bili config writes should preserve qq official admin when fields are omitted`() {
+        val currentConfig = BiliConfig(
+            admin = 0L,
+            adminContact = "qq_official:private:user_openid_demo",
+        )
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(
+                biliConfigProvider = { currentConfig },
+                biliDataProvider = { configuredBiliData(emptySet()) },
+                botConfigProvider = { BotConfig() },
+            ),
+            biliConfigProvider = { currentConfig },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliConfigProvider = { currentConfig }).readBiliConfig().snapshotToken
+        val prepared = facade.prepareBiliConfig(
+            WebUiBiliConfigWriteRequestDto(snapshotToken = snapshotToken),
+            currentConfig,
+        )
+
+        assertTrue(prepared.result.success, prepared.result.validationErrors.toString())
+        assertEquals(0L, prepared.config?.admin)
+        assertEquals("qq_official:private:user_openid_demo", prepared.config?.adminContact)
+    }
+
+    /**
+     * QQ 官方管理员显式提交时接受非数字 OpenID，并按新 subject 覆盖候选配置。
+     */
+    @Test
+    fun `bili config writes should accept qq official admin openid`() {
+        val currentConfig = BiliConfig(admin = 42L, adminContact = "onebot11:private:42")
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(biliConfigProvider = { currentConfig }),
+            biliConfigProvider = { currentConfig },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliConfigProvider = { currentConfig }).readBiliConfig().snapshotToken
+        val prepared = facade.prepareBiliConfig(
+            WebUiBiliConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                admin = 0L,
+                adminContact = "qq_official:private:user_openid_demo",
+            ),
+            currentConfig,
+        )
+
+        assertTrue(prepared.result.success, prepared.result.validationErrors.toString())
+        assertEquals(0L, prepared.config?.admin)
+        assertEquals("qq_official:private:user_openid_demo", prepared.config?.adminContact)
+    }
+
+    /**
+     * QQ 官方 subject 已出现时必须携带非空 OpenID，不能把只有命名空间前缀的值写入配置。
+     */
+    @Test
+    fun `bili config writes should reject empty qq official admin openid`() {
+        val currentConfig = BiliConfig(adminContact = "qq_official:private:user_openid_demo")
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(biliConfigProvider = { currentConfig }),
+            biliConfigProvider = { currentConfig },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliConfigProvider = { currentConfig }).readBiliConfig().snapshotToken
+        val prepared = facade.prepareBiliConfig(
+            WebUiBiliConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                admin = 0L,
+                adminContact = "qq_official:private:",
+            ),
+            currentConfig,
+        )
+
+        assertFalse(prepared.result.success)
+        assertTrue(prepared.result.validationErrors.any { it.contains("adminContact") })
+    }
+
+    /**
+     * 管理员字段显式提交空值表示清空两套兼容字段，不能被缺省保留语义吞掉。
+     */
+    @Test
+    fun `bili config writes should clear admin when empty values are submitted`() {
+        val currentConfig = BiliConfig(admin = 42L, adminContact = "onebot11:private:42")
+        val facade = WebUiConfigWriteFacade(
+            configFacade = WebUiConfigFacade(biliConfigProvider = { currentConfig }),
+            biliConfigProvider = { currentConfig },
+        )
+
+        val snapshotToken = WebUiConfigFacade(biliConfigProvider = { currentConfig }).readBiliConfig().snapshotToken
+        val prepared = facade.prepareBiliConfig(
+            WebUiBiliConfigWriteRequestDto(
+                snapshotToken = snapshotToken,
+                admin = 0L,
+                adminContact = "",
+            ),
+            currentConfig,
+        )
+
+        assertTrue(prepared.result.success, prepared.result.validationErrors.toString())
+        assertEquals(0L, prepared.config?.admin)
+        assertEquals("", prepared.config?.adminContact)
+    }
+
+    /**
      * bot.yml 写入入口必须覆盖端口规范和 WebUI 数字字段，防止前端绕过时保存非法启动参数。
      */
     @Test
