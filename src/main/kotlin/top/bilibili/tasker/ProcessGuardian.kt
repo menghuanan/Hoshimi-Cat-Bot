@@ -26,6 +26,15 @@ import java.util.concurrent.TimeUnit
 import kotlin.system.exitProcess
 
 /**
+ * 将 JVM 内存池上限转换为 MB；未设置或不足 1 MB 时回退到项目运行基线。
+ */
+internal fun resolveNonHeapLimitMB(reportedMaxBytes: Long, fallbackLimitMB: Long): Long =
+    reportedMaxBytes
+        .takeIf { it >= 1024L * 1024L }
+        ?.div(1024L * 1024L)
+        ?: fallbackLimitMB
+
+/**
  * 综合守护进程
  * 功能：
  * 1. 任务健康监控
@@ -58,8 +67,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val WARNING_THRESHOLD = 0.7   // 70%
     private const val CRITICAL_THRESHOLD = 0.85  // 85%
 
-    // Metaspace/CodeCache 阈值 (基于配置的限制)
-    private const val METASPACE_LIMIT_MB = 48L
+    // JVM 未报告 Metaspace 上限时使用发行基线兜底，正常情况优先采用 MemoryPoolMXBean 的实际值。
+    private const val METASPACE_FALLBACK_LIMIT_MB = 56L
     private const val CODECACHE_LIMIT_MB = 32L
     private const val NON_HEAP_WARNING_THRESHOLD = 0.8  // 80%
     private const val NON_HEAP_GROWTH_LOG_MIN_BYTES = 8L * 1024L
@@ -289,11 +298,13 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 pool.name.contains("Metaspace", ignoreCase = true) -> {
                     metaspaceUsedBytes += usage.used
                     report.metaspaceUsedMB = usedMB
-                    val ratio = usedMB.toDouble() / METASPACE_LIMIT_MB
+                    val metaspaceLimitMB = resolveNonHeapLimitMB(usage.max, METASPACE_FALLBACK_LIMIT_MB)
+                    report.metaspaceLimitMB = metaspaceLimitMB
+                    val ratio = usedMB.toDouble() / metaspaceLimitMB
                     if (ratio > NON_HEAP_WARNING_THRESHOLD) {
                         report.hasNonHeapIssue = true
-                        report.nonHeapIssueDetails.add("Metaspace: ${usedMB}MB / ${METASPACE_LIMIT_MB}MB (${(ratio * 100).toInt()}%)")
-                        logger.warn("Metaspace 使用率过高: ${usedMB}MB / ${METASPACE_LIMIT_MB}MB")
+                        report.nonHeapIssueDetails.add("Metaspace: ${usedMB}MB / ${metaspaceLimitMB}MB (${(ratio * 100).toInt()}%)")
+                        logger.warn("Metaspace 使用率过高: ${usedMB}MB / ${metaspaceLimitMB}MB")
                     }
                 }
                 pool.name.contains("CodeCache", ignoreCase = true) ||
@@ -1658,7 +1669,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 }
 
                 // 2.5 非堆内存 (Metaspace, CodeCache)
-                writer.println("[非堆内存] Metaspace: ${report.metaspaceUsedMB}MB/${METASPACE_LIMIT_MB}MB, CodeCache: ${report.codeCacheUsedMB}MB/${CODECACHE_LIMIT_MB}MB")
+                writer.println("[非堆内存] Metaspace: ${report.metaspaceUsedMB}MB/${report.metaspaceLimitMB}MB, CodeCache: ${report.codeCacheUsedMB}MB/${CODECACHE_LIMIT_MB}MB")
                 if (report.hasNonHeapIssue) {
                     writer.println("  告警:")
                     report.nonHeapIssueDetails.forEach { detail ->
@@ -1988,6 +1999,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var hasNonHeapGrowthIssue: Boolean = false,
         var hasNonHeapLongGrowthIssue: Boolean = false,
         var metaspaceUsedMB: Long = 0,
+        var metaspaceLimitMB: Long = METASPACE_FALLBACK_LIMIT_MB,
         var codeCacheUsedMB: Long = 0,
         var nonHeapIssueDetails: MutableList<String> = mutableListOf(),
         var nonHeapGrowthDetails: List<String> = emptyList(),
