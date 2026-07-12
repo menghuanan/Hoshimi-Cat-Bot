@@ -378,6 +378,9 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             set JAVA_OPTS=%JAVA_OPTS% -XX:MaxHeapFreeRatio=20
             set JAVA_OPTS=%JAVA_OPTS% -XX:G1PeriodicGCInterval=60000
             set JAVA_OPTS=%JAVA_OPTS% -XX:G1PeriodicGCSystemLoadThreshold=0
+            rem 裸机发行包与 Docker 使用相同的 Metaspace 触发点和上限，避免平台间监控口径分叉。
+            set JAVA_OPTS=%JAVA_OPTS% -XX:MetaspaceSize=16m
+            set JAVA_OPTS=%JAVA_OPTS% -XX:MaxMetaspaceSize=56m
             set JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8
             set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
             set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
@@ -481,6 +484,9 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             JAVA_OPTS="${'$'}JAVA_OPTS -XX:MaxHeapFreeRatio=20"
             JAVA_OPTS="${'$'}JAVA_OPTS -XX:G1PeriodicGCInterval=60000"
             JAVA_OPTS="${'$'}JAVA_OPTS -XX:G1PeriodicGCSystemLoadThreshold=0"
+            # 裸机发行包与 Docker 使用相同的 Metaspace 触发点和上限，避免平台间监控口径分叉。
+            JAVA_OPTS="${'$'}JAVA_OPTS -XX:MetaspaceSize=16m"
+            JAVA_OPTS="${'$'}JAVA_OPTS -XX:MaxMetaspaceSize=56m"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dfile.encoding=UTF-8"
             JAVA_OPTS="${'$'}JAVA_OPTS -Duser.timezone=Asia/Shanghai"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.renderApi=SOFTWARE"

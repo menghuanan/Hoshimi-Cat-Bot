@@ -72,11 +72,11 @@
 
 近期提交中已引入 G1 周期性回收和更积极 heap shrink 参数，用于长时间静默场景降低 committed heap 高水位。
 
-当前观测中 heap 与周期回收表现正常，`-Xmx160m` 暂无不足证据；此前主要压力来自 Metaspace 接近 48 MB 上限，因此只将其上限小幅提高到 56 MB，heap 和 G1 参数保持不变并继续长期观察。
+当前观测中 heap 与周期回收表现正常，`-Xmx160m` 暂无不足证据；此前主要压力来自 Metaspace 接近 48 MB 上限，因此将 Docker、Windows 裸机和 Linux 裸机的 Metaspace 上限统一提高到 56 MB，heap 和 G1 参数保持不变并继续长期观察。
 
 ## Native/RSS 策略
 
-Docker 镜像通过 `LD_PRELOAD` 强制使用 jemalloc；Linux 裸机启动脚本要求 `libjemalloc.so.2` 可用，不可用时尝试交互安装或失败退出；Windows 裸机不使用 jemalloc。当前 `MALLOC_CONF` 的重点约束是：
+Docker 镜像通过 `LD_PRELOAD` 强制使用 jemalloc；Linux 裸机启动脚本要求 `libjemalloc.so.2` 可用，不可用时尝试交互安装或失败退出；Windows 裸机不使用 jemalloc。三种环境均显式使用 `MetaspaceSize=16m` 和 `MaxMetaspaceSize=56m`。当前 `MALLOC_CONF` 的重点约束是：
 
 - `background_thread:true`：后台回收线程常驻，避免空闲页长期滞留。
 - `dirty_decay_ms=2000`、`muzzy_decay_ms=2000`：2 秒内加速把脏页/惰性页归还给系统。

@@ -32,7 +32,7 @@ _最后更新：2026-07-12_
 - 已有 `bot.yml` 损坏时保留原件并拒绝核心启动；WebUI 凭据损坏时只禁用 WebUI，核心 Bot 继续运行。
 - Docker 和发行包默认使用 software rendering。
 - Docker 默认内存限制为 512m，应用 heap 默认 `64m~160m`。
-- Docker Metaspace 上限为 56m；本轮未提高 heap 上限，也未调整 G1 周期回收和 heap shrink 参数。
+- Docker、Windows 裸机和 Linux 裸机的 Metaspace 上限统一为 56m；本轮未提高 heap 上限，也未调整 G1 周期回收和 heap shrink 参数。
 
 ## 当前维护约束
 

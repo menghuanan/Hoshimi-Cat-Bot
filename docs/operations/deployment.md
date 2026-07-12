@@ -120,6 +120,7 @@ Windows `start.bat`：
 - `chcp 65001`
 - 优先使用发行包内 `runtime\bin\java.exe`，不再依赖系统 PATH 中的 Java
 - `-Xms64m -Xmx160m`
+- Metaspace 初始触发点 16m、上限 56m，与 Docker 保持一致
 - G1 周期回收和 heap shrink 参数
 - UTF-8、时区、Skiko software rendering
 
@@ -130,6 +131,7 @@ Linux `start.sh`：
 - jemalloc 可用时会自动启用并设置 `LD_PRELOAD` 和默认 `MALLOC_CONF`
 - 缺少 jemalloc 时，交互终端会询问是否通过受支持的系统包管理器安装；拒绝安装、非交互运行、安装失败或安装后仍不可用都会以状态码 1 退出
 - 使用与 Windows 类似的 JVM heap/G1/Skiko 参数
+- Metaspace 初始触发点 16m、上限 56m，与 Docker 和 Windows 保持一致
 - 发行包内置 runtime 会额外携带 `jdk.charsets`，以保证二维码生成等依赖 GB2312 字符集的路径在精简运行时内可用
 
 ## 运行环境差异

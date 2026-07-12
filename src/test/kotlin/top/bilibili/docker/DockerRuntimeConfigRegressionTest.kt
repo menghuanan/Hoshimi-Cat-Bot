@@ -226,6 +226,23 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `bare metal distribution startup scripts should align metaspace limits with docker`() {
+        val buildGradle = read("build.gradle.kts")
+
+        // Windows 与 Linux 裸机必须显式携带 Docker 的 Metaspace 基线，避免监控阈值和实际 JVM 上限分叉。
+        val expectedMetaspaceOptions = listOf(
+            "set JAVA_OPTS=%JAVA_OPTS% -XX:MetaspaceSize=16m",
+            "set JAVA_OPTS=%JAVA_OPTS% -XX:MaxMetaspaceSize=56m",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:MetaspaceSize=16m\"",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:MaxMetaspaceSize=56m\"",
+        )
+        assertTrue(
+            expectedMetaspaceOptions.all(buildGradle::contains),
+            "Windows and Linux distribution launchers should carry the complete Docker Metaspace baseline",
+        )
+    }
+
+    @Test
     fun `bare metal windows startup script should avoid linux allocator preload injection`() {
         val buildGradle = read("build.gradle.kts")
 
