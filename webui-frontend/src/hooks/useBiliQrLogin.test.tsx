@@ -62,6 +62,37 @@ describe('useBiliQrLogin', () => {
     expect(result.current.session).toBeNull()
   })
 
+  /** 二维码等待超时必须通知页面层，弹窗之外仍能留下明确反馈。 */
+  it('notifies the page when polling reaches the expired phase', async () => {
+    vi.useFakeTimers()
+    rememberSessionPassword('secret-password')
+    const onExpired = vi.fn()
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(response(201, {
+        sessionId: 'expired-session', phase: 'WAITING_FOR_SCAN', expiresAtEpochMillis: Date.now() + 180_000,
+        message: '等待扫码', qrImageBase64: 'AQID',
+      }))
+      .mockResolvedValueOnce(response(200, {
+        sessionId: 'expired-session', phase: 'EXPIRED', expiresAtEpochMillis: Date.now(),
+        message: '登录超时，请重新登录',
+      }))
+    const {result} = renderHook(() => useBiliQrLogin({
+      fetchImpl,
+      pollIntervalMs: 10,
+      onExpired,
+    }))
+
+    await act(async () => {
+      await result.current.openLogin()
+      await vi.advanceTimersByTimeAsync(10)
+      await Promise.resolve()
+    })
+
+    expect(result.current.session?.phase).toBe('EXPIRED')
+    expect(onExpired).toHaveBeenCalledOnce()
+    expect(onExpired).toHaveBeenCalledWith('登录超时，请重新登录')
+  })
+
   /** 页面级成功副作用失败时必须由 hook 消费拒绝，不能形成未处理 Promise rejection。 */
   it('contains a rejected success callback while preserving the successful session', async () => {
     rememberSessionPassword('secret-password')

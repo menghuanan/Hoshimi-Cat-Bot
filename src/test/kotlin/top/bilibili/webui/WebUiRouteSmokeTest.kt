@@ -172,7 +172,7 @@ class WebUiRouteSmokeTest {
 
         assertEquals(HttpStatusCode.OK, loginPage.status)
         assertEquals(HttpStatusCode.OK, runtimeResponse.status)
-        assertEquals("default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'", loginPage.headers["Content-Security-Policy"])
+        assertEquals("default-src 'self'; img-src 'self' data:; base-uri 'self'; frame-ancestors 'none'; object-src 'none'", loginPage.headers["Content-Security-Policy"])
         assertEquals("DENY", runtimeResponse.headers["X-Frame-Options"])
         assertEquals("nosniff", runtimeResponse.headers["X-Content-Type-Options"])
         assertEquals("no-referrer", runtimeResponse.headers["Referrer-Policy"])

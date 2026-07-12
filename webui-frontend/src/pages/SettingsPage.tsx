@@ -51,7 +51,14 @@ export function SettingsPage() {
     // 登录提交结果独立于摘要刷新；刷新失败只保留旧页面状态，不得撤销成功反馈。
     await refreshRuntime()
   }, [refreshRuntime, showToast])
-  const biliLogin = useBiliQrLogin({onSucceeded: handleBiliLoginSucceeded})
+  /** 登录超时通过全局 Toast 保留结果，关闭二维码弹窗后用户仍能看到下一步提示。 */
+  const handleBiliLoginExpired = useCallback((message: string) => {
+    showToast('warning', message)
+  }, [showToast])
+  const biliLogin = useBiliQrLogin({
+    onSucceeded: handleBiliLoginSucceeded,
+    onExpired: handleBiliLoginExpired,
+  })
 
   const fieldValues = useMemo(() => ({
     biliConfig: readFieldValues(biliConfig),

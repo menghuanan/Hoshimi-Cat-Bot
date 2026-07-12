@@ -217,6 +217,36 @@ describe('webui shell routing', () => {
     await waitFor(() => expect(runtimeRequestCount).toBeGreaterThan(1))
   })
 
+  /** 登录会话过期后必须通过全局 Toast 保留反馈，避免用户关闭弹窗后看不到结果。 */
+  it('shows a warning toast when the BiliBili login session expires', async () => {
+    rememberSessionPassword('secret-password')
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/runtime/summary')) {
+        return {ok: true, status: 200, json: async () => ({account: {loggedIn: false, uid: 0, cookieConfigured: false}})}
+      }
+      if (url.includes('/api/config/')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'config.yml', snapshotToken: 'token', fields: []})}
+      }
+      if (url === '/api/bili-login/sessions' && init?.method === 'POST') {
+        return {ok: true, status: 201, json: async () => ({
+          sessionId: 'session-expired', phase: 'EXPIRED', expiresAtEpochMillis: Date.now(),
+          message: '登录超时，请重新登录', qrImageBase64: 'AQID',
+        })}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+    renderAtPath('/settings')
+
+    await user.click(await screen.findByRole('button', {name: '扫码登录'}))
+
+    const timeoutMessages = await screen.findAllByText('登录超时，请重新登录')
+    const toast = timeoutMessages.map((message) => message.closest('[data-toast]')).find(Boolean)
+    expect(toast).toBeDefined()
+    expect(toast).toHaveClass('toast-warning')
+  })
+
   it('renders the dashboard shell with the core navigation pages', () => {
     renderAtPath('/')
 

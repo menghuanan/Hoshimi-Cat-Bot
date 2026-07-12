@@ -218,7 +218,7 @@ fun Application.installWebUiModule(
 
 private const val WebUiRequestTimeoutMillis = 30_000L
 private const val WebUiMaxRequestBodyBytes = 1_048_576L
-private const val WebUiContentSecurityPolicy = "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'"
+private const val WebUiContentSecurityPolicy = "default-src 'self'; img-src 'self' data:; base-uri 'self'; frame-ancestors 'none'; object-src 'none'"
 
 /**
  * WebUI 外围安全在进入路由前统一处理响应头、显式 Origin CORS、应用级超时和异常脱敏。

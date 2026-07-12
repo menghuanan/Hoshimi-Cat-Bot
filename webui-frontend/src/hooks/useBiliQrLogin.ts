@@ -8,6 +8,7 @@ type UseBiliQrLoginOptions = WebUiJsonRequestOptions & {
   pollIntervalMs?: number
   successCloseDelayMs?: number
   onSucceeded?: () => void | Promise<void>
+  onExpired?: (message: string) => void | Promise<void>
 }
 
 /** 终态集中判断，确保失败、过期和取消不会继续创建轮询 timer。 */
@@ -25,6 +26,7 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
     pollIntervalMs = 3_000,
     successCloseDelayMs = 1_500,
     onSucceeded,
+    onExpired,
   } = options
   const requestOptions = useMemo<WebUiJsonRequestOptions>(() => ({fetchImpl, redirectToLogin}), [fetchImpl, redirectToLogin])
   const [open, setOpen] = useState(false)
@@ -51,6 +53,11 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
     sessionRef.current = next
     setSession(next)
   }, [])
+
+  /** 超时终态通知页面层保留反馈，回调失败不得覆盖协调器返回的真实状态。 */
+  const notifyExpired = useCallback((message: string) => {
+    void Promise.resolve().then(() => onExpired?.(message)).catch(() => undefined)
+  }, [onExpired])
 
   /** 成功反馈完成后才清空图片并关闭，给用户留下明确的终态确认。 */
   const completeSuccess = useCallback((generation: number) => {
@@ -89,6 +96,8 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
       } else if (isTerminal(next)) {
         if (pollTimerRef.current !== null) window.clearInterval(pollTimerRef.current)
         pollTimerRef.current = null
+        // 二维码过期需要在弹窗之外保留页面反馈，其他终态继续使用既有局部文案。
+        if (next.phase === 'EXPIRED') notifyExpired(next.message)
       }
     } catch (caughtError) {
       if (generationRef.current !== generation) return
@@ -99,7 +108,7 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
         pollInFlightGenerationRef.current = null
       }
     }
-  }, [completeSuccess, installSession, requestOptions])
+  }, [completeSuccess, installSession, notifyExpired, requestOptions])
 
   /** 创建新会话前使旧请求代际失效，随后从当前内存凭据完成高风险确认。 */
   const openLogin = useCallback(async () => {
@@ -128,6 +137,9 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
         pollTimerRef.current = window.setInterval(() => {
           void pollSession(created.sessionId, generation)
         }, pollIntervalMs)
+      } else if (created.phase === 'EXPIRED') {
+        // 创建响应若已经进入过期终态，同样必须走页面级反馈，不能只停留在弹窗文案。
+        notifyExpired(created.message)
       }
     } catch (caughtError) {
       if (generationRef.current !== generation) return
@@ -135,7 +147,7 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
     } finally {
       if (generationRef.current === generation) setLoading(false)
     }
-  }, [clearTimers, completeSuccess, installSession, pollIntervalMs, pollSession, requestOptions])
+  }, [clearTimers, completeSuccess, installSession, notifyExpired, pollIntervalMs, pollSession, requestOptions])
 
   /** 等待态关闭先让本地请求失效，再尽力取消后端会话；提交态保持弹窗不变。 */
   const closeLogin = useCallback(async () => {
