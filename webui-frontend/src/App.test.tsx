@@ -2116,6 +2116,106 @@ describe('webui shell routing', () => {
   })
 
   /**
+   * 点击删除只打开确认弹窗，取消前后都不能触发订阅删除请求。
+   */
+  it('does not delete a subscription before the confirmation dialog is confirmed', async () => {
+    const deleteCalls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({items: [{id: 'sub-1', title: '待删除订阅', targets: []}]}),
+        }
+      }
+      if (init?.method === 'DELETE') {
+        deleteCalls.push(url)
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('待删除订阅')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '删除'}))
+
+    expect(screen.getByRole('dialog', {name: '删除订阅'})).toBeInTheDocument()
+    expect(screen.getByText('是否删除订阅“待删除订阅”？')).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '取消'})).toHaveFocus()
+    expect(deleteCalls).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', {name: '取消'}))
+
+    expect(screen.queryByRole('dialog', {name: '删除订阅'})).not.toBeInTheDocument()
+    expect(deleteCalls).toHaveLength(0)
+  })
+
+  /**
+   * Escape 只关闭待确认弹窗，不能被解释成删除确认。
+   */
+  it('closes the subscription deletion dialog with Escape without deleting', async () => {
+    const deleteCalls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({items: [{id: 'sub-1', title: '待删除订阅', targets: []}]}),
+        }
+      }
+      if (init?.method === 'DELETE') {
+        deleteCalls.push(url)
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('待删除订阅')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '删除'}))
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', {name: '删除订阅'})).not.toBeInTheDocument()
+    expect(deleteCalls).toHaveLength(0)
+  })
+
+  /**
+   * 只有确认按钮能够进入既有删除流程，并沿用订阅主键发起请求。
+   */
+  it('deletes a subscription only after the confirmation dialog is confirmed', async () => {
+    const deleteCalls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({items: [{id: 'sub-1', title: '待删除订阅', targets: []}]}),
+        }
+      }
+      if (init?.method === 'DELETE') {
+        deleteCalls.push(url)
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/#subscriptions')
+
+    expect(await screen.findByText('待删除订阅')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '删除'}))
+    expect(deleteCalls).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', {name: '确认'}))
+
+    await waitFor(() => expect(deleteCalls).toEqual(['/api/subscriptions/sub-1']))
+  })
+
+  /**
    * 订阅删除只能使用明确的订阅主键，不能在缺少主键时继续调用删除接口。
    */
   it('does not delete subscriptions when the item lacks a stable deletion id', async () => {

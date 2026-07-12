@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ModalPortal } from '../components/ModalPortal'
 import { PageSection } from '../components/PageSection'
 import { SubscriptionEditorModal } from '../components/subscriptions/SubscriptionEditorModal'
 import { SubscriptionModal } from '../components/subscriptions/SubscriptionModal'
@@ -17,6 +18,7 @@ export function SubscriptionsPage() {
   const {items, loading, saveSubscription, removeSubscription, reload} = subscriptionActions
   const [createOpen, setCreateOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<SubscriptionItem | null>(null)
+  const [deletionCandidate, setDeletionCandidate] = useState<{itemId: string, title: string} | null>(null)
   const [pending, setPending] = useState(false)
 
   const subscriptionItems = items as SubscriptionItem[]
@@ -38,16 +40,31 @@ export function SubscriptionsPage() {
     }
   }
 
-  const deleteItem = async (item: SubscriptionItem) => {
+  /**
+   * 删除按钮只登记待确认条目，不提前调用删除接口或刷新订阅列表。
+   */
+  const requestDeletion = (item: SubscriptionItem) => {
     const itemId = readStableDeletionId(item)
     if (!itemId) {
       showToast('error', '当前条目缺少可删除标识')
       return
     }
+    const title = readItemField(item, 'title') || readItemField(item, 'subject') || readItemField(item, 'uid') || '未命名订阅'
+    setDeletionCandidate({itemId, title})
+  }
+
+  /**
+   * 确认后才进入既有删除、刷新和成功反馈流程，失败时保留弹窗供用户重试或取消。
+   */
+  const confirmDeletion = async () => {
+    if (!deletionCandidate) {
+      return
+    }
     setPending(true)
     try {
-      await removeSubscription(itemId)
+      await removeSubscription(deletionCandidate.itemId)
       await reload()
+      setDeletionCandidate(null)
       showToast('success', '订阅已删除')
     } catch (error) {
       showToast('error', formatPasswordErrorMessage(error, '删除失败'))
@@ -76,13 +93,21 @@ export function SubscriptionsPage() {
               item={item}
               pending={pending}
               onEdit={() => setEditingItem(item)}
-              onDelete={() => void deleteItem(item)}
+              onDelete={() => requestDeletion(item)}
             />
           ))}
         </div>
       </PageSection>
 
       <SubscriptionModal open={createOpen} pending={pending} onClose={() => setCreateOpen(false)} onSubmit={submitSubscription} />
+      {deletionCandidate ? (
+        <SubscriptionDeleteConfirmModal
+          title={deletionCandidate.title}
+          pending={pending}
+          onCancel={() => setDeletionCandidate(null)}
+          onConfirm={() => void confirmDeletion()}
+        />
+      ) : null}
       {editingItem ? (
         // 不同订阅使用独立组件实例，保证嵌套编辑草稿和异步加载序列随条目重置。
         <SubscriptionEditorModal
@@ -139,6 +164,55 @@ function SubscriptionCard({item, pending, onEdit, onDelete}: {
         <InfoBlock label="主题色" value={readItemField(item, 'themeColor') || '默认'} />
       </div>
     </article>
+  )
+}
+
+/**
+ * 删除确认弹窗将危险操作隔离在确认按钮之后，并把取消作为默认焦点。
+ */
+function SubscriptionDeleteConfirmModal({title, pending, onCancel, onConfirm}: {
+  title: string
+  pending: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+
+  /**
+   * 弹窗打开后聚焦安全操作；未提交时允许 Escape 取消，不触发删除回调。
+   */
+  useEffect(() => {
+    cancelButtonRef.current?.focus()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !pending) {
+        onCancel()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onCancel, pending])
+
+  return (
+    <ModalPortal>
+      <div className="modal-overlay fixed inset-0 z-40 flex items-center justify-center px-4 py-6" role="presentation">
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="subscription-delete-title"
+          className="modal-panel w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
+        >
+          <h3 id="subscription-delete-title" className="text-base font-semibold text-slate-950">删除订阅</h3>
+          <p className="mt-3 break-words text-sm leading-6 text-slate-600">是否删除订阅“{title}”？</p>
+          <div className="mt-6 flex justify-end gap-3">
+            <button ref={cancelButtonRef} type="button" disabled={pending} onClick={onCancel} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50">取消</button>
+            <button type="button" disabled={pending} onClick={onConfirm} className="inline-flex items-center gap-2 rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800 disabled:bg-rose-300">
+              {pending ? <span className="button-spinner" aria-hidden="true" /> : null}
+              {pending ? '删除中…' : '确认'}
+            </button>
+          </div>
+        </section>
+      </div>
+    </ModalPortal>
   )
 }
 
