@@ -1,6 +1,6 @@
 # 当前迭代状态
 
-_最后更新：2026-07-12_
+_最后更新：2026-07-13_
 
 ## 本轮已完成
 
@@ -22,7 +22,7 @@ _最后更新：2026-07-12_
 - 平台适配通过 `PlatformConnectorManager` 收口。
 - 平台 adapter 当前覆盖 Generic OneBot11、NapCat、LlBot 和 QQ 官方机器人；业务层应使用 `PlatformContact`、`OutgoingPart` 和 capability guard。
 - QQ 官方入站当前只向业务链放行精确 `/login` 和 B 站链接候选；群聊 `/login` 还必须来自 AT 事件，其他命令和普通文本在 connector 层拒绝。
-- 本地 WebUI 管理模块已加入当前基线，默认关闭，提供 cookie-backed session、CSRF、高风险确认、配置读写、订阅编辑、日志白名单、运行态 Dashboard 和高风险动作入口。
+- 本地 WebUI 管理模块已加入当前基线，默认关闭，提供 cookie-backed session、CSRF、配置读写、订阅编辑、日志白名单、运行态 Dashboard 和管理动作 API；除登录与改密外，管理请求不再接收密码或二次确认字段。
 - React WebUI 前端位于 `webui-frontend`，构建后打包到 `src/main/resources/webui/react`，页面覆盖登录、仪表盘、设置、订阅和日志，并使用全局 Toast、确认上下文和 Portal 弹窗统一反馈。
 - 动态列表按 item 粒度容错解码：单条坏数据会记录摘要并跳过，分页外层结构仍严格解码；已撤销且只剩空字段的预约附加卡片不会绘制空白图。
 - Skia 当前实际主路径是 in-process drawing。

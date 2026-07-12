@@ -479,33 +479,33 @@ class WebUiRouteSmokeTest {
             contentType(ContentType.Application.Json)
             setBody(WebUiSubscriptionCreateRequestDto(type = "dynamic"))
         }
-        val invalidCreateWithoutPassword = client.post("/api/subscriptions") {
+        val invalidTypedCreate = client.post("/api/subscriptions") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "av12345", targetGroup = "10001"))
         }
-        val invalidDeleteWithoutPassword = client.delete("/api/subscriptions/missing") {
+        val missingTypedDelete = client.delete("/api/subscriptions/missing") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
         }
-        val invalidCreate = client.post("/api/subscriptions") {
+        val invalidJsonCreate = client.post("/api/subscriptions") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
             setBody("""{"type":"bangumi","bangumiId":"av12345","targetGroup":"10001"}""")
         }
-        val invalidDelete = client.delete("/api/subscriptions/missing") {
+        val missingJsonDelete = client.delete("/api/subscriptions/missing") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
         }
 
         assertEquals(HttpStatusCode.Unauthorized, unauthenticated.status)
-        assertEquals(HttpStatusCode.BadRequest, invalidCreateWithoutPassword.status)
-        assertEquals(HttpStatusCode.BadRequest, invalidCreate.status)
-        assertTrue(invalidCreate.body<WebUiSubscriptionMutationResultDto>().message.contains("ss、md 或 ep"))
-        assertEquals(HttpStatusCode.BadRequest, invalidDeleteWithoutPassword.status)
-        assertEquals(HttpStatusCode.BadRequest, invalidDelete.status)
+        assertEquals(HttpStatusCode.BadRequest, invalidTypedCreate.status)
+        assertEquals(HttpStatusCode.BadRequest, invalidJsonCreate.status)
+        assertTrue(invalidJsonCreate.body<WebUiSubscriptionMutationResultDto>().message.contains("ss、md 或 ep"))
+        assertEquals(HttpStatusCode.BadRequest, missingTypedDelete.status)
+        assertEquals(HttpStatusCode.BadRequest, missingJsonDelete.status)
     }
 
     /**
@@ -563,7 +563,7 @@ class WebUiRouteSmokeTest {
             header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiSubscriptionFilterListDto>()
         val filterKey = filters.filters.first().key
-        val filterMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/filters") {
+        val filterWithoutTargetGroups = client.post("/api/subscriptions/dynamic%3A123/filters") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
@@ -572,25 +572,25 @@ class WebUiRouteSmokeTest {
         val templates = client.get("/api/subscriptions/dynamic%3A123/templates") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiSubscriptionTemplateListDto>()
-        val templateMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/templates") {
+        val templateWithoutTargetGroups = client.post("/api/subscriptions/dynamic%3A123/templates") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionTemplateSaveRequestDto(type = "dynamic", name = "WebTpl", content = "{name}"))
         }
-        val randomMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
+        val randomTypedRequest = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionTemplateRandomRequestDto(enabled = true))
         }
-        val atAllMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/atall") {
+        val atAllTypedRequest = client.post("/api/subscriptions/dynamic%3A123/atall") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
             setBody(WebUiSubscriptionAtAllSaveRequestDto(type = "直播", targetGroups = listOf("onebot11:group:10001")))
         }
-        val themeMissingConfirmation = client.post("/api/subscriptions/dynamic%3A123/theme") {
+        val themeWithoutTargetGroups = client.post("/api/subscriptions/dynamic%3A123/theme") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
@@ -632,15 +632,15 @@ class WebUiRouteSmokeTest {
 
         assertEquals(listOf("r0"), filters.filters.map { it.prefix })
         assertEquals(listOf("OneMsg"), templates.templates.map { it.name })
-        assertEquals(HttpStatusCode.BadRequest, filterMissingConfirmation.status)
+        assertEquals(HttpStatusCode.BadRequest, filterWithoutTargetGroups.status)
         assertEquals(HttpStatusCode.OK, filterSaved.status)
-        assertEquals(HttpStatusCode.BadRequest, templateMissingConfirmation.status)
+        assertEquals(HttpStatusCode.BadRequest, templateWithoutTargetGroups.status)
         assertEquals(HttpStatusCode.OK, templateSaved.status)
-        assertEquals(HttpStatusCode.OK, randomMissingConfirmation.status)
+        assertEquals(HttpStatusCode.OK, randomTypedRequest.status)
         assertEquals(HttpStatusCode.OK, randomSaved.status)
-        assertEquals(HttpStatusCode.OK, atAllMissingConfirmation.status)
+        assertEquals(HttpStatusCode.OK, atAllTypedRequest.status)
         assertEquals(HttpStatusCode.OK, atAllSaved.status)
-        assertEquals(HttpStatusCode.BadRequest, themeMissingConfirmation.status)
+        assertEquals(HttpStatusCode.BadRequest, themeWithoutTargetGroups.status)
         assertEquals(HttpStatusCode.OK, themeSaved.status)
         assertEquals("#AABBCC", theme.color)
         assertEquals(listOf("onebot11:group:10001"), theme.targetGroups)

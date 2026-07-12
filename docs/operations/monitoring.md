@@ -55,7 +55,7 @@ critical 会触发紧急清理。
 
 当前限制口径：
 
-- Metaspace：56 MB。
+- Metaspace：优先采用 JVM `MemoryPoolMXBean` 报告的实际上限；未报告或报告值不足 1 MB 时，使用发行基线 56 MB 兜底。
 - CodeCache：32 MB。
 - 非堆 warning threshold：80%。
 
