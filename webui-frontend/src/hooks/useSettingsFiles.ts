@@ -13,7 +13,6 @@ import {
 } from '../api/settings'
 import type { WebUiJsonRequestOptions } from '../api/http'
 import type { WebUiConfigHotReloadJob } from '../types/settings'
-import { readSessionPassword } from '../auth/sessionCredential'
 
 type UseSettingsFilesOptions = WebUiJsonRequestOptions
 
@@ -58,24 +57,24 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
   }, [reload])
 
   /**
-   * 单文件保存透明复用当前登录凭据，不再向用户索取二次确认密码。
+   * 单文件保存只提交配置字段，认证由同源 session 与 CSRF 保护。
    */
-  const saveBili = useCallback(async (input: Omit<WebUiBiliConfigSaveInput, 'confirmationPassword'>) => {
-    return saveBiliConfig({...input, confirmationPassword: readSessionPassword()}, requestOptions)
+  const saveBili = useCallback(async (input: WebUiBiliConfigSaveInput) => {
+    return saveBiliConfig(input, requestOptions)
   }, [requestOptions])
 
   /**
-   * bot.yml 保存复用当前登录凭据并保持原后端字段契约。
+   * bot.yml 保存保持文件级 DTO，认证由统一请求层处理。
    */
-  const saveBot = useCallback(async (input: Omit<WebUiBotConfigSaveInput, 'confirmationPassword'>) => {
-    return saveBotConfig({...input, confirmationPassword: readSessionPassword()}, requestOptions)
+  const saveBot = useCallback(async (input: WebUiBotConfigSaveInput) => {
+    return saveBotConfig(input, requestOptions)
   }, [requestOptions])
 
   /**
    * 批量保存会轮询热重载任务直到成功或失败，避免页面在仅入队时误报已生效。
    */
   const saveBatch = useCallback(async (input: WebUiSettingsBatchSaveInput) => {
-    const accepted = await saveSettingsBatch(attachConfirmationPassword(input, readSessionPassword()), requestOptions)
+    const accepted = await saveSettingsBatch(input, requestOptions)
     return waitForSettingsSaveJob(accepted, requestOptions)
   }, [requestOptions])
 
@@ -112,20 +111,6 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
     patchBiliConfig,
     patchBiliData,
     patchBotConfig,
-  }
-}
-
-/**
- * 当前登录凭据复制到所有子 payload，保持后端 batch guard 和 API 契约不变。
- */
-function attachConfirmationPassword(
-  input: WebUiSettingsBatchSaveInput,
-  confirmationPassword: string,
-): WebUiSettingsBatchSaveInput {
-  return {
-    biliConfig: input.biliConfig ? {...input.biliConfig, confirmationPassword} : undefined,
-    biliData: input.biliData ? {...input.biliData, confirmationPassword} : undefined,
-    botConfig: input.botConfig ? {...input.botConfig, confirmationPassword} : undefined,
   }
 }
 

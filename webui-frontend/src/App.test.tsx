@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { rememberSessionPassword } from './auth/sessionCredential'
 import { formatSaveResultMessage } from './settings/settingsSaveResult'
 
 /**
@@ -132,7 +131,6 @@ function collectBotBatchPayloads(): {
 describe('webui shell routing', () => {
   /** 扫码登录必须位于 B站配置的 Cookie 下方，并完成二维码弹窗的创建和取消请求。 */
   it('starts and cancels BiliBili qr login below the cookie setting', async () => {
-    rememberSessionPassword('secret-password')
     const requests: Array<{url: string, method: string, body: string}> = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -178,7 +176,7 @@ describe('webui shell routing', () => {
     expect(requests).toContainEqual({
       url: '/api/bili-login/sessions',
       method: 'POST',
-      body: JSON.stringify({confirmationPassword: 'secret-password'}),
+      body: '',
     })
 
     await user.click(screen.getByRole('button', {name: '取消登录'}))
@@ -188,7 +186,6 @@ describe('webui shell routing', () => {
 
   /** 登录凭据已提交成功时，运行态摘要刷新失败不得吞掉全局成功反馈。 */
   it('shows BiliBili login success when the runtime refresh fails', async () => {
-    rememberSessionPassword('secret-password')
     let runtimeRequestCount = 0
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -225,7 +222,6 @@ describe('webui shell routing', () => {
 
   /** 登录会话过期后必须通过全局 Toast 保留反馈，避免用户关闭弹窗后看不到结果。 */
   it('shows a warning toast when the BiliBili login session expires', async () => {
-    rememberSessionPassword('secret-password')
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/api/runtime/summary')) {
@@ -517,15 +513,15 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * 高风险保存如果被错误密码拒绝，页面应该提示密码错误而不是 HTTP 状态码。
+   * 配置保存被业务校验拒绝时，页面只展示后端可见文案而不是 HTTP 状态码。
    */
-  it('shows a friendly password error when settings save is rejected', async () => {
+  it('shows a friendly business error when settings save is rejected', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const settingsResponse = createSettingsResponse(url, init, {
         batchOk: false,
-        batchStatus: 401,
-        batchMessage: 'bad password',
+        batchStatus: 400,
+        batchMessage: '配置保存失败',
       })
       if (settingsResponse) {
         return settingsResponse
@@ -570,8 +566,8 @@ describe('webui shell routing', () => {
     await user.click(screen.getByRole('button', {name: '保存'}))
 
 
-    expect(await screen.findByText('密码错误')).toBeInTheDocument()
-    expect(screen.queryByText('HTTP 401')).not.toBeInTheDocument()
+    expect(await screen.findByText('配置保存失败')).toBeInTheDocument()
+    expect(screen.queryByText('HTTP 400')).not.toBeInTheDocument()
   })
 
   /**
@@ -1336,7 +1332,7 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * 登录成功后必须在当前 React 生命周期内进入主界面，供后续保存复用本次登录凭据。
+   * 登录成功后必须在当前 React 生命周期内进入主界面，后续保存只依赖同源 session 与 CSRF。
    */
   it('enters the shell without reloading after login', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -1511,7 +1507,6 @@ describe('webui shell routing', () => {
     expect(JSON.parse(filterPostBodies.at(-1) || '{}')).toMatchObject({
       content: '广告',
       targetGroups: ['onebot11:group:1072150397'],
-      confirmationPassword: 'secret-password',
     })
 
     await user.click(screen.getByRole('button', {name: '编辑模板'}))
@@ -1542,7 +1537,6 @@ describe('webui shell routing', () => {
       name: '默认模板',
       content: '{{title}}',
       targetGroups: ['onebot11:group:1072150397'],
-      confirmationPassword: 'secret-password',
     })
 
     await user.click(screen.getByRole('button', {name: '编辑at全体'}))
@@ -1571,7 +1565,6 @@ describe('webui shell routing', () => {
     expect(JSON.parse(themePostBodies.at(-1) || '{}')).toMatchObject({
       color: '#33aaff',
       targetGroups: ['onebot11:group:1072150397'],
-      confirmationPassword: 'secret-password',
     })
   }, 10_000)
 
@@ -1631,7 +1624,7 @@ describe('webui shell routing', () => {
   })
 
   /**
-   * 推送群聊编辑器位于过滤器上方，新增输入必须是正整数并携带当前登录凭据写入后端。
+   * 推送群聊编辑器位于过滤器上方，新增输入必须是正整数并只提交业务字段。
    */
   it('edits subscription target groups from the nested editor', async () => {
     const targetPostBodies: string[] = []
@@ -1685,7 +1678,6 @@ describe('webui shell routing', () => {
     expect(await screen.findByText('推送群聊已保存')).toBeInTheDocument()
     expect(JSON.parse(targetPostBodies.at(-1) || '{}')).toMatchObject({
       targetGroup: '10001',
-      confirmationPassword: 'secret-password',
     })
   })
 
@@ -1801,7 +1793,6 @@ describe('webui shell routing', () => {
     expect(await screen.findByText('订阅ID已保存')).toBeInTheDocument()
     expect(JSON.parse(uidPostBodies.at(-1) || '{}')).toMatchObject({
       uid: 'md12345',
-      confirmationPassword: 'secret-password',
     })
   })
 
@@ -1868,7 +1859,6 @@ describe('webui shell routing', () => {
       mode: 'black',
       content: '视频',
       targetGroups: ['onebot11:group:1072150397'],
-      confirmationPassword: 'secret-password',
     })
   })
 

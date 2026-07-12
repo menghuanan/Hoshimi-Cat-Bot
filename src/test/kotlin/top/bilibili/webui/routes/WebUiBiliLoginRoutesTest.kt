@@ -31,7 +31,6 @@ import top.bilibili.webui.auth.WebUiCredentialStore
 import top.bilibili.webui.auth.WebUiTokenService
 import top.bilibili.webui.model.WebUiBiliLoginConflictDto
 import top.bilibili.webui.model.WebUiBiliLoginSessionDto
-import top.bilibili.webui.model.WebUiBiliLoginStartRequestDto
 import top.bilibili.webui.service.WebUiAuditRecord
 import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiBiliLoginFacade
@@ -64,18 +63,15 @@ class WebUiBiliLoginRoutesTest {
 
         val unauthenticated = apiClient.post("/api/bili-login/sessions") {
             contentType(ContentType.Application.Json)
-            setBody(WebUiBiliLoginStartRequestDto("Better123!@"))
         }
         val missingCsrf = apiClient.post("/api/bili-login/sessions") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
-            setBody(WebUiBiliLoginStartRequestDto("Better123!@"))
         }
         val created = apiClient.post("/api/bili-login/sessions") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header(WebUiCsrfHeaderName, auth.csrfToken)
-            setBody(WebUiBiliLoginStartRequestDto("Better123!@"))
         }
         val polled = apiClient.get("/api/bili-login/sessions/session-1") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -123,7 +119,6 @@ class WebUiBiliLoginRoutesTest {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header(WebUiCsrfHeaderName, auth.csrfToken)
-            setBody(WebUiBiliLoginStartRequestDto("Better123!@"))
         }
         val missingRead = apiClient.get("/api/bili-login/sessions/missing") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -165,7 +160,6 @@ class WebUiBiliLoginRoutesTest {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header(WebUiCsrfHeaderName, auth.csrfToken)
-            setBody(WebUiBiliLoginStartRequestDto("Better123!@"))
         }
         val body = conflict.body<WebUiBiliLoginConflictDto>()
 

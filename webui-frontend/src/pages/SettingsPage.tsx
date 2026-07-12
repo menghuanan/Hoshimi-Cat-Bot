@@ -142,7 +142,6 @@ export function SettingsPage() {
       if (biliToken && shouldSaveBili) {
         batchPayload.biliConfig = buildBiliConfigSavePayload({
           snapshotToken: biliToken,
-          confirmationPassword: '',
           proxyText: String(completeBiliValues['proxyConfig.proxy'] || ''),
           fields: omitKey(completeBiliValues, 'proxyConfig.proxy'),
         })
@@ -150,7 +149,6 @@ export function SettingsPage() {
       if (biliDataToken && shouldSaveBiliData) {
         batchPayload.biliData = buildBiliDataSavePayload({
           snapshotToken: biliDataToken,
-          confirmationPassword: '',
           fields: completeBiliDataValues,
         })
       }
@@ -160,7 +158,6 @@ export function SettingsPage() {
           : omitKeys(completeBotValues, ['platform.onebot11.token', 'adminsText'])
         batchPayload.botConfig = buildBotConfigSavePayload({
           snapshotToken: botToken,
-          confirmationPassword: '',
           token: String(completeBotValues['platform.onebot11.token'] || ''),
           fields: botFields,
         })

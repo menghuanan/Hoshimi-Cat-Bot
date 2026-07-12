@@ -67,6 +67,12 @@ export async function installWebUiApiMock(page: Page) {
    */
   async function fulfillApi(route: Route, pathname: string, body: unknown) {
     const method = route.request().method()
+    // 普通持久化契约禁止浏览器再次转发 WebUI 登录密码，mock 必须和生产路由一样拒绝旧字段。
+    if ((pathname.startsWith('/api/config/') || pathname.startsWith('/api/subscriptions') || pathname === '/api/bili-login/sessions') &&
+        JSON.stringify(body || {}).includes('"confirmationPassword"')) {
+      await route.fulfill({status: 400, contentType: 'application/json', body: JSON.stringify({message: 'unexpected authentication field'})})
+      return
+    }
     if (pathname === '/api/auth/login') {
       const password = typeof body === 'object' && body && 'password' in body ? String((body as {password?: unknown}).password) : ''
       if (password !== 'secret-password') {

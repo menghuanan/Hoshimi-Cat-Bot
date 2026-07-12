@@ -78,7 +78,8 @@ test('completes BiliBili qr login from the bundled settings page', async ({page}
   await page.getByRole('button', {name: '登录'}).click()
   await page.goto('/settings')
 
-  await page.getByRole('button', {name: '重新登录'}).click()
+  await page.getByRole('button', {name: 'B站配置'}).click()
+  await page.getByRole('button', {name: '扫码登录'}).click()
   const dialog = page.getByRole('dialog', {name: 'B站扫码登录'})
   await expect(dialog).toBeVisible()
   await expect(page.getByRole('img', {name: 'B站登录二维码'})).toBeVisible()
@@ -194,6 +195,9 @@ test('saves visible settings through one hot reload batch job', async ({page}) =
     biliConfig: expect.objectContaining({messageInterval: 250}),
     biliData: expect.objectContaining({linkParseBlacklistContacts: ['onebot11:group:1001', 'onebot11:private:2002']}),
   })
+  // 登录后的普通保存只依赖 session 与 CSRF，刷新后提交体也不得携带登录密码。
+  expect(batchBodies[0].biliConfig).not.toHaveProperty('confirmationPassword')
+  expect(batchBodies[0].biliData).not.toHaveProperty('confirmationPassword')
 })
 
 test('keeps API and static asset routes out of the React fallback', async ({page}) => {

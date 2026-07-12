@@ -107,7 +107,7 @@ _最后复核：2026-07-12_
 **允许**：
 
 - 启动本地管理面嵌入式服务器并托管静态 React shell。
-- 通过认证、CSRF、高风险确认和审计记录保护管理 API。
+- 通过认证、CSRF 和审计记录保护管理 API，并对清日志、关闭、重启等破坏性动作追加高风险确认。
 - 通过 `BiliConfigManager`、`ConfigManager`、`TemplateRuntimeCoordinator` 和 service facade 读取或写入受控文件。
 - 读取固定白名单日志源、运行态快照和订阅概览。
 
@@ -115,7 +115,7 @@ _最后复核：2026-07-12_
 
 - 直接写 `BiliConfig.yml`、`BiliData.yml`、`bot.yml` 或凭据文件。
 - 通过任意文件路径读取或清空日志。
-- 绕过 session cookie、CSRF、确认密码或审计直接执行高风险动作。
+- 绕过 session cookie、CSRF 或审计执行管理写入，或绕过确认密码执行破坏性动作。
 - 把 vendor DTO、平台 transport 或业务可变对象暴露给浏览器。
 
 **原因**：WebUI 是本地运维入口，不是业务层或配置层；它必须把认证、写入、日志和静态资源边界收紧在同一组 facade 里。

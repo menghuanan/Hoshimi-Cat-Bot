@@ -3,7 +3,6 @@ import { settingsFieldByKey, type SettingsFileId } from './settingsSchema'
 export type BuildSettingsSavePayloadInput = {
   file: SettingsFileId
   snapshotToken: string
-  confirmationPassword: string
   proxyUpdateMode?: 'preserve' | 'replace' | 'clear'
   values?: Record<string, unknown>
 }
@@ -106,7 +105,6 @@ function parseJsonList(value: unknown): unknown[] {
 export function buildSettingsSavePayload(input: BuildSettingsSavePayloadInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     snapshotToken: input.snapshotToken,
-    confirmationPassword: input.confirmationPassword,
   }
 
   Object.entries(input.values || {}).forEach(([key, value]) => {

@@ -480,13 +480,13 @@ class WebUiRouteSmokeTest {
             contentType(ContentType.Application.Json)
             setBody(WebUiSubscriptionCreateRequestDto(type = "dynamic"))
         }
-        val invalidCreateMissingConfirmation = client.post("/api/subscriptions") {
+        val invalidCreateWithoutPassword = client.post("/api/subscriptions") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody(WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "md12345", targetGroup = "10001"))
+            setBody(WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "av12345", targetGroup = "10001"))
         }
-        val invalidDeleteMissingConfirmation = client.delete("/api/subscriptions/missing") {
+        val invalidDeleteWithoutPassword = client.delete("/api/subscriptions/missing") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
         }
@@ -494,7 +494,7 @@ class WebUiRouteSmokeTest {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"type":"bangumi","bangumiId":"av12345","targetGroup":"10001","confirmationPassword":"Better123!@"}""")
+            setBody("""{"type":"bangumi","bangumiId":"av12345","targetGroup":"10001"}""")
         }
         val invalidDelete = client.delete("/api/subscriptions/missing") {
             contentType(ContentType.Application.Json)
@@ -504,10 +504,10 @@ class WebUiRouteSmokeTest {
         }
 
         assertEquals(HttpStatusCode.Unauthorized, unauthenticated.status)
-        assertEquals(HttpStatusCode.Forbidden, invalidCreateMissingConfirmation.status)
+        assertEquals(HttpStatusCode.BadRequest, invalidCreateWithoutPassword.status)
         assertEquals(HttpStatusCode.BadRequest, invalidCreate.status)
         assertTrue(invalidCreate.body<WebUiSubscriptionMutationResultDto>().message.contains("ss、md 或 ep"))
-        assertEquals(HttpStatusCode.Forbidden, invalidDeleteMissingConfirmation.status)
+        assertEquals(HttpStatusCode.BadRequest, invalidDeleteWithoutPassword.status)
         assertEquals(HttpStatusCode.BadRequest, invalidDelete.status)
     }
 
@@ -603,31 +603,31 @@ class WebUiRouteSmokeTest {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"key":"$filterKey","kind":"regex","mode":"white","content":"^new","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
+            setBody("""{"key":"$filterKey","kind":"regex","mode":"white","content":"^new","targetGroups":["onebot11:group:10001"]}""")
         }
         val templateSaved = client.post("/api/subscriptions/dynamic%3A123/templates") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"type":"dynamic","name":"WebTpl","content":"{name}","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
+            setBody("""{"type":"dynamic","name":"WebTpl","content":"{name}","targetGroups":["onebot11:group:10001"]}""")
         }
         val randomSaved = client.post("/api/subscriptions/dynamic%3A123/templates/random") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"enabled":true,"confirmationPassword":"Better123!@"}""")
+            setBody("""{"enabled":true}""")
         }
         val atAllSaved = client.post("/api/subscriptions/dynamic%3A123/atall") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"type":"直播","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
+            setBody("""{"type":"直播","targetGroups":["onebot11:group:10001"]}""")
         }
         val themeSaved = client.post("/api/subscriptions/dynamic%3A123/theme") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody("""{"color":"#AABBCC","targetGroups":["onebot11:group:10001"],"confirmationPassword":"Better123!@"}""")
+            setBody("""{"color":"#AABBCC","targetGroups":["onebot11:group:10001"]}""")
         }
         val theme = client.get("/api/subscriptions/dynamic%3A123/theme") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
@@ -635,15 +635,15 @@ class WebUiRouteSmokeTest {
 
         assertEquals(listOf("r0"), filters.filters.map { it.prefix })
         assertEquals(listOf("OneMsg"), templates.templates.map { it.name })
-        assertEquals(HttpStatusCode.Forbidden, filterMissingConfirmation.status)
+        assertEquals(HttpStatusCode.BadRequest, filterMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, filterSaved.status)
-        assertEquals(HttpStatusCode.Forbidden, templateMissingConfirmation.status)
+        assertEquals(HttpStatusCode.BadRequest, templateMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, templateSaved.status)
-        assertEquals(HttpStatusCode.Forbidden, randomMissingConfirmation.status)
+        assertEquals(HttpStatusCode.OK, randomMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, randomSaved.status)
-        assertEquals(HttpStatusCode.Forbidden, atAllMissingConfirmation.status)
+        assertEquals(HttpStatusCode.OK, atAllMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, atAllSaved.status)
-        assertEquals(HttpStatusCode.Forbidden, themeMissingConfirmation.status)
+        assertEquals(HttpStatusCode.BadRequest, themeMissingConfirmation.status)
         assertEquals(HttpStatusCode.OK, themeSaved.status)
         assertEquals("#AABBCC", theme.color)
         assertEquals(listOf("onebot11:group:10001"), theme.targetGroups)
@@ -708,30 +708,17 @@ class WebUiRouteSmokeTest {
             setBody(WebUiLoginRequestDto(password = "Better123!@"))
         }
         val reloginAuth = extractLoginCookies(relogin)
-        val biliConfigSnapshot = client.get("/api/config/bili-config") {
-            header(HttpHeaders.Cookie, reloginAuth.cookieHeader())
-        }.body<WebUiConfigFileDto>()
-        val deniedSave = client.post("/api/config/bili-config") {
+        val deniedAction = client.post("/api/actions/reload-config") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, reloginAuth.cookieHeader())
             header("X-CSRF-Token", reloginAuth.csrfToken)
-            setBody(
-                WebUiBiliConfigWriteRequestDto(
-                    snapshotToken = biliConfigSnapshot.snapshotToken,
-                    adminContact = "onebot11:private:2",
-                    cookie = "",
-                    baiduAppId = "new-app-id",
-                    baiduSecurityKey = "",
-                    debugMode = true,
-                    confirmationPassword = "",
-                ),
-            )
+            setBody(WebUiActionConfirmationRequestDto("wrong-password"))
         }
 
         assertEquals(HttpStatusCode.Unauthorized, failedLogin.status)
         assertEquals(HttpStatusCode.BadRequest, failedChange.status)
         assertEquals(HttpStatusCode.OK, changed.status)
-        assertEquals(HttpStatusCode.Forbidden, deniedSave.status)
+        assertEquals(HttpStatusCode.Forbidden, deniedAction.status)
         assertTrue(records.isNotEmpty())
         assertTrue(records.any { it.target == "login" })
         assertTrue(records.any { it.target == "change-password" })
@@ -781,7 +768,7 @@ class WebUiRouteSmokeTest {
     }
 
     @Test
-    fun `config save routes should stay file scoped reject stale snapshots and require stronger confirmation`() = testApplication {
+    fun `config save routes should stay file scoped reject stale snapshots and require csrf`() = testApplication {
         val authService = buildAuthService()
         val bootstrapPassword = authService.bootstrapCredentials().initialPassword!!
         var currentBiliConfig = BiliConfig(
@@ -853,10 +840,9 @@ class WebUiRouteSmokeTest {
         val botSnapshot = createWebUiClient().get("/api/config/bot") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
         }.body<WebUiConfigFileDto>()
-        val missingConfirmation = createWebUiClient().post("/api/config/bili-config") {
+        val missingCsrf = createWebUiClient().post("/api/config/bili-config") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
-            header("X-CSRF-Token", auth.csrfToken)
             setBody(
                 WebUiBiliConfigWriteRequestDto(
                     snapshotToken = currentSnapshot.snapshotToken,
@@ -865,7 +851,6 @@ class WebUiRouteSmokeTest {
                     baiduAppId = "",
                     baiduSecurityKey = "",
                     debugMode = false,
-                    confirmationPassword = "",
                 ),
             )
         }
@@ -882,7 +867,6 @@ class WebUiRouteSmokeTest {
                     baiduAppId = "",
                     baiduSecurityKey = "",
                     debugMode = false,
-                    confirmationPassword = "Better123!@",
                 ),
             )
         }
@@ -895,7 +879,6 @@ class WebUiRouteSmokeTest {
                 top.bilibili.webui.model.WebUiBiliDataWriteRequestDto(
                     snapshotToken = dataSnapshot.snapshotToken,
                     linkParseBlacklistContacts = listOf("onebot11:private:2", "onebot11:group:3"),
-                    confirmationPassword = "Better123!@",
                 ),
             )
         }
@@ -912,7 +895,6 @@ class WebUiRouteSmokeTest {
                     oneBot11Host = "127.0.0.1",
                     oneBot11Port = 3001,
                     oneBot11Token = "",
-                    confirmationPassword = "Better123!@",
                 ),
             )
         }
@@ -929,7 +911,6 @@ class WebUiRouteSmokeTest {
                     oneBot11Host = "10.0.0.2",
                     oneBot11Port = 3100,
                     oneBot11Token = "",
-                    confirmationPassword = "Better123!@",
                 ),
             )
         }
@@ -946,13 +927,12 @@ class WebUiRouteSmokeTest {
                     baiduAppId = "",
                     baiduSecurityKey = "",
                     debugMode = true,
-                    confirmationPassword = "Better123!@",
                 ),
             )
         }
         val savedJob = pollConfigSaveJob(saved.body<WebUiConfigHotReloadJobDto>().jobId, auth.cookieHeader())
 
-        assertEquals(HttpStatusCode.Forbidden, missingConfirmation.status)
+        assertEquals(HttpStatusCode.Forbidden, missingCsrf.status)
         assertEquals(HttpStatusCode.Accepted, staleSnapshot.status)
         assertEquals(WebUiConfigHotReloadPhase.FAILED, staleJob.phase)
         assertTrue(staleJob.outcomes.any { outcome -> !outcome.result.success })
@@ -1017,7 +997,6 @@ class WebUiRouteSmokeTest {
                     biliConfig = WebUiBiliConfigWriteRequestDto(
                         snapshotToken = currentSnapshot.snapshotToken,
                         adminContact = "onebot11:private:2",
-                        confirmationPassword = "Better123!@",
                     ),
                 ),
             )
@@ -1036,7 +1015,7 @@ class WebUiRouteSmokeTest {
             },
             "records=$records polledJob=$polledJob",
         )
-        assertFalse(records.any { record -> record.detailSummary.contains("Better123!@") })
+        assertFalse(records.any { record -> record.detailSummary.contains("confirmationPassword") })
     }
 
     @Test

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cancelBiliLogin, fetchBiliLoginSession, startBiliLogin } from '../api/biliLogin'
 import type { WebUiJsonRequestOptions } from '../api/http'
-import { readSessionPassword } from '../auth/sessionCredential'
 import type { WebUiBiliLoginSession } from '../types/biliLogin'
 
 type UseBiliQrLoginOptions = WebUiJsonRequestOptions & {
@@ -110,7 +109,7 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
     }
   }, [completeSuccess, installSession, notifyExpired, requestOptions])
 
-  /** 创建新会话前使旧请求代际失效，随后从当前内存凭据完成高风险确认。 */
+  /** 创建新会话前使旧请求代际失效，随后通过当前 session 与 CSRF 提交创建请求。 */
   const openLogin = useCallback(async () => {
     clearTimers()
     const generation = generationRef.current + 1
@@ -122,7 +121,7 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
     setError('')
     installSession(null)
     try {
-      const created = await startBiliLogin(readSessionPassword(), requestOptions)
+      const created = await startBiliLogin(requestOptions)
       if (generationRef.current !== generation) {
         // 关闭发生在创建响应之前时，迟到会话仍需立即释放，不能只丢弃本地结果。
         if (created.phase !== 'COMMITTING' && !isTerminal(created)) {

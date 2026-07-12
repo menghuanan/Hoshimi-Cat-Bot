@@ -504,8 +504,7 @@ class WebUiConfigWriteFacadeTest {
               "platformType": "ONEBOT11",
               "adapter": "onebot11",
               "oneBot11Host": "127.0.0.1",
-              "oneBot11Port": 3001,
-              "confirmationPassword": "Better123!@"
+              "oneBot11Port": 3001
             }
             """.trimIndent(),
         )
@@ -551,8 +550,7 @@ class WebUiConfigWriteFacadeTest {
               "platformType": "ONEBOT11",
               "adapter": "onebot11",
               "oneBot11Host": "127.0.0.1",
-              "oneBot11Port": 3001,
-              "confirmationPassword": "Better123!@"
+              "oneBot11Port": 3001
             }
             """.trimIndent(),
         )
@@ -708,8 +706,7 @@ class WebUiConfigWriteFacadeTest {
               "platformType": "ONEBOT11",
               "adapter": "onebot11",
               "oneBot11Host": "10.0.0.2",
-              "oneBot11Port": 3100,
-              "confirmationPassword": "Better123!@"
+              "oneBot11Port": 3100
             }
             """.trimIndent(),
         )
@@ -834,7 +831,6 @@ class WebUiConfigWriteFacadeTest {
                 webUiCredentialFile = "custom-webui.json",
                 webUiTokenTtlSeconds = 7200L,
                 webUiStaticDir = "static",
-                confirmationPassword = "Better123!@",
                 targets = listOf(WebUiTargetConfigWriteDto("group", 10086L, "onebot11:group:10086")),
                 admins = listOf(
                     WebUiGroupAdminConfigWriteDto(
@@ -872,7 +868,7 @@ class WebUiConfigWriteFacadeTest {
      * WebUI 绑定所有网卡是高风险暴露面；未带确认口令时服务层必须拒绝写盘。
      */
     @Test
-    fun `bot config writes should reject wildcard webui host without explicit confirmation`() {
+    fun `bot config writes should allow wildcard webui host and return an exposure warning`() {
         var saveCalls = 0
         val currentBotConfig = BotConfig(
             webui = WebUiConfig(
@@ -906,14 +902,12 @@ class WebUiConfigWriteFacadeTest {
                 webUiEnabled = true,
                 webUiHost = "0.0.0.0",
                 webUiPort = 18080,
-                confirmationPassword = "",
             ),
         )
 
-        assertFalse(result.success)
-        assertEquals(WebUiSaveEffectLevel.REJECTED_VALIDATION, result.effectiveLevel)
-        assertTrue(result.validationErrors.any { it.contains("webUiHost") }, result.validationErrors.toString())
-        assertEquals(0, saveCalls)
+        assertTrue(result.success)
+        assertTrue(result.message.contains("high-risk warning"), result.message)
+        assertEquals(1, saveCalls)
     }
 
     /**

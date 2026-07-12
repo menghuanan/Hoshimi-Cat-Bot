@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { changePassword, loginWithPassword, restoreSession } from '../api/auth'
 import { useThemePreference } from '../hooks/useThemePreference'
 import { formatLoginErrorMessage } from '../utils/errorMessages'
-import { rememberSessionPassword } from '../auth/sessionCredential'
 import { useWebUiNavigation } from '../hooks/useWebUiNavigation'
 
 /**
@@ -56,7 +55,6 @@ export function LoginPage() {
         setMustChangePassword(true)
         setMessage('请先修改初始密码')
       } else {
-        rememberSessionPassword(password)
         navigate('home')
       }
     } catch (error) {

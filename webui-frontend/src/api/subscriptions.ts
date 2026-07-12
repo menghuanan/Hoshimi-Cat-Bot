@@ -5,9 +5,7 @@ import {
 } from '../subscriptions/subscriptionEditors'
 import {
   buildSubscriptionAtAllPayload,
-  buildSubscriptionConfigDeletePayload,
   buildSubscriptionCreatePayload,
-  buildSubscriptionDeletePayload,
   buildSubscriptionFilterPayload,
   buildSubscriptionRandomTemplatePayload,
   buildSubscriptionTemplatePayload,
@@ -23,9 +21,7 @@ import {
 
 export {
   buildSubscriptionAtAllPayload,
-  buildSubscriptionConfigDeletePayload,
   buildSubscriptionCreatePayload,
-  buildSubscriptionDeletePayload,
   buildSubscriptionFilterPayload,
   buildSubscriptionRandomTemplatePayload,
   buildSubscriptionTemplatePayload,
@@ -58,7 +54,7 @@ export async function createSubscription(
     method: 'POST',
     body: payload,
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
@@ -67,15 +63,13 @@ export async function createSubscription(
  */
 export async function deleteSubscription(
   itemId: string,
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(`/api/subscriptions/${encodeURIComponent(itemId)}`, {
     ...options,
     method: 'DELETE',
-    body: buildSubscriptionDeletePayload(itemId, confirmationPassword),
-    includeJson: true,
-    authenticated: false,
+    includeJson: false,
+    authenticated: true,
   })
 }
 
@@ -95,7 +89,7 @@ export async function listSubscriptionTargets(
 }
 
 /**
- * 推送群聊保存通过统一 payload builder 注入确认密码。
+ * 推送群聊保存通过统一 payload builder 提交业务字段。
  */
 export async function saveSubscriptionTarget(
   itemId: string,
@@ -107,25 +101,23 @@ export async function saveSubscriptionTarget(
     method: 'POST',
     body: buildSubscriptionTargetPayload(payload),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
 /**
- * 推送群聊删除按 subject key 定位，body 只承载确认密码。
+ * 推送群聊删除按 subject key 定位，不发送额外请求体。
  */
 export async function deleteSubscriptionTarget(
   itemId: string,
   key: string,
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(buildSubscriptionEditorUrl(itemId, 'targets', key), {
     ...options,
     method: 'DELETE',
-    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
-    includeJson: true,
-    authenticated: false,
+    includeJson: false,
+    authenticated: true,
   })
 }
 
@@ -157,25 +149,23 @@ export async function saveSubscriptionUid(
     method: 'POST',
     body: buildSubscriptionUidPayload(payload),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
 /**
- * 分组订阅 ID 删除走后端取消订阅链路，前端只传 key 和确认密码。
+ * 分组订阅 ID 删除走后端取消订阅链路，前端只传资源 key。
  */
 export async function deleteSubscriptionUid(
   itemId: string,
   key: string,
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(buildSubscriptionEditorUrl(itemId, 'uids', key), {
     ...options,
     method: 'DELETE',
-    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
-    includeJson: true,
-    authenticated: false,
+    includeJson: false,
+    authenticated: true,
   })
 }
 
@@ -195,7 +185,7 @@ export async function listSubscriptionFilters(
 }
 
 /**
- * 过滤器保存通过统一 payload builder 写入，确保确认密码不会被调用方遗漏。
+ * 过滤器保存通过统一 payload builder 写入，保持业务字段稳定。
  */
 export async function saveSubscriptionFilter(
   itemId: string,
@@ -207,25 +197,23 @@ export async function saveSubscriptionFilter(
     method: 'POST',
     body: buildSubscriptionFilterPayload(payload),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
 /**
- * 过滤器删除把 key 放在路径中，body 只承载高风险确认密码。
+ * 过滤器删除把 key 放在路径中，不发送额外请求体。
  */
 export async function deleteSubscriptionFilter(
   itemId: string,
   key: string,
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(buildSubscriptionEditorUrl(itemId, 'filters', key), {
     ...options,
     method: 'DELETE',
-    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
-    includeJson: true,
-    authenticated: false,
+    includeJson: false,
+    authenticated: true,
   })
 }
 
@@ -257,7 +245,7 @@ export async function saveSubscriptionTemplate(
     method: 'POST',
     body: buildSubscriptionTemplatePayload(payload),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
@@ -267,15 +255,13 @@ export async function saveSubscriptionTemplate(
 export async function deleteSubscriptionTemplate(
   itemId: string,
   key: string,
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(buildSubscriptionEditorUrl(itemId, 'templates', key), {
     ...options,
     method: 'DELETE',
-    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
-    includeJson: true,
-    authenticated: false,
+    includeJson: false,
+    authenticated: true,
   })
 }
 
@@ -285,15 +271,14 @@ export async function deleteSubscriptionTemplate(
 export async function setSubscriptionTemplateRandom(
   itemId: string,
   enabled: boolean,
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(buildSubscriptionTemplateRandomUrl(itemId), {
     ...options,
     method: 'POST',
-    body: buildSubscriptionRandomTemplatePayload(enabled, confirmationPassword),
+    body: buildSubscriptionRandomTemplatePayload(enabled),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
@@ -313,7 +298,7 @@ export async function listSubscriptionAtAll(
 }
 
 /**
- * @全体保存提交类型和目标群聊，确认密码仍由调用方确认后传入。
+ * @全体保存只提交类型和目标群聊。
  */
 export async function saveSubscriptionAtAll(
   itemId: string,
@@ -325,7 +310,7 @@ export async function saveSubscriptionAtAll(
     method: 'POST',
     body: buildSubscriptionAtAllPayload(payload),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
@@ -335,15 +320,13 @@ export async function saveSubscriptionAtAll(
 export async function deleteSubscriptionAtAll(
   itemId: string,
   key: string,
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(buildSubscriptionEditorUrl(itemId, 'atall', key), {
     ...options,
     method: 'DELETE',
-    body: buildSubscriptionConfigDeletePayload(confirmationPassword),
-    includeJson: true,
-    authenticated: false,
+    includeJson: false,
+    authenticated: true,
   })
 }
 
@@ -369,14 +352,13 @@ export async function saveSubscriptionTheme(
   itemId: string,
   color: string,
   targetGroups: string[],
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<unknown> {
   return requestJson(buildSubscriptionEditorUrl(itemId, 'theme'), {
     ...options,
     method: 'POST',
-    body: buildSubscriptionThemePayload(color, confirmationPassword, targetGroups),
+    body: buildSubscriptionThemePayload(color, targetGroups),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }

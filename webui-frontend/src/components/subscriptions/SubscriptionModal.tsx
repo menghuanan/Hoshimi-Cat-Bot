@@ -27,7 +27,7 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
   }
 
   /**
-   * 表单提交只返回当前模式需要的字段，登录凭据由 useSubscriptions 统一补充。
+   * 表单提交只返回当前模式需要的字段，认证字段不进入业务 payload。
    */
   const submitForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

@@ -38,7 +38,7 @@ data class WebUiSubscriptionItemDto(
 )
 
 /**
- * WebUI 新增订阅请求只承载页面表单字段和二次确认密码，具体类型校验由后端 facade 统一执行。
+ * WebUI 新增订阅请求只承载页面表单字段，具体类型校验由后端 facade 统一执行。
  */
 @Serializable
 data class WebUiSubscriptionCreateRequestDto(
@@ -47,7 +47,6 @@ data class WebUiSubscriptionCreateRequestDto(
     val targetGroup: String = "",
     val groupName: String = "",
     val bangumiId: String = "",
-    val confirmationPassword: String = "",
 )
 
 /**
@@ -80,12 +79,11 @@ data class WebUiSubscriptionTargetItemDto(
 )
 
 /**
- * 推送群聊保存请求只接受正整数群号，路由层仍只把确认密码用于高风险鉴权。
+ * 推送群聊保存请求只接受正整数群号，认证与 CSRF 由统一路由 guard 负责。
  */
 @Serializable
 data class WebUiSubscriptionTargetSaveRequestDto(
     val targetGroup: String,
-    val confirmationPassword: String = "",
 )
 
 /**
@@ -113,7 +111,6 @@ data class WebUiSubscriptionUidItemDto(
 @Serializable
 data class WebUiSubscriptionUidSaveRequestDto(
     val uid: String,
-    val confirmationPassword: String = "",
 )
 
 /**
@@ -140,7 +137,7 @@ data class WebUiSubscriptionFilterItemDto(
 )
 
 /**
- * 过滤器保存请求同时覆盖新增和编辑；动态订阅用 targetGroups 限定目标群聊，确认密码只供路由鉴权。
+ * 过滤器保存请求同时覆盖新增和编辑；动态订阅用 targetGroups 限定目标群聊。
  */
 @Serializable
 data class WebUiSubscriptionFilterSaveRequestDto(
@@ -149,7 +146,6 @@ data class WebUiSubscriptionFilterSaveRequestDto(
     val mode: String,
     val content: String,
     val targetGroups: List<String> = emptyList(),
-    val confirmationPassword: String = "",
 )
 
 /**
@@ -184,16 +180,14 @@ data class WebUiSubscriptionTemplateSaveRequestDto(
     val name: String,
     val content: String,
     val targetGroups: List<String> = emptyList(),
-    val confirmationPassword: String = "",
 )
 
 /**
- * 随机模板开关请求承载布尔值和确认密码，具体作用域由订阅卡片 ID 决定。
+ * 随机模板开关请求只承载布尔值，具体作用域由订阅卡片 ID 决定。
  */
 @Serializable
 data class WebUiSubscriptionTemplateRandomRequestDto(
     val enabled: Boolean,
-    val confirmationPassword: String = "",
 )
 
 /**
@@ -216,13 +210,12 @@ data class WebUiSubscriptionAtAllItemDto(
 )
 
 /**
- * @全体保存请求承载类型、目标群组和确认密码，目标群组由订阅卡片的推送目标展开。
+ * @全体保存请求承载类型和目标群组，目标群组由订阅卡片的推送目标展开。
  */
 @Serializable
 data class WebUiSubscriptionAtAllSaveRequestDto(
     val type: String,
     val targetGroups: List<String> = emptyList(),
-    val confirmationPassword: String = "",
 )
 
 /**
@@ -241,5 +234,4 @@ data class WebUiSubscriptionThemeDto(
 data class WebUiSubscriptionThemeSaveRequestDto(
     val color: String,
     val targetGroups: List<String> = emptyList(),
-    val confirmationPassword: String = "",
 )

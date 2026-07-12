@@ -168,13 +168,11 @@ describe('settings payload helpers', () => {
     const preserved = buildSettingsSavePayload({
       file: 'biliConfig',
       snapshotToken: 'bili-token',
-      confirmationPassword: 'pw-1',
       values: {'proxyConfig.proxy': ''},
     })
 
     expect(preserved).toMatchObject({
       snapshotToken: 'bili-token',
-      confirmationPassword: 'pw-1',
       proxyUpdateMode: 'preserve',
       proxies: [],
     })
@@ -182,7 +180,6 @@ describe('settings payload helpers', () => {
     const replaced = buildSettingsSavePayload({
       file: 'biliConfig',
       snapshotToken: 'bili-token',
-      confirmationPassword: 'pw-2',
       values: {'proxyConfig.proxy': 'http://a.example\nhttp://b.example'},
     })
 
@@ -194,7 +191,6 @@ describe('settings payload helpers', () => {
     const cleared = buildSettingsSavePayload({
       file: 'biliConfig',
       snapshotToken: 'bili-token',
-      confirmationPassword: 'pw-3',
       proxyUpdateMode: 'clear',
       values: {'proxyConfig.proxy': ''},
     })
@@ -212,7 +208,6 @@ describe('settings payload helpers', () => {
     expect(buildSettingsSavePayload({
       file: 'biliConfig',
       snapshotToken: 'bili-token',
-      confirmationPassword: 'pw',
       values: {
         'imageConfig.badgeEnable.choice': 'both',
         'cacheConfig.expires.DRAW': '7',
@@ -245,7 +240,6 @@ describe('settings payload helpers', () => {
     const payload = buildSettingsSavePayload({
       file: 'botConfig',
       snapshotToken: 'bot-token',
-      confirmationPassword: 'pw',
       values: {
         'platform.type': 'onebot11',
         'platform.adapter': 'onebot11',
@@ -264,7 +258,6 @@ describe('settings payload helpers', () => {
     const payload = buildSettingsSavePayload({
       file: 'botConfig',
       snapshotToken: 'bot-token',
-      confirmationPassword: 'pw',
       values: {
         adminsText: '',
       },

@@ -4,7 +4,6 @@ import { applyAuthSession, applyLoginResult, loginWithPassword, restoreSession }
 import { buildBiliConfigSavePayload, buildBotConfigSavePayload } from './settings'
 import {
   buildSubscriptionCreatePayload,
-  buildSubscriptionDeletePayload,
   deleteSubscriptionTarget,
   deleteSubscriptionTemplate,
   listSubscriptionFilters,
@@ -34,14 +33,14 @@ describe('webui api contracts', () => {
       message: '等待扫码',
     }))
 
-    await startBiliLogin('secret-password', {fetchImpl})
+    await startBiliLogin({fetchImpl})
     await fetchBiliLoginSession('session/1', {fetchImpl})
     await cancelBiliLogin('session/1', {fetchImpl})
 
     expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/bili-login/sessions', expect.objectContaining({
       method: 'POST',
       headers: expect.objectContaining({'X-CSRF-Token': 'csrf-bili-login'}),
-      body: JSON.stringify({confirmationPassword: 'secret-password'}),
+      body: undefined,
     }))
     expect(fetchImpl).toHaveBeenNthCalledWith(2, '/api/bili-login/sessions/session%2F1', expect.objectContaining({
       method: 'GET',
@@ -194,21 +193,19 @@ describe('webui api contracts', () => {
     removeItemSpy.mockRestore()
   })
 
-  it('buildBiliConfigSavePayload should preserve proxy update mode and confirmation password', () => {
+  it('buildBiliConfigSavePayload should preserve proxy update mode without carrying a password', () => {
     const payload = buildBiliConfigSavePayload({
       snapshotToken: 'snapshot-token',
-      confirmationPassword: 'pw-1',
       proxyText: '',
       currentProxies: ['http://old-proxy'],
     })
 
     expect(payload.snapshotToken).toBe('snapshot-token')
-    expect(payload.confirmationPassword).toBe('pw-1')
+    expect(payload).not.toHaveProperty('confirmationPassword')
     expect(payload.proxyUpdateMode).toBe('preserve')
 
     const replaced = buildBiliConfigSavePayload({
       snapshotToken: 'snapshot-token',
-      confirmationPassword: 'pw-2',
       proxyText: 'http://new-proxy',
       currentProxies: ['http://old-proxy'],
     })
@@ -218,7 +215,6 @@ describe('webui api contracts', () => {
 
     const cleared = buildBiliConfigSavePayload({
       snapshotToken: 'snapshot-token',
-      confirmationPassword: 'pw-3',
       proxyText: '',
       proxyUpdateMode: 'clear',
       currentProxies: ['http://old-proxy'],
@@ -228,35 +224,28 @@ describe('webui api contracts', () => {
     expect(cleared.proxies).toEqual([])
   })
 
-  it('buildBotConfigSavePayload should keep confirmation password and snapshot token', () => {
+  it('buildBotConfigSavePayload should keep the snapshot token without carrying a password', () => {
     const payload = buildBotConfigSavePayload({
       snapshotToken: 'bot-snapshot',
-      confirmationPassword: 'pw-bot',
       token: 'secret-token',
     })
 
     expect(payload.snapshotToken).toBe('bot-snapshot')
-    expect(payload.confirmationPassword).toBe('pw-bot')
+    expect(payload).not.toHaveProperty('confirmationPassword')
     expect(payload.oneBot11Token).toBe('secret-token')
   })
 
-  it('subscription payload builders should keep confirmation passwords', () => {
+  it('subscription payload builders should keep only business fields', () => {
     expect(buildSubscriptionCreatePayload({
       type: 'dynamic',
       uid: '123',
       targetGroup: '456',
-      confirmationPassword: 'pw-create',
     })).toMatchObject({
       type: 'dynamic',
       uid: '123',
       targetGroup: '456',
-      confirmationPassword: 'pw-create',
     })
 
-    expect(buildSubscriptionDeletePayload('item-1', 'pw-delete')).toEqual({
-      confirmationPassword: 'pw-delete',
-      itemId: 'item-1',
-    })
   })
 
   it('subscription nested config requests should target existing backend routes', async () => {
@@ -270,9 +259,8 @@ describe('webui api contracts', () => {
       mode: 'black',
       content: '广告',
       targetGroups: ['onebot11:group:10001'],
-      confirmationPassword: 'pw-filter',
     }, {fetchImpl})
-    await setSubscriptionTemplateRandom('item/1', true, 'pw-random', {fetchImpl})
+    await setSubscriptionTemplateRandom('item/1', true, {fetchImpl})
 
     expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/subscriptions/item%2F1/filters', expect.objectContaining({
       method: 'GET',
@@ -293,7 +281,6 @@ describe('webui api contracts', () => {
         mode: 'black',
         content: '广告',
         targetGroups: ['onebot11:group:10001'],
-        confirmationPassword: 'pw-filter',
       }),
     }))
     expect(fetchImpl).toHaveBeenNthCalledWith(3, '/api/subscriptions/item%2F1/templates/random', expect.objectContaining({
@@ -303,48 +290,44 @@ describe('webui api contracts', () => {
       }),
       body: JSON.stringify({
         enabled: true,
-        confirmationPassword: 'pw-random',
       }),
     }))
   })
 
   /**
-   * 模板删除是高风险确认写接口，403 必须保留为密码错误而不是触发登录重定向。
+   * 普通持久化写入的 403 表示 session 或 CSRF 失效，必须回到登录入口。
    */
-  it('deleteSubscriptionTemplate should surface 403 as a password error without redirecting', async () => {
+  it('deleteSubscriptionTemplate should redirect protected 403 responses to login', async () => {
     document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-template-delete; path=/'
     const redirectToLogin = vi.fn()
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(403, {message: 'bad password'}))
 
-    await expect(deleteSubscriptionTemplate('item/1', 'template-1', 'pw-delete', {
+    await expect(deleteSubscriptionTemplate('item/1', 'template-1', {
       fetchImpl,
       redirectToLogin,
-    })).rejects.toThrow('密码错误，请重试')
+    })).rejects.toThrow('请重新登录')
 
-    expect(redirectToLogin).not.toHaveBeenCalled()
+    expect(redirectToLogin).toHaveBeenCalledTimes(1)
     expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions/item%2F1/templates/template-1', expect.objectContaining({
       method: 'DELETE',
       headers: expect.objectContaining({
         Accept: 'application/json',
-        'Content-Type': 'application/json',
         'X-CSRF-Token': 'csrf-template-delete',
       }),
-      body: JSON.stringify({
-        confirmationPassword: 'pw-delete',
-      }),
+      body: undefined,
     }))
   })
 
   /**
-   * 推送群聊编辑器复用订阅嵌套路由，新增和删除都必须携带高风险确认密码。
+   * 推送群聊编辑器复用订阅嵌套路由，新增和删除都只提交业务定位字段。
    */
-  it('subscription target helpers should use nested target routes with confirmation payloads', async () => {
+  it('subscription target helpers should use nested target routes without password payloads', async () => {
     document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-target; path=/'
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {success: true}))
 
     await listSubscriptionTargets('item/1', {fetchImpl})
-    await saveSubscriptionTarget('item/1', {targetGroup: '10001', confirmationPassword: 'pw-target'}, {fetchImpl})
-    await deleteSubscriptionTarget('item/1', 'onebot11:group:10001', 'pw-delete-target', {fetchImpl})
+    await saveSubscriptionTarget('item/1', {targetGroup: '10001'}, {fetchImpl})
+    await deleteSubscriptionTarget('item/1', 'onebot11:group:10001', {fetchImpl})
 
     expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/subscriptions/item%2F1/targets', expect.objectContaining({
       method: 'GET',
@@ -354,14 +337,11 @@ describe('webui api contracts', () => {
       method: 'POST',
       body: JSON.stringify({
         targetGroup: '10001',
-        confirmationPassword: 'pw-target',
       }),
     }))
     expect(fetchImpl).toHaveBeenNthCalledWith(3, '/api/subscriptions/item%2F1/targets/onebot11%3Agroup%3A10001', expect.objectContaining({
       method: 'DELETE',
-      body: JSON.stringify({
-        confirmationPassword: 'pw-delete-target',
-      }),
+      body: undefined,
     }))
   })
 

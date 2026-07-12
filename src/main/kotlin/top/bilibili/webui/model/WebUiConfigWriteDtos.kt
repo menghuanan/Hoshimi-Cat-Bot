@@ -61,7 +61,6 @@ data class WebUiBiliConfigWriteRequestDto(
     val cutLine: String = "\n\n〓〓〓 翻译 〓〓〓\n",
     val baiduAppId: String = "",
     val baiduSecurityKey: String = "",
-    val confirmationPassword: String = "",
 )
 
 /**
@@ -71,7 +70,6 @@ data class WebUiBiliConfigWriteRequestDto(
 data class WebUiBiliDataWriteRequestDto(
     val snapshotToken: String,
     val linkParseBlacklistContacts: List<String>,
-    val confirmationPassword: String = "",
 )
 
 /**
@@ -135,5 +133,4 @@ data class WebUiBotConfigWriteRequestDto(
     val webUiStaticDir: String = "",
     val targets: List<WebUiTargetConfigWriteDto> = emptyList(),
     val admins: List<WebUiGroupAdminConfigWriteDto>? = null,
-    val confirmationPassword: String = "",
 )

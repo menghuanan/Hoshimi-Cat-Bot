@@ -14,12 +14,6 @@ enum class WebUiBiliLoginPhase {
     CANCELLED,
 }
 
-/** 创建登录会话只接收内存确认密码，不接收二维码或 Cookie 材料。 */
-@Serializable
-data class WebUiBiliLoginStartRequestDto(
-    val confirmationPassword: String,
-)
-
 /** 会话 DTO 只在创建响应携带二维码 Base64，后续轮询返回 null。 */
 @Serializable
 data class WebUiBiliLoginSessionDto(

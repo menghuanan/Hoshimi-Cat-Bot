@@ -3,7 +3,6 @@ package top.bilibili.webui.routes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.receive
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -14,14 +13,13 @@ import top.bilibili.webui.auth.WebUiAuthService
 import top.bilibili.webui.model.WebUiBiliLoginConflictDto
 import top.bilibili.webui.model.WebUiBiliLoginErrorDto
 import top.bilibili.webui.model.WebUiBiliLoginPhase
-import top.bilibili.webui.model.WebUiBiliLoginStartRequestDto
 import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiBiliLoginCancelOutcome
 import top.bilibili.webui.service.WebUiBiliLoginFacade
 import top.bilibili.webui.service.WebUiBiliLoginStartOutcome
 
 /**
- * B站二维码登录路由统一执行认证、CSRF、高风险确认和脱敏响应，不接触底层登录凭据。
+ * B站二维码登录路由统一执行认证、CSRF 和脱敏响应，不接触底层登录凭据。
  */
 fun Route.registerWebUiBiliLoginRoutes(
     authService: WebUiAuthService,
@@ -29,11 +27,7 @@ fun Route.registerWebUiBiliLoginRoutes(
     auditService: WebUiAuditService,
 ) {
     post("/api/bili-login/sessions") {
-        val session = call.requireWebUiSession(authService, auditService) ?: return@post
-        val request = call.receive<WebUiBiliLoginStartRequestDto>()
-        if (!call.requireHighRiskConfirmation(authService, session, request.confirmationPassword, auditService)) {
-            return@post
-        }
+        call.requireWebUiSession(authService, auditService) ?: return@post
         call.markBiliLoginNoStore()
         when (val outcome = facade.start()) {
             is WebUiBiliLoginStartOutcome.Created -> {

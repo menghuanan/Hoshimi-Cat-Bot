@@ -25,7 +25,6 @@ import {
 } from '../api/subscriptions'
 import type { WebUiJsonRequestOptions } from '../api/http'
 import { normalizeVisibleMessage } from '../utils/errorMessages'
-import { readSessionPassword } from '../auth/sessionCredential'
 
 type UseSubscriptionsOptions = WebUiJsonRequestOptions
 type SubscriptionFilterDraft = {
@@ -96,7 +95,6 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [reload])
 
   const saveSubscription = useCallback(async (payload: Record<string, unknown>) => {
-    const confirmationPassword = readSessionPassword()
     // 新增表单使用分类型显示字段，提交前统一转换成后端订阅写入 DTO。
     const result = await createSubscription(buildSubscriptionCreatePayload({
       type: String(payload.type || 'dynamic'),
@@ -107,14 +105,12 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
       groupName: String(payload.groupName || ''),
       groupUid: String(payload.groupUid || ''),
       groupTarget: String(payload.groupTarget || ''),
-      confirmationPassword,
     }), requestOptions)
     return ensureSubscriptionWriteSucceeded(result, '新增订阅失败')
   }, [requestOptions])
 
   const removeSubscription = useCallback(async (itemId: string) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await deleteSubscription(itemId, confirmationPassword, requestOptions), '删除订阅失败')
+    return ensureSubscriptionWriteSucceeded(await deleteSubscription(itemId, requestOptions), '删除订阅失败')
   }, [requestOptions])
 
   /**
@@ -160,89 +156,79 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
   }, [requestOptions])
 
   /**
-   * 保存过滤器透明复用当前登录凭据，页面无需再次索取密码。
+   * 保存过滤器只提交编辑器业务字段，认证由统一请求层处理。
    */
   const saveFilter = useCallback(async (itemId: string, draft: SubscriptionFilterDraft) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await saveSubscriptionFilter(itemId, {...draft, confirmationPassword}, requestOptions), '保存过滤器失败')
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionFilter(itemId, draft, requestOptions), '保存过滤器失败')
   }, [requestOptions])
 
   /**
-   * 保存模板时只让页面提供业务字段，登录凭据由 hook 注入。
+   * 保存模板时只让页面提供业务字段。
    */
   const saveTemplate = useCallback(async (itemId: string, draft: SubscriptionTemplateDraft) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTemplate(itemId, {...draft, confirmationPassword}, requestOptions), '保存模板失败')
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTemplate(itemId, draft, requestOptions), '保存模板失败')
   }, [requestOptions])
 
   /**
    * 保存 @全体配置时保持多目标列表原样传给后端。
    */
   const saveAtAll = useCallback(async (itemId: string, draft: SubscriptionAtAllDraft) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await saveSubscriptionAtAll(itemId, {...draft, confirmationPassword}, requestOptions), '保存at全体失败')
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionAtAll(itemId, draft, requestOptions), '保存at全体失败')
   }, [requestOptions])
 
   /**
-   * 保存主题色时由 hook 补登录凭据，页面只负责提交颜色和可选目标群聊。
+   * 保存主题色时页面只负责提交颜色和可选目标群聊。
    */
   const saveTheme = useCallback(async (itemId: string, draft: SubscriptionThemeDraft) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTheme(itemId, draft.color, draft.targetGroups, confirmationPassword, requestOptions), '保存主题色失败')
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTheme(itemId, draft.color, draft.targetGroups, requestOptions), '保存主题色失败')
   }, [requestOptions])
 
   /**
-   * 保存推送群聊复用登录凭据，页面只负责正整数输入校验。
+   * 保存推送群聊时页面只负责正整数输入校验。
    */
   const saveTarget = useCallback(async (itemId: string, draft: SubscriptionTargetDraft) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTarget(itemId, {...draft, confirmationPassword}, requestOptions), '保存推送群聊失败')
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionTarget(itemId, draft, requestOptions), '保存推送群聊失败')
   }, [requestOptions])
 
   /**
-   * 保存分组订阅 ID 复用登录凭据，新增后由后端默认绑定全部推送群聊。
+   * 保存分组订阅 ID 后由后端默认绑定全部推送群聊。
    */
   const saveUid = useCallback(async (itemId: string, draft: SubscriptionUidDraft) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await saveSubscriptionUid(itemId, {...draft, confirmationPassword}, requestOptions), '保存订阅ID失败')
+    return ensureSubscriptionWriteSucceeded(await saveSubscriptionUid(itemId, draft, requestOptions), '保存订阅ID失败')
   }, [requestOptions])
 
   /**
-   * 配置项删除按编辑器类型分发到对应端点，并透明复用当前登录凭据。
+   * 配置项删除按编辑器类型分发到对应端点。
    */
   const removeConfig = useCallback(async (itemId: string, kind: 'filter' | 'template' | 'atall', key: string) => {
-    const confirmationPassword = readSessionPassword()
     if (kind === 'filter') {
-      return ensureSubscriptionWriteSucceeded(await deleteSubscriptionFilter(itemId, key, confirmationPassword, requestOptions), '删除过滤器失败')
+      return ensureSubscriptionWriteSucceeded(await deleteSubscriptionFilter(itemId, key, requestOptions), '删除过滤器失败')
     }
     if (kind === 'template') {
-      return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTemplate(itemId, key, confirmationPassword, requestOptions), '删除模板失败')
+      return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTemplate(itemId, key, requestOptions), '删除模板失败')
     }
-    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionAtAll(itemId, key, confirmationPassword, requestOptions), '删除at全体失败')
+    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionAtAll(itemId, key, requestOptions), '删除at全体失败')
   }, [requestOptions])
 
   /**
    * 删除推送群聊是高风险写操作，后端会按订阅类型清理关联配置。
    */
   const removeTarget = useCallback(async (itemId: string, key: string) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTarget(itemId, key, confirmationPassword, requestOptions), '删除推送群聊失败')
+    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionTarget(itemId, key, requestOptions), '删除推送群聊失败')
   }, [requestOptions])
 
   /**
    * 删除分组订阅 ID 必须经过确认，后端会走对应取消订阅链路。
    */
   const removeUid = useCallback(async (itemId: string, key: string) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionUid(itemId, key, confirmationPassword, requestOptions), '删除订阅ID失败')
+    return ensureSubscriptionWriteSucceeded(await deleteSubscriptionUid(itemId, key, requestOptions), '删除订阅ID失败')
   }, [requestOptions])
 
   /**
-   * 随机模板开关是即时写入，hook 负责注入当前登录凭据。
+   * 随机模板开关是即时写入，hook 只负责提交业务状态。
    */
   const toggleRandomTemplate = useCallback(async (itemId: string, enabled: boolean) => {
-    const confirmationPassword = readSessionPassword()
-    return ensureSubscriptionWriteSucceeded(await setSubscriptionTemplateRandom(itemId, enabled, confirmationPassword, requestOptions), '切换随机模板失败')
+    return ensureSubscriptionWriteSucceeded(await setSubscriptionTemplateRandom(itemId, enabled, requestOptions), '切换随机模板失败')
   }, [requestOptions])
 
   return {

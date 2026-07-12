@@ -1,15 +1,14 @@
 import { requestJson, type WebUiJsonRequestOptions } from './http'
 import type { WebUiBiliLoginSession } from '../types/biliLogin'
 
-/** 创建请求携带当前内存确认密码，后端成功后返回本次唯一二维码图片。 */
+/** 创建请求只依赖当前 session 与 CSRF，后端成功后返回本次唯一二维码图片。 */
 export async function startBiliLogin(
-  confirmationPassword: string,
   options: WebUiJsonRequestOptions = {},
 ): Promise<WebUiBiliLoginSession> {
   return requestJson<WebUiBiliLoginSession>('/api/bili-login/sessions', {
     ...options,
     method: 'POST',
-    body: {confirmationPassword},
+    includeJson: false,
   })
 }
 

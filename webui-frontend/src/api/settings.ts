@@ -3,11 +3,10 @@ import type { WebUiConfigHotReloadJob } from '../types/settings'
 import { buildSettingsSavePayload } from '../settings/settingsPayload'
 
 /**
- * BiliConfig 保存输入只保留 Task 2 需要的 proxy 和确认密码语义，其他字段后续页面再补齐。
+ * BiliConfig 保存输入保留快照、代理和字段更新语义，认证由统一请求层处理。
  */
 export type WebUiBiliConfigSaveInput = {
   snapshotToken: string
-  confirmationPassword: string
   proxyText?: string
   proxyUpdateMode?: 'preserve' | 'replace' | 'clear'
   currentProxies?: string[]
@@ -15,18 +14,16 @@ export type WebUiBiliConfigSaveInput = {
 }
 
 /**
- * bot.yml 保存输入只保留当前 task 需要的 token 和确认密码语义。
+ * bot.yml 保存输入保留快照、token 和字段更新语义。
  */
 export type WebUiBotConfigSaveInput = {
   snapshotToken: string
-  confirmationPassword: string
   token?: string
   fields?: Record<string, unknown>
 }
 
 export type WebUiBiliDataSaveInput = {
   snapshotToken: string
-  confirmationPassword: string
   fields?: Record<string, unknown>
 }
 
@@ -79,7 +76,6 @@ export function buildBiliConfigSavePayload(input: WebUiBiliConfigSaveInput): Rec
   return buildSettingsSavePayload({
     file: 'biliConfig',
     snapshotToken: input.snapshotToken,
-    confirmationPassword: input.confirmationPassword,
     proxyUpdateMode: input.proxyUpdateMode,
     values: {
       'proxyConfig.proxy': input.proxyText || '',
@@ -95,7 +91,6 @@ export function buildBotConfigSavePayload(input: WebUiBotConfigSaveInput): Recor
   return buildSettingsSavePayload({
     file: 'botConfig',
     snapshotToken: input.snapshotToken,
-    confirmationPassword: input.confirmationPassword,
     values: {
       'platform.onebot11.token': input.token || '',
       ...(input.fields || {}),
@@ -110,7 +105,6 @@ export function buildBiliDataSavePayload(input: WebUiBiliDataSaveInput): Record<
   return buildSettingsSavePayload({
     file: 'biliData',
     snapshotToken: input.snapshotToken,
-    confirmationPassword: input.confirmationPassword,
     values: input.fields || {},
   })
 }
@@ -127,7 +121,7 @@ export async function saveBiliConfig(
     method: 'POST',
     body: buildBiliConfigSavePayload(input),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
@@ -143,7 +137,7 @@ export async function saveBotConfig(
     method: 'POST',
     body: buildBotConfigSavePayload(input),
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 
@@ -159,7 +153,7 @@ export async function saveSettingsBatch(
     method: 'POST',
     body,
     includeJson: true,
-    authenticated: false,
+    authenticated: true,
   })
 }
 

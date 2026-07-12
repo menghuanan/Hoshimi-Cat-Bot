@@ -1,5 +1,3 @@
-import type { WebUiSubscriptionWritePayload } from '../types/subscriptions'
-
 export type SubscriptionCreateInput = {
   type: string
   uid?: string
@@ -9,10 +7,9 @@ export type SubscriptionCreateInput = {
   groupUid?: string
   groupTarget?: string
   bangumiTarget?: string
-  confirmationPassword: string
 }
 
-export type SubscriptionFilterPayload = WebUiSubscriptionWritePayload & {
+export type SubscriptionFilterPayload = {
   key: string
   kind: string
   mode: string
@@ -20,7 +17,7 @@ export type SubscriptionFilterPayload = WebUiSubscriptionWritePayload & {
   targetGroups?: string[]
 }
 
-export type SubscriptionTemplatePayload = WebUiSubscriptionWritePayload & {
+export type SubscriptionTemplatePayload = {
   key: string
   type: string
   name: string
@@ -28,30 +25,30 @@ export type SubscriptionTemplatePayload = WebUiSubscriptionWritePayload & {
   targetGroups?: string[]
 }
 
-export type SubscriptionAtAllPayload = WebUiSubscriptionWritePayload & {
+export type SubscriptionAtAllPayload = {
   type: string
   targetGroups: string[]
 }
 
-export type SubscriptionThemePayload = WebUiSubscriptionWritePayload & {
+export type SubscriptionThemePayload = {
   color: string
   targetGroups: string[]
 }
 
-export type SubscriptionTargetPayload = WebUiSubscriptionWritePayload & {
+export type SubscriptionTargetPayload = {
   targetGroup: string
 }
 
-export type SubscriptionUidPayload = WebUiSubscriptionWritePayload & {
+export type SubscriptionUidPayload = {
   uid: string
 }
 
-export type SubscriptionRandomTemplatePayload = WebUiSubscriptionWritePayload & {
+export type SubscriptionRandomTemplatePayload = {
   enabled: boolean
 }
 
 /**
- * 订阅新增接口按当前类型拼装 payload，确认密码始终随请求一并提交。
+ * 订阅新增接口按当前类型拼装 payload，只提交业务字段。
  */
 export function buildSubscriptionCreatePayload(input: SubscriptionCreateInput): Record<string, unknown> {
   if (input.type === 'group') {
@@ -60,7 +57,6 @@ export function buildSubscriptionCreatePayload(input: SubscriptionCreateInput): 
       groupName: input.groupName || '',
       uid: input.groupUid || input.uid || '',
       targetGroup: input.groupTarget || input.targetGroup || '',
-      confirmationPassword: input.confirmationPassword,
     }
   }
   if (input.type === 'bangumi') {
@@ -68,24 +64,12 @@ export function buildSubscriptionCreatePayload(input: SubscriptionCreateInput): 
       type: input.type,
       bangumiId: input.bangumiId || '',
       targetGroup: input.bangumiTarget || input.targetGroup || '',
-      confirmationPassword: input.confirmationPassword,
     }
   }
   return {
     type: input.type,
     uid: input.uid || '',
     targetGroup: input.targetGroup || '',
-    confirmationPassword: input.confirmationPassword,
-  }
-}
-
-/**
- * 删除订阅保留 itemId 便于前端测试和排查，后端高风险校验只读取确认密码。
- */
-export function buildSubscriptionDeletePayload(itemId: string, confirmationPassword: string): WebUiSubscriptionWritePayload & {itemId: string} {
-  return {
-    itemId,
-    confirmationPassword,
   }
 }
 
@@ -99,7 +83,6 @@ export function buildSubscriptionFilterPayload(input: SubscriptionFilterPayload)
     mode: input.mode,
     content: input.content,
     targetGroups: input.targetGroups || [],
-    confirmationPassword: input.confirmationPassword,
   }
 }
 
@@ -113,7 +96,6 @@ export function buildSubscriptionTemplatePayload(input: SubscriptionTemplatePayl
     name: input.name,
     content: input.content,
     targetGroups: input.targetGroups || [],
-    confirmationPassword: input.confirmationPassword,
   }
 }
 
@@ -124,7 +106,6 @@ export function buildSubscriptionAtAllPayload(input: SubscriptionAtAllPayload): 
   return {
     type: input.type,
     targetGroups: input.targetGroups,
-    confirmationPassword: input.confirmationPassword,
   }
 }
 
@@ -133,13 +114,11 @@ export function buildSubscriptionAtAllPayload(input: SubscriptionAtAllPayload): 
  */
 export function buildSubscriptionThemePayload(
   color: string,
-  confirmationPassword: string,
   targetGroups: string[] = [],
 ): SubscriptionThemePayload {
   return {
     color,
     targetGroups,
-    confirmationPassword,
   }
 }
 
@@ -149,7 +128,6 @@ export function buildSubscriptionThemePayload(
 export function buildSubscriptionTargetPayload(input: SubscriptionTargetPayload): SubscriptionTargetPayload {
   return {
     targetGroup: input.targetGroup,
-    confirmationPassword: input.confirmationPassword,
   }
 }
 
@@ -159,23 +137,14 @@ export function buildSubscriptionTargetPayload(input: SubscriptionTargetPayload)
 export function buildSubscriptionUidPayload(input: SubscriptionUidPayload): SubscriptionUidPayload {
   return {
     uid: input.uid,
-    confirmationPassword: input.confirmationPassword,
   }
 }
 
 /**
  * 随机模板开关 payload 保持布尔值，不在 API 层转换为字符串。
  */
-export function buildSubscriptionRandomTemplatePayload(enabled: boolean, confirmationPassword: string): SubscriptionRandomTemplatePayload {
+export function buildSubscriptionRandomTemplatePayload(enabled: boolean): SubscriptionRandomTemplatePayload {
   return {
     enabled,
-    confirmationPassword,
   }
-}
-
-/**
- * 嵌套配置删除接口只需要确认密码，资源定位统一放在 URL path 中。
- */
-export function buildSubscriptionConfigDeletePayload(confirmationPassword: string): WebUiSubscriptionWritePayload {
-  return {confirmationPassword}
 }

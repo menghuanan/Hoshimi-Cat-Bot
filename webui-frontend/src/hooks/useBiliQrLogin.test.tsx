@@ -1,6 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { rememberSessionPassword } from '../auth/sessionCredential'
 import { useBiliQrLogin } from './useBiliQrLogin'
 
 const response = (status: number, payload: unknown) => ({
@@ -17,7 +16,6 @@ describe('useBiliQrLogin', () => {
   /** hook 必须按后端状态轮询，并在成功反馈后自动清空二维码关闭弹窗。 */
   it('polls until success and closes after the success delay', async () => {
     vi.useFakeTimers()
-    rememberSessionPassword('secret-password')
     const onSucceeded = vi.fn()
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(201, {
@@ -65,7 +63,6 @@ describe('useBiliQrLogin', () => {
   /** 二维码等待超时必须通知页面层，弹窗之外仍能留下明确反馈。 */
   it('notifies the page when polling reaches the expired phase', async () => {
     vi.useFakeTimers()
-    rememberSessionPassword('secret-password')
     const onExpired = vi.fn()
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(201, {
@@ -95,7 +92,6 @@ describe('useBiliQrLogin', () => {
 
   /** 页面级成功副作用失败时必须由 hook 消费拒绝，不能形成未处理 Promise rejection。 */
   it('contains a rejected success callback while preserving the successful session', async () => {
-    rememberSessionPassword('secret-password')
     const onSucceeded = vi.fn().mockRejectedValue(new Error('runtime refresh failed'))
     const fetchImpl = vi.fn().mockResolvedValue(response(201, {
       sessionId: 'session-success', phase: 'SUCCEEDED', expiresAtEpochMillis: Date.now() + 180_000,
@@ -118,7 +114,6 @@ describe('useBiliQrLogin', () => {
 
   /** 等待态关闭要取消后端会话，提交态则必须保持弹窗和会话不变。 */
   it('cancels waiting sessions but refuses to close while committing', async () => {
-    rememberSessionPassword('secret-password')
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(201, {
         sessionId: 'waiting-session', phase: 'WAITING_FOR_SCAN', expiresAtEpochMillis: Date.now() + 180_000,
@@ -151,7 +146,6 @@ describe('useBiliQrLogin', () => {
 
   /** 创建响应迟到时仍要取消刚生成的后端会话，不能只丢弃本地状态后等待 TTL。 */
   it('cancels a session that is created after the modal was closed', async () => {
-    rememberSessionPassword('secret-password')
     let resolveCreated!: (value: ReturnType<typeof response>) => void
     const createdResponse = new Promise<ReturnType<typeof response>>((resolve) => {
       resolveCreated = resolve
@@ -183,7 +177,6 @@ describe('useBiliQrLogin', () => {
   /** 慢 GET 未完成时不得启动下一轮请求，成功副作用也只能由唯一响应触发一次。 */
   it('serializes slow polling requests and completes success once', async () => {
     vi.useFakeTimers()
-    rememberSessionPassword('secret-password')
     const onSucceeded = vi.fn()
     let resolvePoll!: (value: ReturnType<typeof response>) => void
     const slowPoll = new Promise<ReturnType<typeof response>>((resolve) => {
@@ -225,7 +218,6 @@ describe('useBiliQrLogin', () => {
 
   /** 临时轮询失败必须保留当前会话，原位重试 GET 成功后清除旧错误且不得重新 POST。 */
   it('retries a transient polling failure in place and clears the stale error', async () => {
-    rememberSessionPassword('secret-password')
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(201, {
         sessionId: 'retry-session', phase: 'WAITING_FOR_SCAN', expiresAtEpochMillis: Date.now() + 180_000,

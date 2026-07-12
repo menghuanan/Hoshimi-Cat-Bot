@@ -1,6 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { rememberSessionPassword } from '../auth/sessionCredential'
 import { useLogs } from './useLogs'
 import { useRuntimeSummary } from './useRuntimeSummary'
 import { useSettingsFiles } from './useSettingsFiles'
@@ -182,7 +181,6 @@ describe('webui domain hooks', () => {
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/config/bot', expect.any(Object)))
-    rememberSessionPassword('secret-password')
     const savePromise = result.current.saveBili({
       snapshotToken: 'bili-snapshot',
       proxyText: 'http://proxy.example:8080',
@@ -195,7 +193,6 @@ describe('webui domain hooks', () => {
     expect(postCall).toBeTruthy()
     expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
       snapshotToken: 'bili-snapshot',
-      confirmationPassword: 'secret-password',
       proxyUpdateMode: 'replace',
     })
   })
@@ -239,7 +236,6 @@ describe('webui domain hooks', () => {
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/config/bili-data', expect.any(Object)))
-    rememberSessionPassword('batch-password')
     const savePromise = result.current.saveBatch({
       biliConfig: {snapshotToken: 'bili-snapshot'},
       biliData: {snapshotToken: 'data-snapshot', linkParseBlacklistContacts: ['onebot11:group:1001']},
@@ -252,17 +248,16 @@ describe('webui domain hooks', () => {
     expect(calls.filter((url) => url.includes('/api/config/save-batch'))).toHaveLength(1)
     const batchCall = fetchImpl.mock.calls.find(([url]) => String(url).includes('/api/config/save-batch'))
     expect(JSON.parse(String(batchCall?.[1]?.body))).toMatchObject({
-      biliConfig: {snapshotToken: 'bili-snapshot', confirmationPassword: 'batch-password'},
+      biliConfig: {snapshotToken: 'bili-snapshot'},
       biliData: {
         snapshotToken: 'data-snapshot',
-        confirmationPassword: 'batch-password',
         linkParseBlacklistContacts: ['onebot11:group:1001'],
       },
-      botConfig: {snapshotToken: 'bot-snapshot', confirmationPassword: 'batch-password'},
+      botConfig: {snapshotToken: 'bot-snapshot'},
     })
   })
 
-  it('useSubscriptions should include confirmationPassword when creating a subscription', async () => {
+  it('useSubscriptions should create subscriptions without carrying the login password', async () => {
     const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
@@ -279,7 +274,6 @@ describe('webui domain hooks', () => {
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions', expect.any(Object)))
-    rememberSessionPassword('create-password')
     const createPromise = result.current.saveSubscription({
       type: 'dynamic',
       uid: '123',
@@ -293,7 +287,6 @@ describe('webui domain hooks', () => {
       type: 'dynamic',
       uid: '123',
       targetGroup: '456',
-      confirmationPassword: 'create-password',
     })
   })
 
@@ -317,7 +310,6 @@ describe('webui domain hooks', () => {
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions', expect.any(Object)))
-    rememberSessionPassword('group-password')
     const createPromise = result.current.saveSubscription({
       type: 'group',
       groupName: '测试分组',
@@ -333,14 +325,13 @@ describe('webui domain hooks', () => {
       groupName: '测试分组',
       uid: '1001',
       targetGroup: '2001',
-      confirmationPassword: 'group-password',
     })
   })
 
   /**
-   * 订阅嵌套编辑器的写入同样属于高风险操作，hook 必须统一补齐 confirmationPassword。
+   * 订阅嵌套编辑器的写入只提交业务字段，认证统一依赖 session 与 CSRF。
    */
-  it('useSubscriptions should gate nested editor writes with confirmation passwords', async () => {
+  it('useSubscriptions should submit nested editor writes without login passwords', async () => {
     const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/subscriptions') && (!init || init.method === 'GET')) {
@@ -357,7 +348,6 @@ describe('webui domain hooks', () => {
     }
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('/api/subscriptions', expect.any(Object)))
-    rememberSessionPassword('filter-password')
     const saveFilterPromise = result.current.saveFilter('sub-1', {
       key: '',
       kind: 'regex',
@@ -367,7 +357,6 @@ describe('webui domain hooks', () => {
 
     await saveFilterPromise
 
-    rememberSessionPassword('random-password')
     const togglePromise = result.current.toggleRandomTemplate('sub-1', true)
     await togglePromise
 
@@ -376,13 +365,11 @@ describe('webui domain hooks', () => {
       kind: 'regex',
       mode: 'black',
       content: '广告',
-      confirmationPassword: 'filter-password',
     })
 
     const randomCall = fetchImpl.mock.calls.find(([url, init]) => String(url).endsWith('/api/subscriptions/sub-1/templates/random') && init?.method === 'POST')
     expect(JSON.parse(String(randomCall?.[1]?.body))).toEqual({
       enabled: true,
-      confirmationPassword: 'random-password',
     })
   })
 
