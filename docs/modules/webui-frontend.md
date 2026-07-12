@@ -26,7 +26,7 @@
 ## 主要职责
 
 - 使用 Vite 构建 React 应用，并把产物输出到 `src/main/resources/webui/react`。
-- 负责登录页、仪表盘页、设置页、订阅页和日志页的前端交互。
+- 负责 WebUI 登录页、B站扫码登录弹窗、仪表盘页、设置页、订阅页和日志页的前端交互。
 - 用统一的 `requestJson`、CSRF 头和错误归一逻辑访问后端 API。
 - 维护本地主题、导航、确认弹窗、全局 Toast 和若干浏览器持久化状态。
 - 组装设置、订阅和日志的页面级 payload，而不直接接触后端文件格式。
@@ -39,6 +39,7 @@
 | 登录与改密 | `pages/LoginPage.tsx`、`api/auth.ts`、`types/auth.ts` | `/api/auth/*` | 登录结果只依赖 cookie-backed session，不把 bearer token 存入浏览器状态 |
 | 仪表盘 | `pages/DashboardPage.tsx`、`hooks/useRuntimeSummary.ts`、`types/runtime.ts` | `/api/runtime/summary` | 展示生命周期、账号、平台连接、推送统计、宿主 CPU/内存/磁盘和最近推送记录 |
 | 设置 | `pages/SettingsPage.tsx`、`settings/*`、`api/settings.ts` | `/api/config/*`、`/api/config/save-batch`、`/api/config/save-jobs/{jobId}` | schema 控制字段、分组、校验和 payload，保存直接复用本次登录的内存凭据并轮询热重载 job |
+| B站扫码登录 | `components/BiliQrLoginModal.tsx`、`hooks/useBiliQrLogin.ts`、`api/biliLogin.ts` | `/api/bili-login/sessions*` | 设置页展示账号状态；创建响应持有 PNG Base64，3 秒轮询状态，关闭取消等待态，提交态不可取消，成功刷新运行态并延迟关闭 |
 | 订阅 | `pages/SubscriptionsPage.tsx`、`components/subscriptions/*`、`hooks/useSubscriptions.ts`、`subscriptions/*` | `/api/subscriptions*` | `SubscriptionEditorModal` 统一承载 targets、uids、filters、templates、atall、theme 编辑；弹窗经 `ModalPortal` 挂到 body，避免被页面容器裁剪 |
 | 日志 | `pages/LogsPage.tsx`、`hooks/useLogs.ts`、`api/logs.ts`、`types/logs.ts` | `/api/logs/*` | sourceId 来自后端白名单；当前“清空”只清空 React 窗口，未调用已有服务端 clear helper；“导出”由 hook 下载当前过滤结果，没有服务端 export helper |
 | 页面壳与导航 | `components/Shell.tsx`、`router/webuiRouter.ts`、`contexts/WebUiNavigationContext.tsx` | Ktor 静态路由 | `/login` 是独立路径，其他页面可 hash 切换并支持直接刷新 |
@@ -51,11 +52,14 @@
 - `settings/settingsSchema.ts` 是设置页字段来源；`settings/settingsPayload.ts` 负责把表单值转换为后端 DTO。
 - 设置页一次保存必须把已变更的 `biliConfig`、`biliData` 和 `botConfig` 归并到同一个 batch payload；`BiliData.yml` 的链接解析黑名单按 textarea 非空行转换为 `linkParseBlacklistContacts` 数组。
 - 登录成功后必须在同一 React 页面生命周期进入主壳，`auth/sessionCredential.ts` 只在内存中保留本次登录密码；设置和订阅写操作自动填充既有 `confirmationPassword` 字段，不再要求用户重复输入。该凭据不得写入 `localStorage`、`sessionStorage`、cookie 或 URL，刷新页面导致凭据丢失时应重新登录后再执行写操作。
+- B站扫码创建同样复用内存确认密码；浏览器不得读取或拼装二维码 URL、key、Cookie 或回调地址，只能渲染后端返回的 PNG Base64 和脱敏 phase。
 - `useSettingsFiles.saveBatch()` 只在 job 到达 `APPLIED` 后清理编辑态；`FAILED` 必须保留用户输入并展示后端 message，`webUiRedirectUrl` 需要作为新 WebUI 地址提示给用户。
 - `subscriptions/subscriptionPayloads.ts` 是订阅写操作 payload 来源；新增订阅子编辑器时必须同步 hook、payload、类型和后端 DTO。
 - `utils/errorMessages.ts` 负责把 HTTP、英文异常和密码策略错误归一成可见文案；页面不应直接展示原始 exception 对象。
 - `utils/storage.ts` 只读取前端所需 cookie，例如 CSRF token；不能尝试读取 HttpOnly session cookie。
 - `ModalPortal` 当前负责把订阅创建和编辑弹窗挂到 `document.body`；保存写操作不再挂载密码确认 modal。新增或迁移 modal 时必须保持 Escape、焦点和遮罩层级测试。
+- `useBiliQrLogin` 拥有轮询 timer、单 GET in-flight 代际闸门、成功幂等闩和成功关闭 timer；关闭、重试和卸载必须清理 timer，同一代际不得并发轮询或重复执行成功副作用，迟到响应不得覆盖新会话，`COMMITTING` 状态不得触发取消。临时 GET 错误必须保留当前 session ID 并原位重试，后续成功响应需要清除旧错误。
+- `COMMITTING` 只展示提交中状态，不继续显示二维码 TTL 倒计时；创建接口的提交态 409 不带 retryAfter，前端不得把它改写成“1 秒后重试”。
 - `api/logs.ts` 提供服务端 clear helper，但当前 `LogsPage` 未接线；导出逻辑由 `useLogs.ts` 在浏览器内生成 Blob。修改按钮语义前必须同步后端高风险确认、审计和 E2E 契约。
 
 ## 日常开发入口
@@ -78,6 +82,7 @@
 - `src/main/resources/webui/react` 是构建输出，不是前端源码。
 - `localStorage`、cookie 和页面状态只保存前端运行所需的最小信息，例如主题偏好、自动刷新和 CSRF 读取结果。
 - E2E 测试使用 `webuiApiMock` 固定前端契约，不依赖生产 WebUI 端口或真实凭据。
+- 二维码图片字符串只存在于当前 React 会话，终态或关闭时清除，不进入浏览器持久化存储。
 
 ## 配置与数据
 

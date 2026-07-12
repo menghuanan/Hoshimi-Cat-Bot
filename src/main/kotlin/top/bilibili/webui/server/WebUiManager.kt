@@ -33,10 +33,12 @@ import top.bilibili.webui.config.WebUiSettings
 import top.bilibili.webui.routes.registerWebUiActionRoutes
 import top.bilibili.webui.routes.registerWebUiAuthRoutes
 import top.bilibili.webui.routes.registerWebUiApiRoutes
+import top.bilibili.webui.routes.registerWebUiBiliLoginRoutes
 import top.bilibili.webui.routes.registerWebUiLogRoutes
 import top.bilibili.webui.routes.registerWebUiStaticRoutes
 import top.bilibili.webui.service.WebUiActionFacade
 import top.bilibili.webui.service.WebUiAuditService
+import top.bilibili.webui.service.WebUiBiliLoginFacade
 import top.bilibili.webui.service.WebUiConfigFacade
 import top.bilibili.webui.service.WebUiConfigHotReloadCoordinator
 import top.bilibili.webui.service.WebUiConfigWriteFacade
@@ -104,6 +106,7 @@ class WebUiManager(
                 // 日志面按 Bot 本次启动时间裁切窗口，避免把上一轮进程残留拼进管理页。
                 logFacade = WebUiLogFacade(startupEpochMillis = logWindowStartEpochMillis),
                 actionFacade = WebUiActionFacade(),
+                biliLoginFacade = WebUiBiliLoginFacade(),
                 auditService = WebUiAuditService(),
             )
         }
@@ -185,6 +188,7 @@ fun Application.installWebUiModule(
     subscriptionManagementFacade: WebUiSubscriptionManagementFacade = WebUiSubscriptionManagementFacade(),
     logFacade: WebUiLogFacade,
     actionFacade: WebUiActionFacade,
+    biliLoginFacade: WebUiBiliLoginFacade = WebUiBiliLoginFacade(),
     auditService: WebUiAuditService,
     requestTimeoutMillis: Long = WebUiRequestTimeoutMillis,
     requestBodyLimitBytes: Long = WebUiMaxRequestBodyBytes,
@@ -208,6 +212,7 @@ fun Application.installWebUiModule(
         )
         registerWebUiLogRoutes(authService, logFacade, auditService)
         registerWebUiActionRoutes(authService, actionFacade, auditService)
+        registerWebUiBiliLoginRoutes(authService, biliLoginFacade, auditService)
     }
 }
 

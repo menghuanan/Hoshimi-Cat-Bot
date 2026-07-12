@@ -127,6 +127,25 @@ class ResourceManagementRegressionGuardTest {
         )
     }
 
+    /** 二维码登录 worker 必须在 WORKERS 阶段和 fallback 中先于 service client 收口。 */
+    @Test
+    fun `qr login workers should drain before service client dependencies`() {
+        val bot = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+        val qrPartition = bot.indexOf("id = \"qr-login-workers\"")
+        val fallback = bot.substringAfter("private suspend fun fallbackStopResources")
+        val qrFallback = fallback.indexOf("QrLoginCoordinator.shared.shutdownAndDrain")
+        val serviceClientFallback = fallback.indexOf("runFallbackStep(\"服务共享客户端\"")
+
+        assertTrue(qrPartition >= 0, "QrLoginCoordinator must have an explicit resource partition")
+        assertTrue(
+            bot.substring(qrPartition).contains("shutdownPhase = ShutdownPhase.WORKERS"),
+            "qr login partition must belong to WORKERS",
+        )
+        assertTrue(qrFallback in 0 until serviceClientFallback, "fallback must drain qr workers before service client close")
+        assertTrue(bot.contains("resourcePartitionHealthSnapshots"), "Core must expose partition health to monitoring")
+        assertTrue(bot.contains("requestControlledRestart"), "commit drain timeout must have a controlled restart path")
+    }
+
     @Test
     fun `main shutdown hook should stop bot directly without helper thread`() {
         val main = read("src/main/kotlin/top/bilibili/Main.kt")

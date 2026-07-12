@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { rememberSessionPassword } from './auth/sessionCredential'
 import { formatSaveResultMessage } from './settings/settingsSaveResult'
 
 /**
@@ -129,6 +130,57 @@ function collectBotBatchPayloads(): {
 }
 
 describe('webui shell routing', () => {
+  /** 设置页账号区必须从运行态读取账号，并完成二维码弹窗的创建和取消请求。 */
+  it('starts and cancels BiliBili qr login from the settings account section', async () => {
+    rememberSessionPassword('secret-password')
+    const requests: Array<{url: string, method: string, body: string}> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method || 'GET'
+      requests.push({url, method, body: String(init?.body || '')})
+      if (url.includes('/api/runtime/summary')) {
+        return {ok: true, status: 200, json: async () => ({account: {loggedIn: false, uid: 2233, cookieConfigured: false}})}
+      }
+      if (url.includes('/api/config/')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'config.yml', snapshotToken: 'token', fields: []})}
+      }
+      if (url === '/api/bili-login/sessions' && method === 'POST') {
+        return {ok: true, status: 201, json: async () => ({
+          sessionId: 'session-1',
+          phase: 'WAITING_FOR_SCAN',
+          expiresAtEpochMillis: Date.now() + 180_000,
+          message: '等待扫码',
+          qrImageBase64: 'AQID',
+        })}
+      }
+      if (url.endsWith('/api/bili-login/sessions/session-1') && method === 'DELETE') {
+        return {ok: true, status: 200, json: async () => ({
+          sessionId: 'session-1', phase: 'CANCELLED', expiresAtEpochMillis: Date.now(), message: '登录已取消',
+        })}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/settings')
+
+    expect(await screen.findByRole('heading', {name: 'B站账号'})).toBeInTheDocument()
+    expect(await screen.findByText('未登录')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '扫码登录'}))
+
+    expect(await screen.findByRole('dialog', {name: 'B站扫码登录'})).toBeInTheDocument()
+    expect(screen.getByRole('img', {name: 'B站登录二维码'})).toHaveAttribute('src', 'data:image/png;base64,AQID')
+    expect(requests).toContainEqual({
+      url: '/api/bili-login/sessions',
+      method: 'POST',
+      body: JSON.stringify({confirmationPassword: 'secret-password'}),
+    })
+
+    await user.click(screen.getByRole('button', {name: '取消登录'}))
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: 'B站扫码登录'})).not.toBeInTheDocument())
+    expect(requests.some((request) => request.url.endsWith('/api/bili-login/sessions/session-1') && request.method === 'DELETE')).toBe(true)
+  })
+
   it('renders the dashboard shell with the core navigation pages', () => {
     renderAtPath('/')
 

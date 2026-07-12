@@ -121,6 +121,7 @@
 | `event-collector` | `INGRESS` | `eventCollectorJob` | `STRICT` | 取消事件收集协程 |
 | `critical-state-checkpoint` | `WORKERS` | `BiliDataRuntimeCoordinator`、`DeliveryCoordinator` | `STRICT` | 在取消 worker 前持久化业务数据和交付账本 |
 | `taskers` | `WORKERS` | `BiliTasker.*` | `RELAXED_LONG_RUNNING` | 调用 `BiliTasker.cancelAll(timeoutMs = 10_000)` 统一停止后台任务 |
+| `qr-login-workers` | `WORKERS` | `QrLoginCoordinator.worker`、提交 watchdog | `RELAXED_LONG_RUNNING` | 拒绝新登录，取消并 join 等待态/附加刷新；核心提交只在有限 drain 窗口内等待，超时失败关闭并请求外部 supervisor 重启 |
 | `channels` | `CHANNELS` | `dynamicChannel`、`liveChannel`、`messageChannel` | `STRICT` | 关闭三条消息通道 |
 | `skia-manager` | `DEPENDENCIES` | `SkiaManager`、`FontManager` | `RELAXED_LONG_RUNNING` | 执行 `SkiaManager.shutdown()` |
 | `bili-client` | `DEPENDENCIES` | `biliClient` | `STRICT` | 执行 `closeUtilsClient()` |
@@ -134,6 +135,7 @@
 **维护要求**：
 
 - 新增共享客户端、全局缓存、入口协程、事件收集器或常驻 worker 时，不得只写 `close()`/`cancel()`；必须先决定它属于哪个分区。
+- 二维码登录核心提交不得被协程取消截断；等待态和成功后的附加刷新必须在 `qr-login-workers` 分区中先于 service client 收口。提交 drain 超时时不得释放旧写入栅栏并允许新提交，只能进入失败关闭并触发受控重启。
 - 新增本地管理面、调试入口或其他可选 ingress 时，必须和主消息入口一样显式登记停机分区，不能只在 `stop()` 里临时补一个 `close()`。
 - 修改 `owns` 中的 ownerTag 命名时，必须同步检查 `BusinessLifecycleManager`、`ProcessGuardian` 和相关日志，否则资源快照会失真。
 - 新分区的 `ShutdownPhase` 必须按依赖方向选择，不能为了“更早释放内存”把底层依赖提前到 `INGRESS` 或 `WORKERS`。

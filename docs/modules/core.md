@@ -43,6 +43,8 @@ Core 是长期资源的协调层，不应隐藏拥有者。新增 channel、scop
 
 WebUI 配置热重载协调器由 `BiliBiliBot` 根生命周期持有，并登记在 `webui-config-hot-reload` 入口分区；停机时必须先拒收新保存、等待或取消当前 worker，并把所有未终态 job 标记失败。WebUI 自身 host/port/enabled 等运行面变化只由 Bot scope 在保存响应返回后延迟调度，避免当前 HTTP 请求被自己的 `stop()` 中断。
 
+二维码登录 worker 虽由根作用域启动，但必须登记在 `qr-login-workers` 的 `WORKERS` 分区。该分区负责拒绝新会话、取消等待态与附加刷新、有限等待不可取消的核心凭据提交；提交 drain 超时后保持旧栅栏和降级状态，并通过退出码 78 请求外部 supervisor 重启，不能继续假设 ROOT_SCOPE 会在依赖关闭前兜底。
+
 `RuntimeConfigGeneration` 描述可准备、提交和回滚的运行代际；`RuntimeConfigApplier` 负责按代际应用 connector、Tasker、WebUI 和调试日志变更。`DataStorage.kt` 当前没有生产子类，只保留旧数据存储抽象的兼容入口；新代码不得重新通过它写入 `data/*.yml`，持久化仍按 config 模块的 owner 边界处理。
 
 ## 配置与数据

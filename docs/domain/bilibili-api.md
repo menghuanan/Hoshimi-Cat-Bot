@@ -134,14 +134,17 @@
 请求 Cookie 来自 `BiliBiliBot.cookie` 和 `BiliBiliBot.uid`。涉及登录、Cookie 解析或账号状态的变更必须检查：
 
 - `LoginService`
+- `QrLoginCoordinator`
 - `StartupDataInitService`
 - `BiliCookie`
-- `LoginService.commitLoginConfigForGeneration()`
+- `LoginService.parseLoginCallback()` / `LoginService.commitLoginConfig()`
 - `BiliConfigManager.persistConfigSnapshot()` / `installConfigRuntimeSnapshot()`
 
 **原因**：Cookie 与 UID 影响所有后续 B 站 API 调用，错误保存会导致轮询、关注和链接解析同时失败。
 
 二维码登录使用单一 active generation；进入提交阶段后新的登录流程不得替换它，迟到代际也不得覆盖后来者。Cookie 必须先写入候选 `BiliConfig` 快照，持久化成功后一次安装运行态；失败时旧运行配置保持不变。Cookie 解析与冷/热重载采用完整替换，输入缺少 `SESSDATA` 或 `bili_jct` 时对应旧字段会被清空，不能依赖部分字符串保留历史凭据。
+
+二维码 180 秒 TTL 只约束等待扫码/确认。`COMMITTING` 只包含候选配置落盘、运行态安装、Cookie/UID 切换和成功门闩，不执行网络请求；该阶段冲突不得返回伪造的剩余秒数。核心提交成功后立即发布 `SUCCEEDED` 并释放登录入口，`initTagid()` 作为独立限时刷新运行。核心提交异常超时必须保持旧写入栅栏、停止接受新登录并请求受控重启，不能释放栅栏让第二次写入与迟到写入交叉。
 
 ## 已知 quirks
 

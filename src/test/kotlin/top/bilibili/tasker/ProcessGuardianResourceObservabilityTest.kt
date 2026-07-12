@@ -8,6 +8,16 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ProcessGuardianResourceObservabilityTest {
+    /** 守护快照必须采集资源分区健康，二维码登录 phase age 与 drain 超时才能进入长期观测。 */
+    @Test
+    fun `process guardian should collect resource partition health`() {
+        val source = java.io.File("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt").readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("BiliBiliBot.resourcePartitionHealthSnapshots()"))
+        assertTrue(source.contains("partitionHealthSnapshots"))
+        assertTrue(source.contains("[资源分区健康]"))
+    }
+
     // 源码回归测试统一使用 UTF-8，避免不同平台默认编码导致关键字匹配漂移。
     private fun read(path: String): String =
         Files.readString(Path.of(path), StandardCharsets.UTF_8)

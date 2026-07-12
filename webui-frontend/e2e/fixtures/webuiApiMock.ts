@@ -66,6 +66,7 @@ export async function installWebUiApiMock(page: Page) {
    * API 响应集中在闭包内，登录状态只影响本轮浏览器测试，不泄露到其他测试。
    */
   async function fulfillApi(route: Route, pathname: string, body: unknown) {
+    const method = route.request().method()
     if (pathname === '/api/auth/login') {
       const password = typeof body === 'object' && body && 'password' in body ? String((body as {password?: unknown}).password) : ''
       if (password !== 'secret-password') {
@@ -87,6 +88,47 @@ export async function installWebUiApiMock(page: Page) {
     }
     if (pathname === '/api/runtime/summary') {
       await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(runtimeSummary())})
+      return
+    }
+    if (pathname === '/api/bili-login/sessions' && method === 'POST') {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionId: 'bili-login-session-1',
+          phase: 'WAITING_FOR_SCAN',
+          expiresAtEpochMillis: Date.now() + 180_000,
+          message: '等待扫码',
+          // 1x1 PNG 足以验证打包运行时真实创建 data URL 图片。
+          qrImageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        }),
+      })
+      return
+    }
+    if (pathname === '/api/bili-login/sessions/bili-login-session-1' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionId: 'bili-login-session-1',
+          phase: 'SUCCEEDED',
+          expiresAtEpochMillis: Date.now() + 180_000,
+          message: 'BiliBili 登录成功',
+        }),
+      })
+      return
+    }
+    if (pathname === '/api/bili-login/sessions/bili-login-session-1' && method === 'DELETE') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessionId: 'bili-login-session-1',
+          phase: 'CANCELLED',
+          expiresAtEpochMillis: Date.now(),
+          message: '登录已取消',
+        }),
+      })
       return
     }
     if (pathname === '/api/config/bili-config') {

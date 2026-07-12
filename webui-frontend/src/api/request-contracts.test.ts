@@ -15,6 +15,7 @@ import {
 } from './subscriptions'
 import { buildLogClearPayload } from './logs'
 import { fetchRuntimeSummary } from './runtime'
+import { cancelBiliLogin, fetchBiliLoginSession, startBiliLogin } from './biliLogin'
 
 const createJsonResponse = (status: number, payload: unknown) => ({
   ok: status >= 200 && status < 300,
@@ -23,6 +24,35 @@ const createJsonResponse = (status: number, payload: unknown) => ({
 })
 
 describe('webui api contracts', () => {
+  /** 二维码登录的创建、轮询和取消必须继续复用统一 JSON/CSRF 请求边界。 */
+  it('bili login requests should target the protected session routes', async () => {
+    document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-bili-login; path=/'
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {
+      sessionId: 'session-1',
+      phase: 'WAITING_FOR_SCAN',
+      expiresAtEpochMillis: 181_000,
+      message: '等待扫码',
+    }))
+
+    await startBiliLogin('secret-password', {fetchImpl})
+    await fetchBiliLoginSession('session/1', {fetchImpl})
+    await cancelBiliLogin('session/1', {fetchImpl})
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/bili-login/sessions', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({'X-CSRF-Token': 'csrf-bili-login'}),
+      body: JSON.stringify({confirmationPassword: 'secret-password'}),
+    }))
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, '/api/bili-login/sessions/session%2F1', expect.objectContaining({
+      method: 'GET',
+      body: undefined,
+    }))
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, '/api/bili-login/sessions/session%2F1', expect.objectContaining({
+      method: 'DELETE',
+      headers: expect.objectContaining({'X-CSRF-Token': 'csrf-bili-login'}),
+    }))
+  })
+
   it('requestJson should attach CSRF headers for unsafe requests without bearer auth', async () => {
     document.cookie = 'hoshimi_cat_bot_webui_csrf=csrf-123; path=/'
     const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem')

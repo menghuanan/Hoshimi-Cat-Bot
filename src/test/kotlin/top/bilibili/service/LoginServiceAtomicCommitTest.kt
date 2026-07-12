@@ -44,22 +44,4 @@ class LoginServiceAtomicCommitTest {
         assertEquals("new-cookie", installedCookie)
     }
 
-    /** 失效代际的迟到成功在持久化前被拒绝，不能写入任何候选。 */
-    @Test
-    fun `stale qr generation should not persist credentials`() {
-        val stale = LoginService.ActiveQrLoginState(1L, 1L, 2L, "group:1")
-        val current = LoginService.ActiveQrLoginState(2L, 3L, 4L, "group:2")
-        LoginService.setActiveLoginForTest(current)
-        var persisted = false
-
-        val committed = LoginService.commitLoginConfigForGeneration(
-            state = stale,
-            cookie = "late-cookie",
-            persistCandidate = { persisted = true; true },
-        )
-
-        assertFalse(committed)
-        assertFalse(persisted)
-        LoginService.setActiveLoginForTest(null)
-    }
 }

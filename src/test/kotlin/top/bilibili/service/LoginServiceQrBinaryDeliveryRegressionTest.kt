@@ -17,7 +17,7 @@ class LoginServiceQrBinaryDeliveryRegressionTest {
 
         // 登录二维码应先写入 temp 目录，再以本地文件形式交给发送链路，避免业务层继续内嵌二进制直发语义。
         assertTrue(
-            source.contains("createLoginQrTempFile(qrImageFileName, qrImageBytes)"),
+            source.contains("createLoginQrTempFile(qrImageFileName, started.qrImageBytes)"),
             "login service should persist qr bytes through the shared temp-file helper before sending",
         )
         // 发送入口必须改用本地文件源，确保后续 base64 转码责任停留在 OneBot11 适配器。

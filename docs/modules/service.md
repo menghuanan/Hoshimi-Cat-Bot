@@ -29,6 +29,7 @@ Service 模块是业务编排层，负责命令、订阅、模板、链接解析
 | 模板链路 | `TemplateRuntimeCoordinator`、`TemplateSelectionService`、`TemplateRenderService`、`TemplateService` | 策略写入、随机选择、占位符和运行态缓存必须保持一致。 |
 | 链接解析 | `ResolveLinkService`、`LinkResolvePolicyService` | 群内放行必须先过统一策略，不得在入口绕过限流和黑名单。 |
 | 发送网关 | `MessageGatewayProvider`、`DefaultMessageGateway`、`PlatformMessageSupport` | 发送必须走平台能力判断和降级，不得直接调用 vendor client。 |
+| 二维码登录 | `LoginService`、`QrLoginCoordinator` | 命令端和 WebUI 共用单一会话；核心凭据提交无挂起且不可取消，成功后的网络刷新独立限时执行。 |
 | 启动与维护 | `StartupDataInitService`、`RuntimeWarmupService`、`CacheMaintenanceService` | 只做初始化、预热或维护，不承载命令权限或平台协议。 |
 
 ## 关键流程
@@ -134,6 +135,8 @@ Service 模块是业务编排层，负责命令、订阅、模板、链接解析
 ## 资源与生命周期
 
 Service 通常不拥有长期协程或底层连接，但会协调模板缓存、绘图缓存键、消息网关引用和启动预热。新增缓存、批处理状态或维护任务必须说明清理入口、所属模块和停机行为；需要周期运行的逻辑应进入 tasker。
+
+`QrLoginCoordinator` 是例外的共享业务 worker owner：worker 仍使用 Bot 根作用域，但关闭权属于 Core 的 `qr-login-workers` 分区。二维码等待租约为 180 秒；`COMMITTING` 只覆盖同步核心凭据提交，不返回伪造 retryAfter；`initTagid()` 属于成功后的 best-effort 刷新，超时或停机取消不得重新占用登录互斥。
 
 管理员通知由 `AdminNoticeService.kt` 统一执行功能开关、联系人能力判断和网关发送；utils 只保留纯辅助逻辑。通用消息日志简化规则位于 connector 根包，service 不得反向依赖 OneBot11 core。
 

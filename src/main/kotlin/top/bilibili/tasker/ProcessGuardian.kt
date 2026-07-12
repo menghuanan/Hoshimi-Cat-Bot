@@ -814,6 +814,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         report.threadMetrics = collectThreadMetrics()
         report.coroutineMetrics = collectManagedCoroutineMetrics()
         report.businessActivitySnapshots = BusinessLifecycleManager.runtimeActivitySnapshot()
+        report.partitionHealthSnapshots = BiliBiliBot.resourcePartitionHealthSnapshots()
         report.biliClientMetrics = BiliClient.runtimeSnapshot()
         report.platformObservability = collectPlatformRuntimeObservability()
         report.skiaStatus = SkiaManager.getStatus()
@@ -1760,6 +1761,14 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     }
                 }
 
+                // 2.12.5 资源分区健康包含二维码登录 phase age、drain 状态和超时累计计数。
+                if (report.partitionHealthSnapshots.isNotEmpty()) {
+                    writer.println("[资源分区健康]")
+                    report.partitionHealthSnapshots.forEach { partition ->
+                        writer.println("  ${partition.id}: healthy=${partition.healthy}, ${partition.detail}")
+                    }
+                }
+
                 // 2.13 BiliClient / OkHttp 运行态
                 report.biliClientMetrics?.let { clients ->
                     writer.println("[BiliClient / OkHttp]")
@@ -1994,6 +2003,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var threadMetrics: ThreadMetrics? = null,
         var coroutineMetrics: CoroutineMetrics? = null,
         var businessActivitySnapshots: List<BusinessOwnerActivitySnapshot> = emptyList(),
+        var partitionHealthSnapshots: List<top.bilibili.core.resource.PartitionHealth> = emptyList(),
         var biliClientMetrics: top.bilibili.client.BiliClientRuntimeSnapshot? = null,
         var platformObservability: PlatformObservabilitySnapshot = PlatformObservabilitySnapshot.empty("platform adapter is not initialized"),
         var skiaStatus: top.bilibili.skia.SkiaManagerStatus? = null,

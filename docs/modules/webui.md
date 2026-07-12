@@ -18,7 +18,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 ## 主要职责
 
 - 启动和停止嵌入式 Ktor CIO 服务器，并托管静态管理页。
-- 提供登录、改密、会话探针、健康检查、运行态、配置、订阅、日志和动作 API。
+- 提供 WebUI 登录、改密、会话探针、B站扫码登录、健康检查、运行态、配置、订阅、日志和动作 API。
 - 使用 HttpOnly session cookie、CSRF cookie 和短时高风险确认保护写操作。
 - 通过 facade 读取 `BiliConfig.yml`、`BiliData.yml`、`bot.yml` 的快照，并按文件边界写回。
 - 只暴露固定白名单日志源，日志查看、导出和清空都只接受这些 sourceId，不接受任意文件路径；清空动作还必须经过高风险确认并写入审计。
@@ -32,6 +32,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 | 健康检查 | `GET /api/health` | 无 session 要求 | 只返回 WebUI 基础骨架状态，不暴露运行态细节 |
 | 认证 | `/api/auth/session`、`/api/auth/login`、`/api/auth/change-password`、`/api/auth/logout` | login 无 session；改密和登出需要 session | session 只经 HttpOnly cookie，CSRF 经可读 cookie 和 `X-CSRF-Token` 双提交 |
 | 运行态 | `GET /api/runtime/summary` | 需要 session | 只读即时快照，文本会脱敏路径、内网地址和凭据键值 |
+| B站扫码登录 | `POST /api/bili-login/sessions`、`GET/DELETE /api/bili-login/sessions/{sessionId}` | 读需要 session；创建需要 session、CSRF、高风险确认；取消需要 session、CSRF | 与 `/login` 共用 `QrLoginCoordinator`；响应只包含脱敏状态和创建时的 PNG Base64，不返回 URL、key、Cookie 或回调地址；等待态冲突返回剩余租约，提交态冲突只返回 `COMMITTING` 且不伪造 retryAfter |
 | 配置读取 | `GET /api/config/bili-config`、`/api/config/bili-data`、`/api/config/bot` | 需要 session | facade 输出字段级快照和 snapshot token，不向前端暴露可变对象 |
 | 配置写入 | `POST /api/config/save-batch`、`GET /api/config/save-jobs/{jobId}`、兼容单文件保存路由 | session、CSRF、高风险确认 | 设置页批量保存进入 `WebUiConfigHotReloadCoordinator`；单文件路由保留兼容但仍按受控 facade/协调器边界处理 |
 | 订阅概览与卡片生命周期 | `GET /api/subscriptions`、`POST /api/subscriptions`、`DELETE /api/subscriptions/{id}` | 读需要 session；创建和删除需要 session、CSRF、高风险确认 | facade 汇总动态、分组和番剧卡片；创建与整卡删除仍按配置 owner 写回 |
@@ -69,9 +70,9 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 
 1. `BotConfig.webui` 生成 `WebUiSettings`，决定是否启用、监听地址、端口和凭据文件位置。
 2. `WebUiManager.start()` 先 bootstrap 凭据，再创建 `WebUiAuthService`、各类 facade 和路由树。
-3. `installWebUiModule()` 安装 JSON 编解码、请求体边界和安全 hardening，再挂载静态页、认证、API、日志和动作路由。
+3. `installWebUiModule()` 安装 JSON 编解码、请求体边界和安全 hardening，再挂载静态页、认证、B站扫码登录、API、日志和动作路由。
 4. 浏览器登录后只拿到 session/csrf cookie；后续 unsafe 请求需要 CSRF 头和高风险确认口令。
-5. `WebUiConfigFacade`、`WebUiConfigWriteFacade`、`WebUiConfigHotReloadCoordinator`、`WebUiSubscriptionManagementFacade`、`WebUiRuntimeFacade` 和 `WebUiLogFacade` 分别负责快照读取、dry-run 写入、保存归并与热重载、订阅编辑、运行态汇总和日志窗口。
+5. `WebUiBiliLoginFacade` 只把共享登录协调器状态映射成浏览器 DTO；`WebUiConfigFacade`、`WebUiConfigWriteFacade`、`WebUiConfigHotReloadCoordinator`、`WebUiSubscriptionManagementFacade`、`WebUiRuntimeFacade` 和 `WebUiLogFacade` 分别负责快照读取、dry-run 写入、保存归并与热重载、订阅编辑、运行态汇总和日志窗口。
 6. 停止时 `WebUiManager` 只关闭嵌入式服务器，不接管 bot 主生命周期。
 
 ## 资源与生命周期
@@ -83,6 +84,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - 热重载 job 的终态最多保留 24 小时和 1000 条，按完成时间淘汰最旧终态；非终态不因容量被删除。
 - 凭据文件默认落在 `config/webui-credentials.json`，路径由 `bot.yml` 的 `webui.credential_file` 决定。
 - `WebUiLogFacade` 只读固定日志源，并按本次启动时间裁切旧日志窗口。
+- B站扫码 worker 使用 `BiliBiliBot` 根作用域并由 `BusinessLifecycleManager` 观测，但关闭权属于 `qr-login-workers` 的 `WORKERS` 分区；180 秒只约束等待扫码/确认，核心提交有限 drain，成功后的附加刷新可超时取消。WebUI server 不持有 worker。
 - React 静态产物由 `webui-frontend` 构建生成，`src/main/resources/webui/react` 不应手工维护。
 
 ## 配置与数据
@@ -107,6 +109,8 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - `./gradlew test --tests top.bilibili.webui.service.WebUiRuntimeFacadeTest`
 - `./gradlew test --tests top.bilibili.webui.service.WebUiLogFacadeTest`
 - `./gradlew test --tests top.bilibili.webui.service.WebUiAuditServiceTest`
+- `./gradlew test --tests top.bilibili.webui.routes.WebUiBiliLoginRoutesTest`
+- `./gradlew test --tests top.bilibili.webui.service.WebUiBiliLoginFacadeTest`
 - `./gradlew processResources`
 
 ## 禁止事项

@@ -13,10 +13,12 @@ class LoginServiceQrImageUseRegressionTest {
     @Test
     fun `login service should render qr code bytes before writing temp file and sending local image`() {
         val source = read("src/main/kotlin/top/bilibili/service/LoginService.kt")
+        val coordinatorSource = read("src/main/kotlin/top/bilibili/service/QrLoginCoordinator.kt")
 
         // 二维码绘制必须先产出 PNG 字节，后续 temp 文件落盘与发送都应复用这一份结果。
         assertTrue(
-            source.contains("val qrImageBytes = loginQrCodeBytes(loginData.url)"),
+            coordinatorSource.contains("private val renderQr: suspend (String) -> ByteArray = ::loginQrCodeBytes") &&
+                source.contains("createLoginQrTempFile(qrImageFileName, started.qrImageBytes)"),
             "login service should render qr code bytes before persisting and sending the login image",
         )
         // temp 目录应继续作为登录二维码的统一落盘位置，避免在业务层四处分散临时文件策略。

@@ -23,6 +23,7 @@ import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PreparedPlatformConnector
 import top.bilibili.config.ConfigManager
 import top.bilibili.core.resource.LambdaResourcePartition
+import top.bilibili.core.resource.PartitionHealth
 import top.bilibili.core.resource.ResourceStopReport
 import top.bilibili.core.resource.ResourceStrictness
 import top.bilibili.core.resource.ResourceSupervisor
@@ -37,6 +38,7 @@ import top.bilibili.service.DefaultMessageGateway
 import top.bilibili.service.FirstRunService
 import top.bilibili.service.MessageEventDispatchService
 import top.bilibili.service.MessageGatewayProvider
+import top.bilibili.service.QrLoginCoordinator
 import top.bilibili.service.RuntimeWarmupService
 import top.bilibili.service.StartupDataInitService
 import top.bilibili.service.TaskBootstrapService
@@ -59,6 +61,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.Path
+import kotlin.system.exitProcess
 
 /**
  * Bot 当前所处的生命周期状态。
@@ -128,6 +131,7 @@ object BiliBiliBot : CoroutineScope {
 
     private val isRunning = AtomicBoolean(false)
     private val lifecycleState = AtomicReference(BotLifecycleState.STOPPED)
+    private val controlledRestartRequested = AtomicBoolean(false)
     private var startTime: Long = 0L
 
     val dataFolder = File("data")
@@ -174,6 +178,32 @@ object BiliBiliBot : CoroutineScope {
      * 返回当前生命周期状态快照，供只读运行态观测面安全消费。
      */
     fun currentLifecycleState(): BotLifecycleState = lifecycleState.get()
+
+    /**
+     * 以退出码 78 请求外部 supervisor 重启；停机中的 drain 超时直接退出，避免继续关闭仍被 worker 使用的依赖。
+     */
+    fun requestControlledRestart(reason: String) {
+        if (isStopping()) {
+            logger.error("停机 drain 失败，立即交由外部 supervisor 重启: $reason")
+            exitProcess(CONTROLLED_RESTART_EXIT_CODE)
+        }
+        if (!controlledRestartRequested.compareAndSet(false, true)) {
+            logger.warn("受控重启已请求，忽略重复请求: $reason")
+            return
+        }
+        // 独立线程执行 stop，避免触发请求的受管协程在 ROOT_SCOPE 阶段等待自身结束。
+        Thread(
+            {
+                logger.error("请求受控重启: $reason")
+                stop("controlled-restart:$reason")
+                exitProcess(CONTROLLED_RESTART_EXIT_CODE)
+            },
+            "controlled-restart",
+        ).apply {
+            isDaemon = false
+            start()
+        }
+    }
 
     /**
      * 统一重载 manager-owned 配置快照，并同步刷新 core 缓存过的 bot 配置与图片主题配置。
@@ -234,6 +264,15 @@ object BiliBiliBot : CoroutineScope {
         liveChannel.snapshot("liveChannel"),
         messageChannel.snapshot("messageChannel"),
     )
+
+    /** 返回资源分区健康快照，守护进程只读取公开 detail 而不接触各 owner 的内部状态。 */
+    fun resourcePartitionHealthSnapshots(): List<PartitionHealth> {
+        return resourceSupervisor.snapshot().map { partition ->
+            runCatching { partition.health() }.getOrElse { error ->
+                PartitionHealth(partition.id, healthy = false, detail = "health unavailable: ${error.message}")
+            }
+        }
+    }
     val liveUsers = mutableMapOf<Long, Long>()
 
     /**
@@ -843,6 +882,31 @@ object BiliBiliBot : CoroutineScope {
 
         resourceSupervisor.register(
             LambdaResourcePartition(
+                id = "qr-login-workers",
+                owns = listOf("QrLoginCoordinator.worker", "QrLoginCoordinator.commitWatchdog"),
+                strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                shutdownPhase = ShutdownPhase.WORKERS,
+                stopAction = {
+                    // 二维码 worker 必须在 service client 等依赖关闭前完成或进入失败关闭重启路径。
+                    QrLoginCoordinator.shared.shutdownAndDrain(QrLoginCoordinator.COMMIT_DRAIN_TIMEOUT_MS)
+                },
+                healthAction = {
+                    val snapshot = QrLoginCoordinator.shared.runtimeSnapshot()
+                    PartitionHealth(
+                        id = "qr-login-workers",
+                        healthy = snapshot.drainState != top.bilibili.service.QrLoginDrainState.DRAIN_TIMED_OUT,
+                        detail = "accepting=${snapshot.acceptingNewSessions}, phase=${snapshot.activePhase}, " +
+                            "phaseAgeMs=${snapshot.phaseAgeMillis}, drain=${snapshot.drainState}, " +
+                            "workers=${snapshot.activeWorkerCount}, commitTimeouts=${snapshot.commitDrainTimeoutCount}, " +
+                            "workerTimeouts=${snapshot.workerDrainTimeoutCount}, refreshTimeouts=${snapshot.postCommitRefreshTimeoutCount}, " +
+                            "degraded=${snapshot.degradedReason}",
+                    )
+                },
+            ),
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
                 id = "gateway-platform",
                 owns = listOf("PlatformConnectorManager", "MessageGatewayProvider"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
@@ -970,6 +1034,11 @@ object BiliBiliBot : CoroutineScope {
             }
         }
 
+        runFallbackStep("二维码登录 worker", shutdownDeadlineNanos) {
+            // fallback 同样必须先 drain 登录 worker，超时会触发受控重启而不会继续关闭 service client。
+            QrLoginCoordinator.shared.shutdownAndDrain(QrLoginCoordinator.COMMIT_DRAIN_TIMEOUT_MS)
+        }
+
         runFallbackStep("通道", shutdownDeadlineNanos) {
             dynamicChannel.close()
             liveChannel.close()
@@ -1033,4 +1102,6 @@ object BiliBiliBot : CoroutineScope {
             logger.warn(message)
         }
     }
+
+    private const val CONTROLLED_RESTART_EXIT_CODE = 78
 }

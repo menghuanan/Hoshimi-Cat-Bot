@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { BiliQrLoginModal } from '../components/BiliQrLoginModal'
 import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
 import { useSettingsFiles } from '../hooks/useSettingsFiles'
+import { useBiliQrLogin } from '../hooks/useBiliQrLogin'
+import { useRuntimeSummary } from '../hooks/useRuntimeSummary'
 import { useToast } from '../hooks/useToast'
 import { formatSaveResultMessage } from '../settings/settingsSaveResult'
 import { buildBiliConfigSavePayload, buildBiliDataSavePayload, buildBotConfigSavePayload } from '../api/settings'
@@ -33,6 +36,7 @@ type AdminDraftPair = {
 export function SettingsPage() {
   const {loading, biliConfig, biliData, botConfig, saveBatch, patchBiliConfig, patchBiliData, patchBotConfig} = useSettingsFiles()
   const {showToast} = useToast()
+  const {dashboard, loading: runtimeLoading, refresh: refreshRuntime} = useRuntimeSummary({pollIntervalMs: 60_000})
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
   // 子配置切换只重挂载显示层，用来重播入场动效，不改变表单值来源或保存语义。
   const [categoryMotionToken, setCategoryMotionToken] = useState(0)
@@ -40,6 +44,13 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const activeCategory = settingsCategories.find((category) => category.id === activeCategoryId) || settingsCategories[0]
   const allSettingsFields = useMemo(() => settingsCategories.flatMap((category) => category.fields), [])
+
+  /** 扫码成功后立即刷新账号摘要，并通过全局 Toast 保留关闭弹窗后的结果反馈。 */
+  const handleBiliLoginSucceeded = useCallback(async () => {
+    await refreshRuntime()
+    showToast('success', 'BiliBili 登录成功')
+  }, [refreshRuntime, showToast])
+  const biliLogin = useBiliQrLogin({onSucceeded: handleBiliLoginSucceeded})
 
   const fieldValues = useMemo(() => ({
     biliConfig: readFieldValues(biliConfig),
@@ -172,6 +183,34 @@ export function SettingsPage() {
   return (
     <div data-page="settings" className="space-y-6">
       <PageSection
+        title="B站账号"
+        description="管理动态、直播和订阅请求使用的 B站登录状态"
+        actions={(
+          <button
+            type="button"
+            className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+            disabled={biliLogin.loading || biliLogin.session?.phase === 'COMMITTING'}
+            onClick={() => void biliLogin.openLogin()}
+          >
+            {dashboard.accountLoggedIn ? '重新登录' : '扫码登录'}
+          </button>
+        )}
+      >
+        <div className="grid gap-4 border-y border-slate-200 bg-white px-4 py-4 sm:grid-cols-2">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500">登录状态</p>
+            <p className={`mt-1 text-sm font-semibold ${dashboard.accountLoggedIn ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {runtimeLoading ? '同步中' : dashboard.accountLoggedIn ? '已登录' : '未登录'}
+            </p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500">账号 UID</p>
+            <p className="mt-1 break-words text-sm font-semibold text-slate-950">{dashboard.accountUid || '--'}</p>
+          </div>
+        </div>
+      </PageSection>
+
+      <PageSection
         title="系统配置"
         description="保存后自动热重载生效"
         actions={(
@@ -202,6 +241,14 @@ export function SettingsPage() {
           ))}
         </div>
       </PageSection>
+      <BiliQrLoginModal
+        open={biliLogin.open}
+        loading={biliLogin.loading}
+        session={biliLogin.session}
+        error={biliLogin.error}
+        onClose={biliLogin.closeLogin}
+        onRetry={biliLogin.retryLogin}
+      />
     </div>
   )
 }

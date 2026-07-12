@@ -126,6 +126,18 @@ critical 会触发紧急清理。
 - retry slot 容量和已创建数量。
 - 每个 slot 的 connection/idle/queued/running。
 
+## 二维码登录观测
+
+`ProcessGuardian` 的 `[资源分区健康]` 会输出 `qr-login-workers`：
+
+- `accepting`：是否仍接受新登录；停机或失败关闭后为 false。
+- `phase` 与 `phaseAgeMs`：当前脱敏阶段及持续时间。
+- `drain` 与 `workers`：资源分区 drain 状态和活动 worker 数量。
+- `commitTimeouts`、`workerTimeouts`、`refreshTimeouts`：核心提交、停机 drain 和附加刷新超时累计计数。
+- `degraded`：失败关闭原因；出现值时不得通过重复登录绕过旧提交栅栏，应检查受控重启是否由容器或进程 supervisor 接管。
+
+`COMMITTING` 正常只覆盖无挂起的本地核心提交。若持续超过 15 秒，协调器停止接受新登录并请求退出码 78 的受控重启；等待态和 `initTagid()` 刷新不应触发该失败关闭策略。
+
 ## Skia 观测
 
 `SkiaManager.getStatus()` 提供：

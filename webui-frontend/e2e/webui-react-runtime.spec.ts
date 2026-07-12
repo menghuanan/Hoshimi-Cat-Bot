@@ -72,6 +72,22 @@ test('logs in and keeps direct React routes stable after refresh', async ({page}
   expect(editorPanelBox?.width).toBeLessThan(520)
 })
 
+test('completes BiliBili qr login from the bundled settings page', async ({page}) => {
+  await page.goto('/login')
+  await page.getByLabel('WebUI 密码').fill('secret-password')
+  await page.getByRole('button', {name: '登录'}).click()
+  await page.goto('/settings')
+
+  await page.getByRole('button', {name: '重新登录'}).click()
+  const dialog = page.getByRole('dialog', {name: 'B站扫码登录'})
+  await expect(dialog).toBeVisible()
+  await expect(page.getByRole('img', {name: 'B站登录二维码'})).toBeVisible()
+  await expect(dialog).toContainText('等待扫码')
+
+  await expect(dialog).toBeHidden({timeout: 8_000})
+  await expect(page.getByText('BiliBili 登录成功')).toBeVisible()
+})
+
 test('keeps dark theme hover states on dark surfaces', async ({page}) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('hoshimi_cat_bot_webui_theme', 'dark')
