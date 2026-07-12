@@ -47,8 +47,9 @@ export function SettingsPage() {
 
   /** 扫码成功后立即刷新账号摘要，并通过全局 Toast 保留关闭弹窗后的结果反馈。 */
   const handleBiliLoginSucceeded = useCallback(async () => {
-    await refreshRuntime()
     showToast('success', 'BiliBili 登录成功')
+    // 登录提交结果独立于摘要刷新；刷新失败只保留旧页面状态，不得撤销成功反馈。
+    await refreshRuntime()
   }, [refreshRuntime, showToast])
   const biliLogin = useBiliQrLogin({onSucceeded: handleBiliLoginSucceeded})
 

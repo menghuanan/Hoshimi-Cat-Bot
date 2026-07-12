@@ -181,6 +181,42 @@ describe('webui shell routing', () => {
     expect(requests.some((request) => request.url.endsWith('/api/bili-login/sessions/session-1') && request.method === 'DELETE')).toBe(true)
   })
 
+  /** 登录凭据已提交成功时，运行态摘要刷新失败不得吞掉全局成功反馈。 */
+  it('shows BiliBili login success when the runtime refresh fails', async () => {
+    rememberSessionPassword('secret-password')
+    let runtimeRequestCount = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/runtime/summary')) {
+        runtimeRequestCount++
+        if (runtimeRequestCount > 1) {
+          return {ok: false, status: 503, json: async () => ({message: 'runtime unavailable'})}
+        }
+        return {ok: true, status: 200, json: async () => ({account: {loggedIn: false, uid: 0, cookieConfigured: false}})}
+      }
+      if (url.includes('/api/config/')) {
+        return {ok: true, status: 200, json: async () => ({sourceFile: 'config.yml', snapshotToken: 'token', fields: []})}
+      }
+      if (url === '/api/bili-login/sessions' && init?.method === 'POST') {
+        return {ok: true, status: 201, json: async () => ({
+          sessionId: 'session-success', phase: 'SUCCEEDED', expiresAtEpochMillis: Date.now() + 180_000,
+          message: 'BiliBili 登录成功', qrImageBase64: 'AQID',
+        })}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+    const user = userEvent.setup()
+    renderAtPath('/settings')
+
+    await user.click(await screen.findByRole('button', {name: '扫码登录'}))
+
+    const successMessages = await screen.findAllByText('BiliBili 登录成功')
+    const toast = successMessages.map((message) => message.closest('[data-toast]')).find(Boolean)
+    expect(toast).toBeDefined()
+    expect(toast).toHaveClass('toast-success')
+    await waitFor(() => expect(runtimeRequestCount).toBeGreaterThan(1))
+  })
+
   it('renders the dashboard shell with the core navigation pages', () => {
     renderAtPath('/')
 

@@ -131,6 +131,8 @@ class ResourceManagementRegressionGuardTest {
     @Test
     fun `qr login workers should drain before service client dependencies`() {
         val bot = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+        val checkpointPartition = bot.indexOf("id = \"critical-state-checkpoint\"")
+        val taskerPartition = bot.indexOf("id = \"taskers\"")
         val qrPartition = bot.indexOf("id = \"qr-login-workers\"")
         val fallback = bot.substringAfter("private suspend fun fallbackStopResources")
         val qrFallback = fallback.indexOf("QrLoginCoordinator.shared.shutdownAndDrain")
@@ -141,6 +143,9 @@ class ResourceManagementRegressionGuardTest {
             bot.substring(qrPartition).contains("shutdownPhase = ShutdownPhase.WORKERS"),
             "qr login partition must belong to WORKERS",
         )
+        // 同阶段按登记逆序停止，因此检查点必须登记在所有可能触发立即重启的 worker 之后。
+        assertTrue(checkpointPartition > taskerPartition, "checkpoint must stop before taskers")
+        assertTrue(checkpointPartition > qrPartition, "checkpoint must stop before qr login drain")
         assertTrue(qrFallback in 0 until serviceClientFallback, "fallback must drain qr workers before service client close")
         assertTrue(bot.contains("resourcePartitionHealthSnapshots"), "Core must expose partition health to monitoring")
         assertTrue(bot.contains("requestControlledRestart"), "commit drain timeout must have a controlled restart path")

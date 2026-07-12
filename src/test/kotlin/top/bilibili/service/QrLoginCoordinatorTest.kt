@@ -255,6 +255,7 @@ class QrLoginCoordinatorTest {
         assertEquals(QrLoginPhase.COMMITTING, timedOut.activePhase)
         assertEquals(QrLoginDrainState.DRAIN_TIMED_OUT, timedOut.drainState)
         assertEquals(1L, timedOut.commitDrainTimeoutCount)
+        assertEquals(0L, timedOut.workerDrainTimeoutCount)
         assertFalse(timedOut.acceptingNewSessions)
         assertIs<QrLoginStartResult.Failed>(coordinator.start("webui"))
 

@@ -57,7 +57,8 @@ export function useBiliQrLogin(options: UseBiliQrLoginOptions = {}) {
     // 同一登录代际的成功副作用只能执行一次，避免重复刷新、Toast 和关闭 timer。
     if (succeededGenerationRef.current === generation) return
     succeededGenerationRef.current = generation
-    void Promise.resolve(onSucceeded?.())
+    // 成功回调属于页面级附加副作用；同步异常与异步拒绝都不得逃逸为全局未处理错误。
+    void Promise.resolve().then(() => onSucceeded?.()).catch(() => undefined)
     successTimerRef.current = window.setTimeout(() => {
       if (generationRef.current !== generation) return
       installSession(null)

@@ -62,6 +62,29 @@ describe('useBiliQrLogin', () => {
     expect(result.current.session).toBeNull()
   })
 
+  /** 页面级成功副作用失败时必须由 hook 消费拒绝，不能形成未处理 Promise rejection。 */
+  it('contains a rejected success callback while preserving the successful session', async () => {
+    rememberSessionPassword('secret-password')
+    const onSucceeded = vi.fn().mockRejectedValue(new Error('runtime refresh failed'))
+    const fetchImpl = vi.fn().mockResolvedValue(response(201, {
+      sessionId: 'session-success', phase: 'SUCCEEDED', expiresAtEpochMillis: Date.now() + 180_000,
+      message: 'BiliBili 登录成功', qrImageBase64: 'AQID',
+    }))
+    const {result} = renderHook(() => useBiliQrLogin({
+      fetchImpl,
+      successCloseDelayMs: 100_000,
+      onSucceeded,
+    }))
+
+    await act(async () => {
+      await result.current.openLogin()
+      await Promise.resolve()
+    })
+
+    expect(onSucceeded).toHaveBeenCalledTimes(1)
+    expect(result.current.session?.phase).toBe('SUCCEEDED')
+  })
+
   /** 等待态关闭要取消后端会话，提交态则必须保持弹窗和会话不变。 */
   it('cancels waiting sessions but refuses to close while committing', async () => {
     rememberSessionPassword('secret-password')

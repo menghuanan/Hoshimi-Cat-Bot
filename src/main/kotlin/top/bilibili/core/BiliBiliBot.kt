@@ -851,22 +851,6 @@ object BiliBiliBot : CoroutineScope {
 
         resourceSupervisor.register(
             LambdaResourcePartition(
-                id = "critical-state-checkpoint",
-                owns = listOf("BiliData", "DeliveryLedger"),
-                strictness = ResourceStrictness.STRICT,
-                shutdownPhase = ShutdownPhase.WORKERS,
-                stopAction = {
-                    // 登记在 taskers 之后，逆序回收时会先保存关键状态再取消 worker。
-                    if (::config.isInitialized && !BiliConfigManager.saveData()) {
-                        error("停机关键 BiliData 保存失败")
-                    }
-                    DeliveryCoordinator.flush()
-                },
-            ),
-        )
-
-        resourceSupervisor.register(
-            LambdaResourcePartition(
                 id = "taskers",
                 owns = listOf("BiliTasker.*"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
@@ -901,6 +885,22 @@ object BiliBiliBot : CoroutineScope {
                             "workerTimeouts=${snapshot.workerDrainTimeoutCount}, refreshTimeouts=${snapshot.postCommitRefreshTimeoutCount}, " +
                             "degraded=${snapshot.degradedReason}",
                     )
+                },
+            ),
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "critical-state-checkpoint",
+                owns = listOf("BiliData", "DeliveryLedger"),
+                strictness = ResourceStrictness.STRICT,
+                shutdownPhase = ShutdownPhase.WORKERS,
+                stopAction = {
+                    // 同阶段按登记逆序回收；检查点登记在 worker 后，确保潜在立即重启前先完成落盘。
+                    if (::config.isInitialized && !BiliConfigManager.saveData()) {
+                        error("停机关键 BiliData 保存失败")
+                    }
+                    DeliveryCoordinator.flush()
                 },
             ),
         )

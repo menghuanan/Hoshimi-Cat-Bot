@@ -95,6 +95,12 @@ enum class QrLoginDrainState {
     STOPPED,
 }
 
+/** 超时来源决定监控计数归属，核心提交 watchdog 与停机 worker drain 不得混记。 */
+private enum class QrLoginDrainTimeoutKind {
+    COMMIT,
+    WORKER,
+}
+
 /** 运行快照只暴露生命周期计数与阶段年龄，不包含二维码或登录凭据。 */
 data class QrLoginCoordinatorRuntimeSnapshot(
     val acceptingNewSessions: Boolean,
@@ -313,7 +319,10 @@ class QrLoginCoordinator(
             true
         } == true
         if (!drained) {
-            val snapshot = markDrainTimedOut("二维码登录 worker 停机 drain 超时(${timeoutMs}ms)")
+            val snapshot = markDrainTimedOut(
+                reason = "二维码登录 worker 停机 drain 超时(${timeoutMs}ms)",
+                timeoutKind = QrLoginDrainTimeoutKind.WORKER,
+            )
             onDrainTimeout(snapshot)
             error(snapshot.degradedReason ?: "二维码登录 worker 停机 drain 超时")
         }
@@ -414,7 +423,10 @@ class QrLoginCoordinator(
                     activeSession?.sessionId == sessionId && activeSession?.phase == QrLoginPhase.COMMITTING
                 }
                 if (timedOut) {
-                    val snapshot = markDrainTimedOut("二维码登录核心凭据提交超过 ${commitDrainTimeoutMs}ms")
+                    val snapshot = markDrainTimedOut(
+                        reason = "二维码登录核心凭据提交超过 ${commitDrainTimeoutMs}ms",
+                        timeoutKind = QrLoginDrainTimeoutKind.COMMIT,
+                    )
                     onDrainTimeout(snapshot)
                 }
             }
@@ -477,14 +489,22 @@ class QrLoginCoordinator(
         return job
     }
 
-    /** drain 超时进入失败关闭状态并累计可观测计数，旧提交栅栏保持占用直到进程重启。 */
-    private fun markDrainTimedOut(reason: String): QrLoginCoordinatorRuntimeSnapshot {
+    /**
+     * drain 超时进入失败关闭状态，并只累计对应来源的可观测计数。
+     *
+     * @param reason 写入降级快照的稳定原因
+     * @param timeoutKind 区分核心提交 watchdog 与停机 worker drain
+     */
+    private fun markDrainTimedOut(
+        reason: String,
+        timeoutKind: QrLoginDrainTimeoutKind,
+    ): QrLoginCoordinatorRuntimeSnapshot {
         return synchronized(stateLock) {
             if (drainState != QrLoginDrainState.DRAIN_TIMED_OUT) {
-                if (activeSession?.phase == QrLoginPhase.COMMITTING) {
-                    commitDrainTimeoutCount++
+                when (timeoutKind) {
+                    QrLoginDrainTimeoutKind.COMMIT -> commitDrainTimeoutCount++
+                    QrLoginDrainTimeoutKind.WORKER -> workerDrainTimeoutCount++
                 }
-                workerDrainTimeoutCount++
                 acceptingNewSessions = false
                 drainState = QrLoginDrainState.DRAIN_TIMED_OUT
                 degradedReason = reason
