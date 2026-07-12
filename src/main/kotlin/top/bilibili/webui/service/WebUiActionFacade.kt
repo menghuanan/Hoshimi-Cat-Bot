@@ -1,7 +1,6 @@
 package top.bilibili.webui.service
 
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.webui.model.WebUiActionConfirmationRequestDto
 import top.bilibili.webui.model.WebUiActionRequestDto
 import top.bilibili.webui.model.WebUiActionResultDto
 import top.bilibili.webui.model.WebUiActionOutcome
@@ -21,10 +20,7 @@ class WebUiActionFacade(
     /**
      * reload 只执行受控配置重载，不触发停机或重启语义。
      */
-    fun reloadConfig(
-        request: WebUiActionRequestDto,
-        confirmation: WebUiActionConfirmationRequestDto,
-    ): WebUiActionResultDto {
+    fun reloadConfig(request: WebUiActionRequestDto): WebUiActionResultDto {
         reloadAction()
         return buildResult(
             request = request,
@@ -41,10 +37,7 @@ class WebUiActionFacade(
     /**
      * shutdown 只表达优雅停机请求，不把它升级成 reload 或 restart。
      */
-    fun shutdown(
-        request: WebUiActionRequestDto,
-        confirmation: WebUiActionConfirmationRequestDto,
-    ): WebUiActionResultDto {
+    fun shutdown(request: WebUiActionRequestDto): WebUiActionResultDto {
         shutdownAction()
         return buildResult(
             request = request,
@@ -61,10 +54,7 @@ class WebUiActionFacade(
     /**
      * restart-request 从不在进程内自行拉起新实例；它只表达重启意图并通过优雅停机交给外部环境处理。
      */
-    fun requestRestart(
-        request: WebUiActionRequestDto,
-        confirmation: WebUiActionConfirmationRequestDto,
-    ): WebUiActionResultDto {
+    fun requestRestart(request: WebUiActionRequestDto): WebUiActionResultDto {
         val autoRestartSupported = restartSupportedProvider()
         shutdownAction()
         return buildResult(

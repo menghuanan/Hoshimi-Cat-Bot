@@ -7,9 +7,7 @@ class WebUiAuthService(
     private val credentialStore: WebUiCredentialStore,
     private val tokenService: WebUiTokenService,
     private val passwordPolicy: WebUiPasswordPolicy = WebUiPasswordPolicy,
-    private val confirmationTtlMillis: Long = 60_000L,
     private val timeProvider: () -> Long = { System.currentTimeMillis() },
-    private val confirmationExpiryByToken: MutableMap<String, Long> = mutableMapOf(),
     private val failureStateByIp: MutableMap<String, WebUiLoginFailureState> = mutableMapOf(),
     private var globalFailureState: WebUiGlobalFailureState = WebUiGlobalFailureState(),
 ) {
@@ -113,93 +111,12 @@ class WebUiAuthService(
         if (replaced == null) {
             return WebUiPasswordChangeResult(success = false, message = "invalid credentials")
         }
-        // 改密后立即清空旧确认状态，避免旧密码确认窗口跨越 token 失效周期继续生效。
+        // 改密后立即撤销全部旧会话，确保旧密码对应的浏览器状态不能继续访问管理面。
         tokenService.revokeAll()
-        synchronized(authStateLock) { confirmationExpiryByToken.clear() }
         return WebUiPasswordChangeResult(
             success = true,
             requiresReauthentication = true,
         )
-    }
-
-    /**
-     * 高风险操作统一要求显式确认；当前密码校验成功后会在当前会话内缓存一个短时确认窗口。
-     */
-    suspend fun confirmHighRiskOperation(
-        session: WebUiAuthenticatedSession,
-        currentPassword: String,
-    ): WebUiHighRiskConfirmationResult {
-        val now = timeProvider()
-        val cachedExpiry = synchronized(authStateLock) { confirmationExpiryByToken[session.token] }
-        if (currentPassword.isBlank() && cachedExpiry != null && cachedExpiry > now) {
-            return WebUiHighRiskConfirmationResult(
-                confirmed = true,
-                reusedGrant = true,
-                expiresAtEpochMillis = cachedExpiry,
-                message = "confirmed",
-            )
-        }
-        if (currentPassword.isBlank()) {
-            if (cachedExpiry != null && cachedExpiry <= now) {
-                synchronized(authStateLock) { confirmationExpiryByToken.remove(session.token) }
-                return WebUiHighRiskConfirmationResult(
-                    confirmed = false,
-                    message = "confirmation expired, re-enter current password",
-                )
-            }
-            return WebUiHighRiskConfirmationResult(
-                confirmed = false,
-                message = "confirmation password required",
-            )
-        }
-        synchronized(authStateLock) { pruneExpiredConfirmations() }
-        return confirmWithPassword(session, currentPassword, now)
-    }
-
-    /**
-     * 不带会话上下文的确认入口只用于本地服务测试；它不会缓存确认窗口。
-     */
-    suspend fun confirmHighRiskOperation(currentPassword: String): WebUiHighRiskConfirmationResult {
-        val state = credentialStore.loadState()
-        val confirmed = credentialStore.matchesPassword(state, currentPassword)
-        return WebUiHighRiskConfirmationResult(
-            confirmed = confirmed,
-            message = if (confirmed) "confirmed" else "invalid confirmation password",
-        )
-    }
-
-    /**
-     * 确认成功后把 TTL 绑定到当前 session token，避免不同浏览器标签或旧 token 互相复用高风险授权。
-     */
-    private suspend fun confirmWithPassword(
-        session: WebUiAuthenticatedSession,
-        currentPassword: String,
-        now: Long,
-    ): WebUiHighRiskConfirmationResult {
-        val state = credentialStore.loadState()
-        val confirmed = credentialStore.matchesPassword(state, currentPassword)
-        if (!confirmed) {
-            return WebUiHighRiskConfirmationResult(
-                confirmed = false,
-                message = "invalid confirmation password",
-            )
-        }
-        val expiresAt = now + confirmationTtlMillis
-        synchronized(authStateLock) { confirmationExpiryByToken[session.token] = expiresAt }
-        return WebUiHighRiskConfirmationResult(
-            confirmed = true,
-            reusedGrant = false,
-            expiresAtEpochMillis = expiresAt,
-            message = "confirmed",
-        )
-    }
-
-    /**
-     * 过期确认窗口在每次检查前清理，避免服务端长期保留已经无效的高风险授权状态。
-     */
-    private fun pruneExpiredConfirmations() {
-        val now = timeProvider()
-        confirmationExpiryByToken.entries.removeIf { (_, expiresAt) -> expiresAt <= now }
     }
 
     /**
@@ -286,16 +203,6 @@ data class WebUiAuthenticatedSession(
     val csrfToken: String,
     val tokenVersion: Long,
     val mustChangePassword: Boolean,
-)
-
-/**
- * 高风险确认结果既描述是否通过，也描述是否复用了短时确认窗口，供路由和测试统一消费。
- */
-data class WebUiHighRiskConfirmationResult(
-    val confirmed: Boolean,
-    val reusedGrant: Boolean = false,
-    val expiresAtEpochMillis: Long = 0L,
-    val message: String = "",
 )
 
 /**

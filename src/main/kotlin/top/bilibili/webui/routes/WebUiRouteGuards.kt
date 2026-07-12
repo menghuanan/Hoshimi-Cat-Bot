@@ -73,31 +73,6 @@ fun ApplicationCall.extractWebUiToken(): String? {
 }
 
 /**
- * 高风险写入和动作请求必须再次确认当前密码，避免单靠登录 token 就执行破坏性操作。
- */
-suspend fun ApplicationCall.requireHighRiskConfirmation(
-    authService: WebUiAuthService,
-    session: WebUiAuthenticatedSession,
-    confirmationPassword: String,
-    auditService: WebUiAuditService? = null,
-): Boolean {
-    val result = authService.confirmHighRiskOperation(session, confirmationPassword)
-    if (!result.confirmed) {
-        auditService?.recordDeniedAccess(
-            target = "high-risk-confirmation",
-            outcome = "FORBIDDEN",
-            detailSummary = "path=${request.path()} reason=${result.message}",
-        )
-        respondWebUiAuthFailure(
-            status = HttpStatusCode.Forbidden,
-            message = "forbidden",
-        )
-        return false
-    }
-    return true
-}
-
-/**
  * unsafe verbs 才需要 CSRF 双提交校验，避免对只读请求增加额外 Cookie 依赖。
  */
 private fun HttpMethod.requiresWebUiCsrf(): Boolean {

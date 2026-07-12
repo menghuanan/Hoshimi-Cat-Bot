@@ -82,7 +82,7 @@ class WebUiRuleClosureVerificationTest {
     }
 
     /**
-     * Phase4 backend 契约必须持续输出冲突、确认过期和重启降级等本地调试语义。
+     * Backend 契约必须保留冲突和重启降级语义，并彻底排除二次密码确认实现。
      */
     @Test
     fun `backend contracts should preserve phase4 local debug semantics`() {
@@ -91,7 +91,15 @@ class WebUiRuleClosureVerificationTest {
         val actionDtos = read("src/main/kotlin/top/bilibili/webui/model/WebUiActionDtos.kt")
         val runtimeDtos = read("src/main/kotlin/top/bilibili/webui/model/WebUiRuntimeDtos.kt")
 
-        assertTrue(authService.contains("confirmation expired"))
+        val routeGuards = read("src/main/kotlin/top/bilibili/webui/routes/WebUiRouteGuards.kt")
+        val actionRoutes = read("src/main/kotlin/top/bilibili/webui/routes/WebUiActionRoutes.kt")
+        val logRoutes = read("src/main/kotlin/top/bilibili/webui/routes/WebUiLogRoutes.kt")
+        val protectedSources = listOf(authService, routeGuards, actionRoutes, logRoutes, actionDtos)
+
+        assertFalse(protectedSources.any { source -> source.contains("confirmationPassword") })
+        assertFalse(protectedSources.any { source -> source.contains("confirmHighRiskOperation") })
+        assertFalse(protectedSources.any { source -> source.contains("requireHighRiskConfirmation") })
+        assertFalse(logRoutes.contains("/api/logs/{sourceId}/clear"))
         assertTrue(configWriteFacade.contains("REJECTED_CONFLICT"))
         assertTrue(actionDtos.contains("RESTART_REQUESTED_MANUAL_FALLBACK"))
         assertTrue(runtimeDtos.contains("restartRequestMode"))

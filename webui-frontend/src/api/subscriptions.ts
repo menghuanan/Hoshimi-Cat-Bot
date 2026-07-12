@@ -315,7 +315,7 @@ export async function saveSubscriptionAtAll(
 }
 
 /**
- * @全体删除按聚合 key 定位，body 保持高风险确认最小形状。
+ * @全体删除按聚合 key 定位，已认证请求不附加密码或额外确认字段。
  */
 export async function deleteSubscriptionAtAll(
   itemId: string,

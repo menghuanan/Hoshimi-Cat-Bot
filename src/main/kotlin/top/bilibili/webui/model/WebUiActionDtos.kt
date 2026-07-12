@@ -3,19 +3,11 @@ package top.bilibili.webui.model
 import kotlinx.serialization.Serializable
 
 /**
- * 动作请求 DTO 只描述操作者想执行的高风险动作，不包含任何运行时内部引用。
+ * 动作请求 DTO 只描述操作者想执行的管理动作，不包含凭据或任何运行时内部引用。
  */
 @Serializable
 data class WebUiActionRequestDto(
     val action: String,
-)
-
-/**
- * 高风险动作确认 DTO 为后续 stronger confirmation 预留统一载体。
- */
-@Serializable
-data class WebUiActionConfirmationRequestDto(
-    val confirmationPassword: String,
 )
 
 /**

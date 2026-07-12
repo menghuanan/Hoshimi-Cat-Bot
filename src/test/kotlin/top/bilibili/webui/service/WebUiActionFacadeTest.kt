@@ -1,6 +1,5 @@
 package top.bilibili.webui.service
 
-import top.bilibili.webui.model.WebUiActionConfirmationRequestDto
 import top.bilibili.webui.model.WebUiActionRequestDto
 import top.bilibili.webui.model.WebUiActionOutcome
 import kotlin.test.Test
@@ -19,10 +18,7 @@ class WebUiActionFacadeTest {
             restartSupportedProvider = { true },
         )
 
-        val result = facade.reloadConfig(
-            WebUiActionRequestDto("reload-config"),
-            WebUiActionConfirmationRequestDto("Better123!@"),
-        )
+        val result = facade.reloadConfig(WebUiActionRequestDto("reload-config"))
 
         assertTrue(result.success)
         assertEquals("reload-config", result.action)
@@ -42,10 +38,7 @@ class WebUiActionFacadeTest {
             restartSupportedProvider = { true },
         )
 
-        val result = facade.shutdown(
-            WebUiActionRequestDto("shutdown"),
-            WebUiActionConfirmationRequestDto("Better123!@"),
-        )
+        val result = facade.shutdown(WebUiActionRequestDto("shutdown"))
 
         assertTrue(result.success)
         assertEquals("shutdown", result.action)
@@ -65,10 +58,7 @@ class WebUiActionFacadeTest {
             restartSupportedProvider = { true },
         )
 
-        val result = facade.requestRestart(
-            WebUiActionRequestDto("request-restart"),
-            WebUiActionConfirmationRequestDto("Better123!@"),
-        )
+        val result = facade.requestRestart(WebUiActionRequestDto("request-restart"))
 
         assertTrue(result.success)
         assertEquals("request-restart", result.action)
@@ -88,10 +78,7 @@ class WebUiActionFacadeTest {
             restartSupportedProvider = { false },
         )
 
-        val result = facade.requestRestart(
-            WebUiActionRequestDto("request-restart"),
-            WebUiActionConfirmationRequestDto("Better123!@"),
-        )
+        val result = facade.requestRestart(WebUiActionRequestDto("request-restart"))
 
         assertTrue(result.success)
         assertTrue(result.gracefulStopScheduled)

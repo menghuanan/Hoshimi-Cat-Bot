@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会话、配置读写、订阅编辑、日志查看和高风险动作入口组装成一个受控的运维界面。配套前端工程见 [`modules/webui-frontend.md`](webui-frontend.md)。它处在启动层、配置层、服务层和资源层之间，不直接承担 B 站业务逻辑。
+WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会话、配置读写、订阅编辑、日志查看和管理动作入口组装成一个受控的运维界面。配套前端工程见 [`modules/webui-frontend.md`](webui-frontend.md)。它处在启动层、配置层、服务层和资源层之间，不直接承担 B 站业务逻辑。
 
 ## 代码入口
 
@@ -19,10 +19,10 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 
 - 启动和停止嵌入式 Ktor CIO 服务器，并托管静态管理页。
 - 提供 WebUI 登录、改密、会话探针、B站扫码登录、健康检查、运行态、配置、订阅、日志和动作 API。
-- 使用 HttpOnly session cookie 与 CSRF cookie 保护普通写操作，并用短时高风险确认额外保护破坏性动作。
+- 使用 HttpOnly session cookie 与 CSRF cookie 保护全部写操作；登录密码只用于登录和改密，不参与其他管理请求。
 - 通过 facade 读取 `BiliConfig.yml`、`BiliData.yml`、`bot.yml` 的快照，并按文件边界写回。
-- 只暴露固定白名单日志源，日志查看、导出和清空都只接受这些 sourceId，不接受任意文件路径；清空动作还必须经过高风险确认并写入审计。
-- 记录认证、配置保存和高风险动作审计。
+- 只暴露固定白名单日志源用于查看和导出，不接受任意文件路径，也不提供服务端日志截断接口。
+- 记录认证、配置保存和管理动作审计。
 - 将 React 前端构建产物打包到 `src/main/resources/webui/react`，供 Ktor 静态路由直接服务；当 `bot.yml.webui.static_dir` 指向有效外部目录时，HTML 路由优先读取外部文件并可回退打包资源，`/assets` 则整体切换到外部 assets 目录，单个缺失文件不会回退；前端源码与测试见 `webui-frontend` 模块。
 
 ## 当前路由矩阵
@@ -37,17 +37,16 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 | 配置写入 | `POST /api/config/save-batch`、`GET /api/config/save-jobs/{jobId}`、兼容单文件保存路由 | session、CSRF | 设置页批量保存进入 `WebUiConfigHotReloadCoordinator`；单文件路由保留兼容但仍按受控 facade/协调器边界处理 |
 | 订阅概览与卡片生命周期 | `GET /api/subscriptions`、`POST /api/subscriptions`、`DELETE /api/subscriptions/{id}` | 读需要 session；创建和删除需要 session、CSRF | facade 汇总动态、分组和番剧卡片；创建与整卡删除仍按配置 owner 写回 |
 | 订阅编辑 | `/api/subscriptions/{id}/targets`、`/uids`、`/filters`、`/templates`、`/atall`、`/theme`、`POST .../templates/random` | 读需要 session；写需要 session、CSRF | key 使用 path-safe 格式，随机模板开关与其它 mutation 一样进入持久化刷新链路 |
-| 日志 | `/api/logs/sources`、`/api/logs/{sourceId}`、`/api/logs/{sourceId}/export`、`/api/logs/{sourceId}/clear` | 读需要 session；清空需要高风险确认 | sourceId 必须命中白名单，导出文件名只由 sourceId 派生 |
-| 动作 | `/api/actions/reload-config`、`/api/actions/shutdown`、`/api/actions/request-restart` | session、CSRF、高风险确认 | HTTP 层只做 guard 和 facade 调用，风险结果必须写审计 |
+| 日志 | `/api/logs/sources`、`/api/logs/{sourceId}`、`/api/logs/{sourceId}/export` | 需要 session | sourceId 必须命中白名单，导出文件名只由 sourceId 派生；前端“清空”只清理当前 React 窗口 |
+| 动作 | `/api/actions/reload-config`、`/api/actions/shutdown`、`/api/actions/request-restart` | session、CSRF | HTTP 层只做 guard 和 facade 调用，动作结果必须写审计；请求不接收密码或确认 DTO |
 
-## 认证与高风险确认
+## 认证与写操作保护
 
-- `WebUiAuthService` 组合凭据存储、密码策略、token 生命周期、登录节流和高风险确认窗口，不承载 HTTP 路由细节。
+- `WebUiAuthService` 组合凭据存储、密码策略、token 生命周期和登录节流，不承载 HTTP 路由细节。
 - 登录成功只写 `hoshimi_cat_bot_webui_session` 与 `hoshimi_cat_bot_webui_csrf` cookie；route guard 不再信任 bearer header。
 - unsafe HTTP 方法必须同时通过 session cookie、CSRF cookie 与 `X-CSRF-Token` 头校验。
 - 首次默认密码或强制改密状态下，只允许进入改密相关路径；其他受保护路由返回 `password change required`。
-- 高风险确认以当前密码校验为准，成功后只在当前 session token 上缓存短时授权；改密会清空 token 与确认窗口。
-- 配置、订阅和扫码登录属于已认证管理会话内的普通持久化操作，只校验 session 与 CSRF，不接收登录密码；清空服务端日志、关闭和重启等破坏性动作继续使用高风险确认。
+- 配置、订阅、扫码登录、配置重载、关闭和重启都只校验 session 与 CSRF，不接收、缓存或转发登录密码；成功改密会撤销全部旧 session 并要求重新登录。
 - 登录失败会同时推进单 IP 和全局 backoff，外部响应保持通用错误，避免泄露凭据状态。
 - 凭据、token、鉴权状态和审计各自以私有锁保护复合操作，跨仓库调用固定遵守“凭据 → token → 鉴权 → 审计”。并发改密在凭据锁内重读并校验旧密码，因此只有首个有效请求成功。
 
@@ -72,7 +71,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 1. `BotConfig.webui` 生成 `WebUiSettings`，决定是否启用、监听地址、端口和凭据文件位置。
 2. `WebUiManager.start()` 先 bootstrap 凭据，再创建 `WebUiAuthService`、各类 facade 和路由树。
 3. `installWebUiModule()` 安装 JSON 编解码、请求体边界和安全 hardening，再挂载静态页、认证、B站扫码登录、API、日志和动作路由。
-4. 浏览器登录后只拿到 session/csrf cookie；普通 unsafe 请求需要 CSRF 头，破坏性动作再额外提交高风险确认口令。
+4. 浏览器登录后只拿到 session/csrf cookie；全部 unsafe 请求需要 CSRF 头，除改密外不再提交任何密码字段。
 5. `WebUiBiliLoginFacade` 只把共享登录协调器状态映射成浏览器 DTO；`WebUiConfigFacade`、`WebUiConfigWriteFacade`、`WebUiConfigHotReloadCoordinator`、`WebUiSubscriptionManagementFacade`、`WebUiRuntimeFacade` 和 `WebUiLogFacade` 分别负责快照读取、dry-run 写入、保存归并与热重载、订阅编辑、运行态汇总和日志窗口。
 6. 停止时 `WebUiManager` 只关闭嵌入式服务器，不接管 bot 主生命周期。
 
@@ -94,7 +93,7 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - `static_dir` 只在指向有效目录时生效；HTML 入口未命中时可回退打包资源，`/assets` 启用外部目录后不会对单个缺失 asset 回退。
 - `webui-credentials.json` 保存密码哈希、salt、tokenVersion 和强制改密状态。
 - `BiliConfig.yml`、`BiliData.yml`、`bot.yml` 只允许通过各自 manager/facade 写回，不允许 WebUI 直接写文件。
-- `logs/bilibili-bot.log`、`logs/error.log`、`logs/daemon/Daemon_*.log` 是当前固定日志来源，对应的 `GET /api/logs/{sourceId}/export` 和 `POST /api/logs/{sourceId}/clear` 也只针对这些白名单 sourceId。
+- `logs/bilibili-bot.log`、`logs/error.log`、`logs/daemon/Daemon_*.log` 是当前固定只读日志来源，对应的 `GET /api/logs/{sourceId}/export` 只针对这些白名单 sourceId；页面“清空”不会改写这些文件。
 - `WebUiConfigWriteFacade` 对三个配置文件使用快照 token 和 dry-run 构建候选 payload；设置页一次点击应通过 `POST /api/config/save-batch` 触发一个热重载 job，前端轮询 job 到 `APPLIED` 或 `FAILED`。
 - 订阅编辑成功写入 `BiliData.yml` 后必须向同一协调器提交已持久化数据刷新信号，确保模板策略和运行态缓存同步清理。
 
@@ -117,8 +116,8 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 ## 禁止事项
 
 - 禁止直接写 `BiliConfig.yml`、`BiliData.yml`、`bot.yml` 或 `webui-credentials.json`。
-- 禁止通过任意路径读取、导出或清空日志；日志导出和清空只允许固定白名单日志源，清空还必须经过高风险确认和审计。
-- 禁止绕过 session、CSRF 或审计执行管理写入，也禁止绕过确认密码执行清日志、重载、关闭或重启等高风险动作。
+- 禁止通过任意路径读取或导出日志，也禁止从 WebUI 截断服务端日志文件；日志导出只允许固定白名单日志源。
+- 禁止绕过 session、CSRF 或审计执行管理写入；除登录和改密外，管理请求不得接收或转发 WebUI 密码。
 - 禁止把平台 vendor DTO 或业务可变对象直接暴露给前端。
 - 禁止手工修改 `src/main/resources/webui/react` 里的前端产物。
 - 禁止在这个模块里维护前端页面、hook、payload、router 或 e2e 测试。

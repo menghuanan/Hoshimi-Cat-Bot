@@ -54,11 +54,11 @@ dynamic-bot 是一个常驻运行的 B 站动态/直播推送机器人。它通�
 
 **代码位置**：`webui/*`、`webui-frontend/*`
 
-**职责**：本地管理面、静态 React shell、认证与会话、运行态与配置查询、订阅编辑、日志查看和高风险动作入口。
+**职责**：本地管理面、静态 React shell、认证与会话、运行态与配置查询、订阅编辑、日志查看和管理动作入口。
 
-**关键约束**：WebUI 只能通过 facade 和 manager 访问配置、数据和日志，不能直写文件、直读任意路径或绕过确认审计。
+**关键约束**：WebUI 只能通过 facade 和 manager 访问配置、数据和日志，不能直写文件、直读任意路径或绕过 session、CSRF 与审计。
 
-**当前范围**：服务端路由覆盖 `/api/auth/*`、`/api/runtime/summary`、`/api/config/*`、`/api/subscriptions*`、`/api/logs/*` 和 `/api/actions/*`；前端页面覆盖登录、仪表盘、设置、订阅和日志。写操作必须同时通过 session、CSRF 和当前密码确认。
+**当前范围**：服务端路由覆盖 `/api/auth/*`、`/api/runtime/summary`、`/api/config/*`、`/api/subscriptions*`、`/api/logs/*` 和 `/api/actions/*`；前端页面覆盖登录、仪表盘、设置、订阅和日志。写操作必须通过 session 与 CSRF，登录密码只用于登录和改密。
 
 ### Tasker 层
 

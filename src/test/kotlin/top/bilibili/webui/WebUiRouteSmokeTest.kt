@@ -40,7 +40,6 @@ import top.bilibili.webui.auth.WebUiAuthService
 import top.bilibili.webui.auth.WebUiCredentialStore
 import top.bilibili.webui.auth.WebUiTokenService
 import top.bilibili.webui.config.WebUiConfig
-import top.bilibili.webui.model.WebUiActionConfirmationRequestDto
 import top.bilibili.webui.model.WebUiActionResultDto
 import top.bilibili.webui.service.WebUiAuditRecord
 import top.bilibili.webui.model.WebUiAuthResponseDto
@@ -497,10 +496,8 @@ class WebUiRouteSmokeTest {
             setBody("""{"type":"bangumi","bangumiId":"av12345","targetGroup":"10001"}""")
         }
         val invalidDelete = client.delete("/api/subscriptions/missing") {
-            contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
 
         assertEquals(HttpStatusCode.Unauthorized, unauthenticated.status)
@@ -650,10 +647,10 @@ class WebUiRouteSmokeTest {
     }
 
     /**
-     * 认证失败、改密失败和高风险确认拒绝都应落审计，便于本地排查权限链路。
+     * 认证失败、改密失败和动作请求都应落审计，便于本地排查权限链路。
      */
     @Test
-    fun `auth and confirmation denial paths should emit audit records`() = testApplication {
+    fun `auth failures and authenticated actions should emit audit records`() = testApplication {
         val records = mutableListOf<WebUiAuditRecord>()
         val authService = buildAuthService()
         val bootstrapPassword = authService.bootstrapCredentials().initialPassword!!
@@ -708,21 +705,24 @@ class WebUiRouteSmokeTest {
             setBody(WebUiLoginRequestDto(password = "Better123!@"))
         }
         val reloginAuth = extractLoginCookies(relogin)
-        val deniedAction = client.post("/api/actions/reload-config") {
-            contentType(ContentType.Application.Json)
+        val missingCsrfAction = client.post("/api/actions/reload-config") {
+            header(HttpHeaders.Cookie, reloginAuth.cookieHeader())
+        }
+        val reloadAction = client.post("/api/actions/reload-config") {
             header(HttpHeaders.Cookie, reloginAuth.cookieHeader())
             header("X-CSRF-Token", reloginAuth.csrfToken)
-            setBody(WebUiActionConfirmationRequestDto("wrong-password"))
         }
 
         assertEquals(HttpStatusCode.Unauthorized, failedLogin.status)
         assertEquals(HttpStatusCode.BadRequest, failedChange.status)
         assertEquals(HttpStatusCode.OK, changed.status)
-        assertEquals(HttpStatusCode.Forbidden, deniedAction.status)
+        assertEquals(HttpStatusCode.Forbidden, missingCsrfAction.status)
+        assertEquals(HttpStatusCode.OK, reloadAction.status)
         assertTrue(records.isNotEmpty())
         assertTrue(records.any { it.target == "login" })
         assertTrue(records.any { it.target == "change-password" })
-        assertTrue(records.any { it.target == "high-risk-confirmation" })
+        assertTrue(records.any { it.target == "/api/actions/reload-config" && it.outcome == "FORBIDDEN" })
+        assertTrue(records.any { it.eventType == "risky-action" && it.target == "reload-config" && it.success })
     }
 
     /**
@@ -1058,37 +1058,23 @@ class WebUiRouteSmokeTest {
         val exportedLog = createWebUiClient().get("/api/logs/main/export?tail=20") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
         }
-        val clearMissingConfirmation = createWebUiClient().post("/api/logs/main/clear") {
-            header(HttpHeaders.Cookie, auth.cookieHeader())
-        }
-        val clearedLog = createWebUiClient().post("/api/logs/main/clear") {
-            contentType(ContentType.Application.Json)
+        val backendClear = createWebUiClient().post("/api/logs/main/clear") {
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody(WebUiActionConfirmationRequestDto("Better123!@"))
-        }
-        val logWindowAfterClear = createWebUiClient().get("/api/logs/main?tail=20") {
-            header(HttpHeaders.Cookie, auth.cookieHeader())
         }
         val reload = createWebUiClient().post("/api/actions/reload-config") {
-            contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
         val restart = createWebUiClient().post("/api/actions/request-restart") {
-            contentType(ContentType.Application.Json)
             header(HttpHeaders.Cookie, auth.cookieHeader())
             header("X-CSRF-Token", auth.csrfToken)
-            setBody(WebUiActionConfirmationRequestDto("Better123!@"))
         }
 
         assertEquals(HttpStatusCode.OK, sourceList.status)
         assertEquals(HttpStatusCode.OK, logWindow.status)
         assertEquals(HttpStatusCode.OK, exportedLog.status)
-        assertEquals(HttpStatusCode.Forbidden, clearMissingConfirmation.status)
-        assertEquals(HttpStatusCode.OK, clearedLog.status)
-        assertEquals(HttpStatusCode.OK, logWindowAfterClear.status)
+        assertEquals(HttpStatusCode.NotFound, backendClear.status)
         assertEquals(HttpStatusCode.OK, reload.status)
         assertEquals(HttpStatusCode.OK, restart.status)
         assertEquals(listOf("main"), sourceList.body<WebUiLogSourceListDto>().sources.map { source -> source.id })
@@ -1096,14 +1082,14 @@ class WebUiRouteSmokeTest {
         assertEquals(listOf(2), logWindow.body<WebUiLogWindowDto>().availableTailLines)
         assertEquals(false, logWindow.body<WebUiLogWindowDto>().sourceMissing)
         assertTrue(exportedLog.bodyAsText().contains("line-2"))
-        assertEquals(0, logWindowAfterClear.body<WebUiLogWindowDto>().lineCount)
+        assertTrue(Files.readString(logFile).contains("line-1"))
         assertEquals("reload-config", reload.body<WebUiActionResultDto>().action)
         assertEquals(top.bilibili.webui.model.WebUiActionOutcome.RELOAD_CONFIG_REQUESTED, reload.body<WebUiActionResultDto>().outcome)
         assertEquals("request-restart", restart.body<WebUiActionResultDto>().action)
         assertEquals(top.bilibili.webui.model.WebUiActionOutcome.RESTART_REQUESTED_MANUAL_FALLBACK, restart.body<WebUiActionResultDto>().outcome)
         assertEquals(1, reloadCalls)
         assertEquals(1, shutdownCalls)
-        assertTrue(records.any { it.eventType == "risky-action" && it.target == "clear-log:main" && it.success })
+        assertFalse(records.any { it.target == "clear-log:main" })
     }
 
     private fun buildAuthService(): WebUiAuthService {

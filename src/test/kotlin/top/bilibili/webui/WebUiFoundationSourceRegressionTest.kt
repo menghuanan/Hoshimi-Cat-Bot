@@ -151,7 +151,8 @@ class WebUiFoundationSourceRegressionTest {
         assertFalse(reactSource.contains("clearSessionPassword"))
         assertTrue(reactSource.contains("proxyUpdateMode"))
         assertTrue(reactSource.contains("randomEnabled"))
-        assertTrue(reactSource.contains("buildLogClearPayload"))
+        assertFalse(reactSource.contains("buildLogClearPayload"))
+        assertTrue(reactSource.contains("clearCurrentLog"))
     }
 
     @Test

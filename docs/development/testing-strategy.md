@@ -144,7 +144,7 @@ Skia native memory 证据测试：
 - `WebUiLogFacadeTest`
 - `WebUiAuditServiceTest`
 
-新增 WebUI facade 时应优先补同层单元测试，再补路由测试。修改认证、CSRF、高风险确认、日志白名单或配置写入时必须运行对应服务端测试；普通保存测试必须覆盖刷新后的 cookie session，并断言 payload 不包含登录密码。
+新增 WebUI facade 时应优先补同层单元测试，再补路由测试。修改认证、CSRF、管理动作、日志白名单或配置写入时必须运行对应服务端测试；保存和动作测试必须覆盖刷新后的 cookie session，并断言除登录、改密外的 payload 不包含登录密码或二次确认字段。
 
 ### WebUI 前端
 

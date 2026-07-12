@@ -12,7 +12,6 @@ import {
   saveSubscriptionFilter,
   setSubscriptionTemplateRandom,
 } from './subscriptions'
-import { buildLogClearPayload } from './logs'
 import { fetchRuntimeSummary } from './runtime'
 import { cancelBiliLogin, fetchBiliLoginSession, startBiliLogin } from './biliLogin'
 
@@ -343,13 +342,6 @@ describe('webui api contracts', () => {
       method: 'DELETE',
       body: undefined,
     }))
-  })
-
-  it('log clear payload should keep confirmation password', () => {
-    expect(buildLogClearPayload('source-1', 'pw-log')).toEqual({
-      sourceId: 'source-1',
-      confirmationPassword: 'pw-log',
-    })
   })
 
   it('runtime summary helper should call the runtime summary endpoint', async () => {

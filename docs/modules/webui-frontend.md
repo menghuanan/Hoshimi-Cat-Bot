@@ -41,7 +41,7 @@
 | 设置 | `pages/SettingsPage.tsx`、`settings/*`、`api/settings.ts` | `/api/config/*`、`/api/config/save-batch`、`/api/config/save-jobs/{jobId}` | schema 控制字段、分组、校验和 payload，保存依赖 cookie session 与 CSRF 并轮询热重载 job |
 | B站扫码登录 | `components/BiliQrLoginModal.tsx`、`hooks/useBiliQrLogin.ts`、`api/biliLogin.ts` | `/api/bili-login/sessions*` | 设置页展示账号状态；创建响应持有 PNG Base64，3 秒轮询状态，关闭取消等待态，提交态不可取消，成功刷新运行态并延迟关闭 |
 | 订阅 | `pages/SubscriptionsPage.tsx`、`components/subscriptions/*`、`hooks/useSubscriptions.ts`、`subscriptions/*` | `/api/subscriptions*` | `SubscriptionEditorModal` 统一承载 targets、uids、filters、templates、atall、theme 编辑；弹窗经 `ModalPortal` 挂到 body，避免被页面容器裁剪 |
-| 日志 | `pages/LogsPage.tsx`、`hooks/useLogs.ts`、`api/logs.ts`、`types/logs.ts` | `/api/logs/*` | sourceId 来自后端白名单；当前“清空”只清空 React 窗口，未调用已有服务端 clear helper；“导出”由 hook 下载当前过滤结果，没有服务端 export helper |
+| 日志 | `pages/LogsPage.tsx`、`hooks/useLogs.ts`、`api/logs.ts`、`types/logs.ts` | `/api/logs/*` | sourceId 来自后端白名单；“清空”只清空 React 窗口，不调用服务端写接口；“导出”由 hook 下载当前过滤结果，没有服务端 export helper |
 | 页面壳与导航 | `components/Shell.tsx`、`router/webuiRouter.ts`、`contexts/WebUiNavigationContext.tsx` | Ktor 静态路由 | `/login` 是独立路径，其他页面可 hash 切换并支持直接刷新 |
 | 普通写操作认证 | `api/http.ts`、`hooks/useSettingsFiles.ts`、`hooks/useSubscriptions.ts` | session cookie、CSRF cookie 与 `X-CSRF-Token` | 配置、订阅和扫码登录请求不接收或缓存登录密码；认证失效时回到登录页，页面只展示保存结果 |
 | 全局反馈 | `contexts/ToastContext.tsx`、`hooks/useToast.ts` | 设置、订阅等已迁移写操作与保存 job 结果 | 已迁移流程优先进入 Toast；登录、账户操作和订阅编辑器内部状态仍保留局部反馈，迁移前不要假设所有页面只有一套消息状态 |
@@ -51,7 +51,7 @@
 - 所有 JSON 请求必须经过 `src/api/http.ts` 的统一入口，unsafe 方法自动携带 CSRF 头。
 - `settings/settingsSchema.ts` 是设置页字段来源；`settings/settingsPayload.ts` 负责把表单值转换为后端 DTO。
 - 设置页一次保存必须把已变更的 `biliConfig`、`biliData` 和 `botConfig` 归并到同一个 batch payload；`BiliData.yml` 的链接解析黑名单按 textarea 非空行转换为 `linkParseBlacklistContacts` 数组。
-- 登录成功后只由 HttpOnly session cookie 维持认证；设置、订阅和扫码登录写操作不得接收、缓存或转发 WebUI 登录密码，也不得把密码写入 `localStorage`、`sessionStorage`、cookie 或 URL。
+- 登录成功后只由 HttpOnly session cookie 维持认证；除改密外，设置、订阅、扫码登录和管理动作不得接收、缓存或转发 WebUI 登录密码，也不得把密码写入 `localStorage`、`sessionStorage`、cookie 或 URL。
 - B站扫码创建依赖当前 session 与 CSRF；浏览器不得读取或拼装二维码 URL、key、Cookie 或回调地址，只能渲染后端返回的 PNG Base64 和脱敏 phase。
 - `useSettingsFiles.saveBatch()` 只在 job 到达 `APPLIED` 后清理编辑态；`FAILED` 必须保留用户输入并展示后端 message，`webUiRedirectUrl` 需要作为新 WebUI 地址提示给用户。
 - `subscriptions/subscriptionPayloads.ts` 是订阅写操作 payload 来源；新增订阅子编辑器时必须同步 hook、payload、类型和后端 DTO。
@@ -60,7 +60,7 @@
 - `ModalPortal` 当前负责把订阅创建和编辑弹窗挂到 `document.body`；普通保存写操作不挂载密码确认 modal。新增或迁移 modal 时必须保持 Escape、焦点和遮罩层级测试。
 - `useBiliQrLogin` 拥有轮询 timer、单 GET in-flight 代际闸门、成功幂等闩和成功关闭 timer；关闭、重试和卸载必须清理 timer，同一代际不得并发轮询或重复执行成功副作用，迟到响应不得覆盖新会话，`COMMITTING` 状态不得触发取消。临时 GET 错误必须保留当前 session ID 并原位重试，后续成功响应需要清除旧错误。
 - `COMMITTING` 只展示提交中状态，不继续显示二维码 TTL 倒计时；创建接口的提交态 409 不带 retryAfter，前端不得把它改写成“1 秒后重试”。
-- `api/logs.ts` 提供服务端 clear helper，但当前 `LogsPage` 未接线；导出逻辑由 `useLogs.ts` 在浏览器内生成 Blob。修改按钮语义前必须同步后端高风险确认、审计和 E2E 契约。
+- `api/logs.ts` 只提供日志来源和窗口读取；清空由 `useLogs.ts` 清理当前页面行，导出逻辑在浏览器内生成 Blob，不存在服务端日志清空 payload 或 helper。
 
 ## 日常开发入口
 

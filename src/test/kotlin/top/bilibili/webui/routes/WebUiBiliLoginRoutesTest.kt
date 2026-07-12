@@ -36,7 +36,7 @@ import top.bilibili.webui.service.WebUiAuditService
 import top.bilibili.webui.service.WebUiBiliLoginFacade
 
 class WebUiBiliLoginRoutesTest {
-    /** 创建、轮询和取消必须同时经过 session、CSRF、高风险确认及 no-store 响应边界。 */
+    /** 创建、轮询和取消必须经过 session、unsafe 请求的 CSRF 校验及 no-store 响应边界。 */
     @Test
     fun `bili login routes should enforce guards and expose sanitized session lifecycle`() = testApplication {
         val authService = buildAuthenticatedService()
