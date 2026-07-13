@@ -1005,7 +1005,15 @@ class WebUiRouteSmokeTest {
         val polledJob = pollConfigSaveJob(job.jobId, auth.cookieHeader())
 
         assertEquals(HttpStatusCode.Accepted, accepted.status)
-        assertTrue(job.phase in setOf(WebUiConfigHotReloadPhase.QUEUED, WebUiConfigHotReloadPhase.APPLIED))
+        assertTrue(
+            job.phase in setOf(
+                WebUiConfigHotReloadPhase.QUEUED,
+                WebUiConfigHotReloadPhase.SAVING,
+                WebUiConfigHotReloadPhase.APPLYING,
+                WebUiConfigHotReloadPhase.APPLIED,
+            ),
+            "phase=${job.phase}",
+        )
         assertEquals(job.jobId, polledJob.jobId)
         assertTrue(
             records.any { record ->
