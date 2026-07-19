@@ -844,6 +844,9 @@ docker logs -f hoshimi-cat-bot
 - **Q: 为什么bot不解析链接？**
   - A: 需要修改`BiliConfig.yml`中`triggerMode`字段，修改成`Always`即可实现自动解析链接。
 
+  **Q: 在使用QQ官方适配器时，为什么bot不解析小程序？**
+  - A: 因为官方消息渠道没有小程序相关的能力。
+
 - **Q: 没有更多问题了吗？**
   - A: 目前使用人数不多，暂时没有更多问题了。
 
