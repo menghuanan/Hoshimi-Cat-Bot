@@ -9,6 +9,7 @@ Bootstrap 模块负责进程启动、运行目录初始化、Skiko 初始化、�
 - `src/main/kotlin/top/bilibili/Main.kt`
 - `src/main/kotlin/top/bilibili/Init.kt`
 - `src/main/kotlin/top/bilibili/SkikoInitializer.kt`
+- `src/main/kotlin/top/bilibili/JvmRuntimeDiagnostics.kt`
 - `src/main/kotlin/top/bilibili/core/BiliBiliBot.kt`
 
 ## 主要职责
@@ -17,6 +18,7 @@ Bootstrap 模块负责进程启动、运行目录初始化、Skiko 初始化、�
 - 初始化 Skiko、配置目录、日志和必要运行目录。
 - 创建并启动 `BiliBiliBot`。
 - 注册 shutdown hook 并触发有序停机。
+- 在 Skiko 初始化后输出部署来源、关键 HotSpot VM option 和 Skia 实际资源缓存上限。
 - 把启动阶段异常明确写入日志并维护生命周期状态；当前并非所有失败都会转换为非零进程退出状态。
 
 ## 禁止事项

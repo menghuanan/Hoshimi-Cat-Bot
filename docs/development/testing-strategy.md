@@ -60,6 +60,8 @@ Skia native memory 证据测试：
 - `TaskLifecycleBoundaryRegressionTest`
 - `TaskSelfHealingTest`
 - `ProcessGuardianRecoveryTest`
+- `NonHeapMemoryLimitTest`
+- `ProcessGuardianMemoryPolicyTest`
 - `ProcessGuardianResourceObservabilityTest`
 
 新增 Tasker、worker 或资源策略时必须运行。
@@ -107,6 +109,7 @@ Skia native memory 证据测试：
 代表测试：
 
 - `DockerRuntimeConfigRegressionTest`
+- `JvmRuntimeDiagnosticsTest`
 - `DockerfileLoginDependencyRegressionTest`
 - `LinuxLauncherDependencyPromptTest`
 - `PlatformReleasePackagingRegressionTest`

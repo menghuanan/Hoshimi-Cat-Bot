@@ -128,7 +128,7 @@ WebUI 热重载应用 `BiliConfig.yml` 后，读取启动期缓存的 Tasker 必
 ## 测试与验证
 
 - 新增或修改 tasker 生命周期后，运行 `BiliTaskerRegressionTest`、`TaskLifecycleBoundaryRegressionTest` 和 `TaskSelfHealingTest`。
-- 修改 channel 生产/消费、发送队列或 worker 自愈后，运行对应 message、send 或 ProcessGuardian 测试。
+- 修改 channel 生产/消费、发送队列、worker 自愈或非堆告警策略后，运行对应 message、send、`NonHeapMemoryLimitTest`、`ProcessGuardianMemoryPolicyTest` 或 `ProcessGuardianResourceObservabilityTest`。
 - 修改启动顺序或资源策略后，检查 `TaskBootstrapService`、`TaskResourcePolicyRegistry` 和 [`../architecture/invariants.md`](../architecture/invariants.md) 是否一致。
 
 ## 查询 checklist

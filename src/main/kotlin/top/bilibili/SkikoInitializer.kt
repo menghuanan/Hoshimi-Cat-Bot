@@ -19,6 +19,15 @@ object SkikoInitializer {
     private var initialized = false
 
     /**
+     * 返回 Skia native 层当前生效的总资源缓存上限，供启动诊断日志核对部署参数。
+     */
+    internal fun effectiveResourceCacheLimitBytes(): Long = runCatching {
+        Graphics.resourceCacheTotalLimit.toLong()
+    }.getOrElse {
+        resolvePositiveIntProperty(resourceCacheLimitProperty, defaultResourceCacheLimitBytes).toLong()
+    }
+
+    /**
      * 初始化 Skiko 配置
      * 强制使用软件渲染，避免硬件加速导致的 native 崩溃
      */

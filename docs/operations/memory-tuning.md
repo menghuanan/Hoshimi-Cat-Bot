@@ -37,21 +37,21 @@
 | 8 | `-XX:G1PeriodicGCSystemLoadThreshold` | `0` | 不依赖系统负载门槛，静默时也可回收 |
 | 9 | `-XX:MaxDirectMemorySize` | `32m` | 限制 DirectByteBuffer/native NIO 缓冲 |
 | 10 | `-XX:MetaspaceSize` | `16m` | Metaspace 初始触发点 |
-| 11 | `-XX:MaxMetaspaceSize` | `56m` | Metaspace 上限；为当前约 42 MB 峰值保留扩展余量 |
+| 11 | `-XX:MaxMetaspaceSize` | `64m` | Metaspace 上限；为当前约 45 MB 稳定峰值保留约 19 MB 余量 |
 | 12 | `-XX:CompressedClassSpaceSize` | `16m` | 压缩类空间上限 |
 | 13 | `-XX:InitialCodeCacheSize` | `32m` | CodeCache 初始大小 |
-| 14 | `-XX:ReservedCodeCacheSize` | `32m` | CodeCache 总上限 |
+| 14 | `-XX:ReservedCodeCacheSize` | `48m` | 跨 Docker 与裸机统一的 CodeCache 总上限 |
 | 15 | `-XX:+UseCodeCacheFlushing` | 开启 | 允许编译缓存回收 |
-| 16 | `-XX:TieredStopAtLevel` | `1` | 降低 JIT 层级，减少编译开销和 CodeCache 压力 |
-| 17 | `-XX:CICompilerCount` | `2` | 限制编译线程数 |
-| 18 | `-XX:CompileThreshold` | `10000` | 提高热点编译阈值 |
-| 19 | `-XX:+HeapDumpOnOutOfMemoryError` | 开启 | OOM 时保留 heap dump |
-| 20 | `-XX:HeapDumpPath` | `/app/logs/heapdump.hprof` | Heap dump 输出位置 |
-| 21 | `-XX:+ExitOnOutOfMemoryError` | 开启 | OOM 后直接退出，避免半死进程继续跑 |
-| 22 | `-XX:+UseStringDeduplication` | 开启 | 降低重复字符串占用 |
-| 23 | `-Xss` | `512k` | 压缩线程栈体积 |
-| 24 | `-Djdk.nio.maxCachedBufferSize` | `65536` | 限制 JDK NIO 临时缓冲缓存上限 |
-| 25 | `-Dio.netty.allocator.type` | `unpooled` | 禁用 Netty pooled allocator，避免额外 native/直接内存池 |
+| 16 | `-XX:CICompilerCount` | `2` | 限制编译线程数 |
+| 17 | `-XX:CompileThreshold` | `10000` | 提高热点编译阈值 |
+| 18 | `-XX:+HeapDumpOnOutOfMemoryError` | 开启 | OOM 时保留 heap dump |
+| 19 | `-XX:HeapDumpPath` | `/app/logs/heapdump.hprof` | Heap dump 输出位置 |
+| 20 | `-XX:+ExitOnOutOfMemoryError` | 开启 | OOM 后直接退出，避免半死进程继续跑 |
+| 21 | `-XX:+UseStringDeduplication` | 开启 | 降低重复字符串占用 |
+| 22 | `-Xss` | `512k` | 压缩线程栈体积 |
+| 23 | `-Djdk.nio.maxCachedBufferSize` | `65536` | 限制 JDK NIO 临时缓冲缓存上限 |
+| 24 | `-Dio.netty.allocator.type` | `unpooled` | 禁用 Netty pooled allocator，避免额外 native/直接内存池 |
+| 25 | `-Dapp.deployment` | `docker` | 标记部署来源，供启动参数摘要核对 |
 | 26 | `-Djava.awt.headless` | `true` | 固定 headless 模式 |
 | 27 | `-Dskiko.renderApi` | `SOFTWARE` | 强制 Skiko 软件渲染 |
 | 28 | `-Dskiko.hardwareAcceleration` | `false` | 禁用硬件加速 |
@@ -72,11 +72,23 @@
 
 近期提交中已引入 G1 周期性回收和更积极 heap shrink 参数，用于长时间静默场景降低 committed heap 高水位。
 
-当前观测中 heap 与周期回收表现正常，`-Xmx160m` 暂无不足证据；此前主要压力来自 Metaspace 接近 48 MB 上限，因此将 Docker、Windows 裸机和 Linux 裸机的 Metaspace 上限统一提高到 56 MB，heap 和 G1 参数保持不变并继续长期观察。
+当前观测中 heap 与周期回收表现正常，`-Xmx160m` 暂无不足证据；Metaspace 稳定峰值约 45 MB，在 56 MB 上限下会持续接近 80%，因此 Docker、Windows 裸机和 Linux 裸机统一使用 `MetaspaceSize=16m`、`MaxMetaspaceSize=64m`。若后续持续超过约 51 MB，应调查动态类加载或 ClassLoader 保留，而不是继续单纯扩容。
+
+## CodeCache 策略
+
+三种环境统一使用 `InitialCodeCacheSize=32m`、`ReservedCodeCacheSize=48m`、`UseCodeCacheFlushing`、`CICompilerCount=2` 和 `CompileThreshold=10000`。不设置 `TieredStopAtLevel=1`，保留更高层级 JIT；48 MB 是跨环境限制与一致性方案，不是对裸机默认约 240 MB 上限的扩容。
+
+`ProcessGuardian` 的 CodeCache 上限按以下顺序解析：
+
+1. HotSpot `ReservedCodeCacheSize` VM option。
+2. 所有 `CodeHeap`/`CodeCache` 内存池有效 `usage.max` 的汇总。
+3. 项目 48 MiB 兜底。
+
+日志统一记录总量 `used/committed/max`、上限来源和各 CodeHeap 分区；容量告警采用 80% 告警、75% 恢复、一小时最多一次高位提醒。
 
 ## Native/RSS 策略
 
-Docker 镜像通过 `LD_PRELOAD` 强制使用 jemalloc；Linux 裸机启动脚本要求 `libjemalloc.so.2` 可用，不可用时尝试交互安装或失败退出；Windows 裸机不使用 jemalloc。三种环境均显式使用 `MetaspaceSize=16m` 和 `MaxMetaspaceSize=56m`。当前 `MALLOC_CONF` 的重点约束是：
+Docker 镜像通过 `LD_PRELOAD` 强制使用 jemalloc；Linux 裸机启动脚本要求 `libjemalloc.so.2` 可用，不可用时尝试交互安装或失败退出；Windows 裸机不使用 jemalloc。三种环境均显式使用 `MetaspaceSize=16m` 和 `MaxMetaspaceSize=64m`。当前 `MALLOC_CONF` 的重点约束是：
 
 - `background_thread:true`：后台回收线程常驻，避免空闲页长期滞留。
 - `dirty_decay_ms=2000`、`muzzy_decay_ms=2000`：2 秒内加速把脏页/惰性页归还给系统。
@@ -100,7 +112,7 @@ Docker 镜像通过 `LD_PRELOAD` 强制使用 jemalloc；Linux 裸机启动脚�
 - 不要重复添加 `UseStringDeduplication`、`jdk.nio.maxCachedBufferSize`、`io.netty.allocator.type` 等已存在参数，否则容易制造冲突或伪优化。
 - 不要在 compose 中用 `JAVA_OPTS` 覆盖 `JAVA_TOOL_OPTIONS`。
 - 不要把 `-Xmx` 调得过低后跳过完整启动、绘图和链接解析验证。
-- 不要把 `Metaspace`、`CodeCache` 上限提高后不更新监控阈值。
+- 不要修改 `Metaspace`、`CodeCache` 上限后继续依赖静态监控阈值；监控必须读取运行 JVM 的实际值。
 
 ## 验证建议
 

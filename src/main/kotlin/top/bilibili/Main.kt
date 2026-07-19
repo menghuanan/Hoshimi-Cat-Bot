@@ -33,6 +33,8 @@ private fun normalizeVersionLabel(version: String): String {
  */
 fun main(args: Array<String>) {
     SkikoInitializer.initialize()
+    // Skiko native 限额已经落到 Graphics API 后再输出摘要，避免日志只反映部署侧假设。
+    logJvmRuntimeSummary()
 
     try {
         var enableDebug: Boolean? = null

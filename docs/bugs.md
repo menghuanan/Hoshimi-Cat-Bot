@@ -98,6 +98,6 @@ _最后更新：2026-07-11_
 
 **状态**：已关闭，保留长期运行观察，不对应开放 KI。
 
-**偏差**：当前 Metaspace 使用量约 42 MB，距离原 48 MB 上限余量偏小；同期 G1 周期回收、heap shrink 与默认 `-Xmx160m` 未观察到不足。
+**偏差**：后续稳定峰值约 45 MB，在 56 MB 上限下约占 80%，持续触发容量告警；同期 G1 周期回收、heap shrink 与默认 `-Xmx160m` 未观察到不足。
 
-**处理**：仅将 Docker `MaxMetaspaceSize` 提高到 56 MB，并同步部署、监控和内存调优文档；heap 与 G1 参数保持不变，后续继续观察长时间静默和业务峰值趋势。
+**处理**：Docker、Windows 裸机和 Linux 裸机统一使用 `MetaspaceSize=16m`、`MaxMetaspaceSize=64m`；同时把 CodeCache 统一为 32/48 MiB、修复真实上限监控和 80%/75% 告警迟滞。heap 与 G1 参数保持不变；若 Metaspace 后续持续超过约 51 MB，转入动态类加载或 ClassLoader 保留调查。

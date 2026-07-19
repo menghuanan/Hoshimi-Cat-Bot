@@ -101,12 +101,12 @@ class DockerRuntimeConfigRegressionTest {
         )
         // Metaspace 仍维持上限，并为当前观测峰值保留必要余量，避免类元数据膨胀导致长期 RSS 抖动。
         assertTrue(
-            dockerfile.contains("-XX:MaxMetaspaceSize=56m"),
+            dockerfile.contains("-XX:MaxMetaspaceSize=64m"),
             "Dockerfile should keep MaxMetaspaceSize guardrail for long-running stability",
         )
         // CodeCache 仍维持上限，避免低并发场景无效膨胀。
         assertTrue(
-            dockerfile.contains("-XX:ReservedCodeCacheSize=32m"),
+            dockerfile.contains("-XX:ReservedCodeCacheSize=48m"),
             "Dockerfile should keep ReservedCodeCacheSize guardrail for long-running stability",
         )
         // Skia 缓存上限继续保留，避免 native 缓存无界增长。
@@ -232,9 +232,9 @@ class DockerRuntimeConfigRegressionTest {
         // Windows 与 Linux 裸机必须显式携带 Docker 的 Metaspace 基线，避免监控阈值和实际 JVM 上限分叉。
         val expectedMetaspaceOptions = listOf(
             "set JAVA_OPTS=%JAVA_OPTS% -XX:MetaspaceSize=16m",
-            "set JAVA_OPTS=%JAVA_OPTS% -XX:MaxMetaspaceSize=56m",
+            "set JAVA_OPTS=%JAVA_OPTS% -XX:MaxMetaspaceSize=64m",
             "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:MetaspaceSize=16m\"",
-            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:MaxMetaspaceSize=56m\"",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:MaxMetaspaceSize=64m\"",
         )
         assertTrue(
             expectedMetaspaceOptions.all(buildGradle::contains),
@@ -302,23 +302,45 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
-    fun `docker runtime should preallocate code cache and cap tiered compilation level`() {
+    fun `docker runtime should use unified 48mb code cache without c1 only restriction`() {
         val dockerfile = read("Dockerfile")
 
-        // 预分配 CodeCache 到保留上限，避免运行期渐进扩容造成细粒度 committed 抖动。
+        // 初始提交保持 32 MiB，保留上限统一为 48 MiB，为完整分层编译留出运行余量。
         assertTrue(
             dockerfile.contains("-XX:InitialCodeCacheSize=32m"),
             "Dockerfile should preallocate InitialCodeCacheSize to 32m",
         )
         assertTrue(
-            dockerfile.contains("-XX:ReservedCodeCacheSize=32m"),
-            "Dockerfile should keep ReservedCodeCacheSize at 32m",
+            dockerfile.contains("-XX:ReservedCodeCacheSize=48m"),
+            "Dockerfile should keep ReservedCodeCacheSize at 48m",
         )
-        // 分层编译仅保留 C1，可显著降低运行期持续 C2 编译导致的 CodeCache 增量。
-        assertTrue(
+        assertFalse(
             dockerfile.contains("-XX:TieredStopAtLevel=1"),
-            "Dockerfile should cap tiered compilation with TieredStopAtLevel=1",
+            "Dockerfile should not disable higher-tier JIT compilation without performance evidence",
         )
+    }
+
+    @Test
+    fun `bare metal launchers should use the unified code cache and deployment labels`() {
+        val buildGradle = read("build.gradle.kts")
+        val expectedOptions = listOf(
+            "set JAVA_OPTS=%JAVA_OPTS% -XX:InitialCodeCacheSize=32m",
+            "set JAVA_OPTS=%JAVA_OPTS% -XX:ReservedCodeCacheSize=48m",
+            "set JAVA_OPTS=%JAVA_OPTS% -XX:+UseCodeCacheFlushing",
+            "set JAVA_OPTS=%JAVA_OPTS% -XX:CICompilerCount=2",
+            "set JAVA_OPTS=%JAVA_OPTS% -XX:CompileThreshold=10000",
+            "set JAVA_OPTS=%JAVA_OPTS% -Dapp.deployment=windows-release",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:InitialCodeCacheSize=32m\"",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:ReservedCodeCacheSize=48m\"",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:+UseCodeCacheFlushing\"",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:CICompilerCount=2\"",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -XX:CompileThreshold=10000\"",
+            "JAVA_OPTS=\"\${'$'}JAVA_OPTS -Dapp.deployment=linux-release\"",
+        )
+
+        assertTrue(expectedOptions.all(buildGradle::contains))
+        assertFalse(buildGradle.contains("-XX:TieredStopAtLevel=1"))
+        assertTrue(read("Dockerfile").contains("-Dapp.deployment=docker"))
     }
 
     @Test

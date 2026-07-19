@@ -2,6 +2,7 @@ package top.bilibili.tasker
 
 import kotlinx.coroutines.isActive
 import org.slf4j.LoggerFactory
+import top.bilibili.readHotSpotVmOption
 import top.bilibili.client.BiliClient
 import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.core.BiliBiliBot
@@ -33,6 +34,99 @@ internal fun resolveNonHeapLimitMB(reportedMaxBytes: Long, fallbackLimitMB: Long
         .takeIf { it >= 1024L * 1024L }
         ?.div(1024L * 1024L)
         ?: fallbackLimitMB
+
+private const val BYTES_PER_MIB = 1024L * 1024L
+
+/** CodeCache 上限的实际取值来源，用于在守护日志中识别 VM option、内存池和兜底分叉。 */
+internal enum class CodeCacheLimitSource {
+    VM_OPTION,
+    MEMORY_POOLS,
+    FALLBACK,
+}
+
+/** CodeCache 实际上限及其来源。 */
+internal data class CodeCacheLimitResolution(
+    val maxBytes: Long,
+    val source: CodeCacheLimitSource,
+)
+
+/**
+ * 按 VM option、CodeHeap/CodeCache 内存池汇总、项目兜底的顺序解析 CodeCache 实际上限。
+ */
+internal fun resolveCodeCacheLimitBytes(
+    reservedCodeCacheSizeValue: String?,
+    poolMaxBytes: List<Long>,
+    fallbackLimitBytes: Long,
+): CodeCacheLimitResolution {
+    val vmOptionBytes = parseJvmMemorySizeBytes(reservedCodeCacheSizeValue)
+    if (vmOptionBytes != null && vmOptionBytes > 0L) {
+        return CodeCacheLimitResolution(vmOptionBytes, CodeCacheLimitSource.VM_OPTION)
+    }
+
+    // 分段 CodeCache 会暴露多个 CodeHeap，只有正数 max 才属于可汇总的有效上限。
+    val pooledMaxBytes = poolMaxBytes.filter { maxBytes -> maxBytes > 0L }.sum()
+    if (pooledMaxBytes > 0L) {
+        return CodeCacheLimitResolution(pooledMaxBytes, CodeCacheLimitSource.MEMORY_POOLS)
+    }
+
+    return CodeCacheLimitResolution(fallbackLimitBytes, CodeCacheLimitSource.FALLBACK)
+}
+
+/** JVM 容量参数允许使用裸字节值或 k/m/g 后缀，统一转换成字节。 */
+private fun parseJvmMemorySizeBytes(rawValue: String?): Long? {
+    val normalized = rawValue?.trim()?.lowercase().orEmpty()
+    val match = Regex("^(\\d+)([kmg]?)$").matchEntire(normalized) ?: return null
+    val value = match.groupValues[1].toLongOrNull() ?: return null
+    val multiplier = when (match.groupValues[2]) {
+        "k" -> 1024L
+        "m" -> BYTES_PER_MIB
+        "g" -> 1024L * BYTES_PER_MIB
+        else -> 1L
+    }
+    return runCatching { Math.multiplyExact(value, multiplier) }.getOrNull()
+}
+
+/** 非堆容量告警的状态迁移事件。 */
+internal enum class NonHeapCapacityAlertEvent {
+    NONE,
+    ENTERED,
+    REMINDER,
+    RECOVERED,
+}
+
+/** 非堆容量告警状态，跨 30 秒巡检保存高位状态和最近一次 WARN 时间。 */
+internal data class NonHeapCapacityAlertState(
+    var active: Boolean = false,
+    var lastWarningAtMillis: Long = 0L,
+)
+
+/**
+ * 使用 80% 告警、75% 恢复和一小时提醒冷却计算容量告警状态迁移。
+ */
+internal fun evaluateNonHeapCapacityAlert(
+    state: NonHeapCapacityAlertState,
+    usageRatio: Double,
+    nowMillis: Long,
+    warningThreshold: Double = 0.8,
+    recoveryThreshold: Double = 0.75,
+    reminderIntervalMillis: Long = 60L * 60L * 1000L,
+): NonHeapCapacityAlertEvent {
+    if (!state.active && usageRatio >= warningThreshold) {
+        state.active = true
+        state.lastWarningAtMillis = nowMillis
+        return NonHeapCapacityAlertEvent.ENTERED
+    }
+    if (state.active && usageRatio <= recoveryThreshold) {
+        state.active = false
+        state.lastWarningAtMillis = 0L
+        return NonHeapCapacityAlertEvent.RECOVERED
+    }
+    if (state.active && nowMillis - state.lastWarningAtMillis >= reminderIntervalMillis) {
+        state.lastWarningAtMillis = nowMillis
+        return NonHeapCapacityAlertEvent.REMINDER
+    }
+    return NonHeapCapacityAlertEvent.NONE
+}
 
 /**
  * 综合守护进程
@@ -68,9 +162,11 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val CRITICAL_THRESHOLD = 0.85  // 85%
 
     // JVM 未报告 Metaspace 上限时使用发行基线兜底，正常情况优先采用 MemoryPoolMXBean 的实际值。
-    private const val METASPACE_FALLBACK_LIMIT_MB = 56L
-    private const val CODECACHE_LIMIT_MB = 32L
+    private const val METASPACE_FALLBACK_LIMIT_MB = 64L
+    private const val CODECACHE_FALLBACK_LIMIT_MB = 48L
     private const val NON_HEAP_WARNING_THRESHOLD = 0.8  // 80%
+    private const val NON_HEAP_RECOVERY_THRESHOLD = 0.75  // 75%
+    private const val NON_HEAP_CAPACITY_REMINDER_INTERVAL_MS = 60L * 60L * 1000L
     private const val NON_HEAP_GROWTH_LOG_MIN_BYTES = 8L * 1024L
     private const val NON_HEAP_GROWTH_BURST_WARN_BYTES = 256L * 1024L
     private const val NON_HEAP_TREND_MAX_SAMPLES = 240
@@ -110,6 +206,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private val nonHeapLongGrowthTrackersByArea: MutableMap<String, NonHeapRollbackTracker> = mutableMapOf()
     // 非堆长期增长告警冷却：按分区记录上次告警时间，避免同一分区在短窗口内重复告警刷屏。
     private val lastNonHeapLongGrowthAlertAtMillisByArea: MutableMap<String, Long> = mutableMapOf()
+    // 非堆容量告警状态按区域保存，确保 80%/75% 迟滞和一小时提醒在巡检间隔之间持续生效。
+    private val nonHeapCapacityAlertStatesByArea: MutableMap<String, NonHeapCapacityAlertState> = mutableMapOf()
     private var lastBusinessOwnerRunTotals: Map<String, Long> = emptyMap()
     private var rssAboveSoftLimitSinceMillis = 0L
     private var lastNormalLogMinute = -1L
@@ -271,24 +369,29 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val nonHeapBreakdown = mutableListOf<NonHeapPartitionUsage>()
         val currentNonHeapUsedByPoolNameBytes = mutableMapOf<String, Long>()
         var metaspaceUsedBytes = 0L
+        var metaspaceReportedMaxBytes = -1L
         var codeCacheUsedBytes = 0L
+        var codeCacheCommittedBytes = 0L
+        val codeCachePoolMaxBytes = mutableListOf<Long>()
 
         for (pool in memoryPools) {
             val usage = pool.usage ?: continue
             currentNonHeapUsedByPoolNameBytes[pool.name] = usage.used
-            val usedMB = usage.used / 1024 / 1024
+            val usedMB = usage.used / BYTES_PER_MIB
+            val committedMB = usage.committed / BYTES_PER_MIB
             val maxMB = usage.max
                 .takeIf { it > 0L }
-                ?.div(1024L * 1024L)
-            val usagePercent = maxMB
-                ?.takeIf { it > 0L }
-                ?.let { limit -> ((usedMB * 100L) / limit).toInt() }
+                ?.div(BYTES_PER_MIB)
+            val usagePercent = usage.max
+                .takeIf { it > 0L }
+                ?.let { limitBytes -> ((usage.used.toDouble() / limitBytes.toDouble()) * 100).toInt() }
 
             // 非堆细分需要保留全部 NON_HEAP 分区，避免只看热点区域导致漏判。
             nonHeapBreakdown.add(
                 NonHeapPartitionUsage(
                     name = pool.name,
                     usedMB = usedMB,
+                    committedMB = committedMB,
                     maxMB = maxMB,
                     usagePercent = usagePercent,
                 ),
@@ -297,25 +400,50 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             when {
                 pool.name.contains("Metaspace", ignoreCase = true) -> {
                     metaspaceUsedBytes += usage.used
-                    report.metaspaceUsedMB = usedMB
-                    val metaspaceLimitMB = resolveNonHeapLimitMB(usage.max, METASPACE_FALLBACK_LIMIT_MB)
-                    report.metaspaceLimitMB = metaspaceLimitMB
-                    val ratio = usedMB.toDouble() / metaspaceLimitMB
-                    if (ratio > NON_HEAP_WARNING_THRESHOLD) {
-                        report.hasNonHeapIssue = true
-                        report.nonHeapIssueDetails.add("Metaspace: ${usedMB}MB / ${metaspaceLimitMB}MB (${(ratio * 100).toInt()}%)")
-                        logger.warn("Metaspace 使用率过高: ${usedMB}MB / ${metaspaceLimitMB}MB")
-                    }
+                    metaspaceReportedMaxBytes = usage.max
                 }
                 pool.name.contains("CodeCache", ignoreCase = true) ||
                 pool.name.contains("CodeHeap", ignoreCase = true) -> {
                     codeCacheUsedBytes += usage.used
-                    report.codeCacheUsedMB += usedMB
+                    codeCacheCommittedBytes += usage.committed
+                    codeCachePoolMaxBytes.add(usage.max)
                 }
             }
         }
         // 输出 Metaspace / CodeCache 的分区细分，用于定位是单一 code heap 还是总量抬升。
         report.nonHeapBreakdown = nonHeapBreakdown.sortedByDescending { it.usedMB }
+        report.metaspaceUsedMB = metaspaceUsedBytes / BYTES_PER_MIB
+        report.metaspaceLimitMB = resolveNonHeapLimitMB(metaspaceReportedMaxBytes, METASPACE_FALLBACK_LIMIT_MB)
+
+        // CodeCache 总上限优先读取 VM option，避免部署参数与 MemoryPool 形态变化后继续沿用静态假设。
+        val codeCacheLimit = resolveCodeCacheLimitBytes(
+            reservedCodeCacheSizeValue = readHotSpotVmOption("ReservedCodeCacheSize"),
+            poolMaxBytes = codeCachePoolMaxBytes,
+            fallbackLimitBytes = CODECACHE_FALLBACK_LIMIT_MB * BYTES_PER_MIB,
+        )
+        report.codeCacheUsedMB = codeCacheUsedBytes / BYTES_PER_MIB
+        report.codeCacheCommittedMB = codeCacheCommittedBytes / BYTES_PER_MIB
+        report.codeCacheLimitMB = codeCacheLimit.maxBytes / BYTES_PER_MIB
+        report.codeCacheLimitSource = codeCacheLimit.source
+        report.codeCacheUsagePercent = ((codeCacheUsedBytes.toDouble() / codeCacheLimit.maxBytes.toDouble()) * 100).toInt()
+
+        // 容量告警采用状态迁移式输出；高位持续期间不把每轮巡检都升级为 WARN 或异常报告。
+        evaluateNonHeapCapacity(
+            report = report,
+            areaName = "Metaspace",
+            usedBytes = metaspaceUsedBytes,
+            committedBytes = null,
+            limitBytes = report.metaspaceLimitMB * BYTES_PER_MIB,
+            limitSource = null,
+        )
+        evaluateNonHeapCapacity(
+            report = report,
+            areaName = "CodeCache",
+            usedBytes = codeCacheUsedBytes,
+            committedBytes = codeCacheCommittedBytes,
+            limitBytes = codeCacheLimit.maxBytes,
+            limitSource = codeCacheLimit.source,
+        )
         // 非堆增长默认按“趋势信号”记录；预热未完成时只更新采样基线，避免启动期抬升被误判为突发告警。
         val burstGrowthDetectionEnabled = nonHeapWarmupCompleted
         val nonHeapGrowthEntries = detectNonHeapGrowth(
@@ -368,19 +496,92 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             report = report,
             metaspaceUsedBytes = metaspaceUsedBytes,
             codeCacheUsedBytes = codeCacheUsedBytes,
+            codeCacheLimitBytes = codeCacheLimit.maxBytes,
         )
 
-        // 检查 CodeCache 总量
-        val codeCacheRatio = report.codeCacheUsedMB.toDouble() / CODECACHE_LIMIT_MB
-        if (codeCacheRatio > NON_HEAP_WARNING_THRESHOLD) {
-            report.hasNonHeapIssue = true
-            report.nonHeapIssueDetails.add("CodeCache: ${report.codeCacheUsedMB}MB / ${CODECACHE_LIMIT_MB}MB (${(codeCacheRatio * 100).toInt()}%)")
-            logger.warn("CodeCache 使用率过高: ${report.codeCacheUsedMB}MB / ${CODECACHE_LIMIT_MB}MB")
-        }
-
         if (!report.hasNonHeapIssue) {
-            logger.debug("非堆内存正常 - Metaspace: ${report.metaspaceUsedMB}MB, CodeCache: ${report.codeCacheUsedMB}MB")
+            logger.debug(
+                "非堆内存巡检完成 - Metaspace: {}MB/{}MB, CodeCache: used={}MB, committed={}MB, max={}MB, source={}",
+                report.metaspaceUsedMB,
+                report.metaspaceLimitMB,
+                report.codeCacheUsedMB,
+                report.codeCacheCommittedMB,
+                report.codeCacheLimitMB,
+                report.codeCacheLimitSource,
+            )
         }
+    }
+
+    /**
+     * 计算单个非堆区域的容量状态迁移，并仅在进入、小时提醒或恢复时输出高等级日志。
+     */
+    private fun evaluateNonHeapCapacity(
+        report: MonitorReport,
+        areaName: String,
+        usedBytes: Long,
+        committedBytes: Long?,
+        limitBytes: Long,
+        limitSource: CodeCacheLimitSource?,
+    ) {
+        if (limitBytes <= 0L) return
+
+        val nowMillis = System.currentTimeMillis()
+        val usageRatio = usedBytes.toDouble() / limitBytes.toDouble()
+        val state = nonHeapCapacityAlertStatesByArea.getOrPut(areaName) { NonHeapCapacityAlertState() }
+        val event = evaluateNonHeapCapacityAlert(
+            state = state,
+            usageRatio = usageRatio,
+            nowMillis = nowMillis,
+            warningThreshold = NON_HEAP_WARNING_THRESHOLD,
+            recoveryThreshold = NON_HEAP_RECOVERY_THRESHOLD,
+            reminderIntervalMillis = NON_HEAP_CAPACITY_REMINDER_INTERVAL_MS,
+        )
+        val detail = buildNonHeapCapacityDetail(
+            areaName = areaName,
+            usedBytes = usedBytes,
+            committedBytes = committedBytes,
+            limitBytes = limitBytes,
+            usageRatio = usageRatio,
+            limitSource = limitSource,
+        )
+
+        when (event) {
+            NonHeapCapacityAlertEvent.ENTERED -> {
+                report.hasNonHeapIssue = true
+                report.nonHeapIssueDetails.add(detail)
+                logger.warn("{} 首次跨越非堆容量告警阈值: {}", areaName, detail)
+            }
+            NonHeapCapacityAlertEvent.REMINDER -> {
+                report.hasNonHeapIssue = true
+                report.nonHeapIssueDetails.add(detail)
+                logger.warn("{} 非堆容量持续高位提醒: {}", areaName, detail)
+            }
+            NonHeapCapacityAlertEvent.RECOVERED -> {
+                report.hasNonHeapRecoveryEvent = true
+                report.nonHeapRecoveryDetails.add(detail)
+                logger.info("{} 非堆容量已恢复到恢复阈值: {}", areaName, detail)
+            }
+            NonHeapCapacityAlertEvent.NONE -> {
+                if (state.active) {
+                    logger.debug("{} 非堆容量仍处于高位，已抑制重复告警: {}", areaName, detail)
+                }
+            }
+        }
+    }
+
+    /** 统一构造 used/committed/max 容量明细，保证应用日志与 daemon 报告采用同一口径。 */
+    private fun buildNonHeapCapacityDetail(
+        areaName: String,
+        usedBytes: Long,
+        committedBytes: Long?,
+        limitBytes: Long,
+        usageRatio: Double,
+        limitSource: CodeCacheLimitSource?,
+    ): String {
+        val committedPart = committedBytes?.let { bytes -> ", committed=${bytes / BYTES_PER_MIB}MB" }.orEmpty()
+        val sourcePart = limitSource?.let { source -> ", limitSource=$source" }.orEmpty()
+        return "$areaName: used=${usedBytes / BYTES_PER_MIB}MB$committedPart, " +
+            "max=${limitBytes / BYTES_PER_MIB}MB, usage=${(usageRatio * 100).toInt()}%$sourcePart"
     }
 
     /**
@@ -419,6 +620,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         report: MonitorReport,
         metaspaceUsedBytes: Long,
         codeCacheUsedBytes: Long,
+        codeCacheLimitBytes: Long,
     ) {
         val sample = NonHeapTrendSample(
             sampledAtMillis = System.currentTimeMillis(),
@@ -525,6 +727,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 areaName = areaName,
                 currentBytes = evidence.currentBytes,
                 nowMillis = nowMillis,
+                codeCacheLimitBytes = codeCacheLimitBytes,
             )
             if (alertDecision.shouldAlert) {
                 longGrowthAlertDetails.add(detail)
@@ -730,10 +933,10 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         areaName: String,
         currentBytes: Long,
         nowMillis: Long,
+        codeCacheLimitBytes: Long,
     ): NonHeapLongGrowthAlertDecision {
         if (areaName.equals("CodeCache", ignoreCase = true)) {
-            val limitBytes = CODECACHE_LIMIT_MB * 1024L * 1024L
-            val usageRatio = if (limitBytes <= 0L) 0.0 else currentBytes.toDouble() / limitBytes.toDouble()
+            val usageRatio = if (codeCacheLimitBytes <= 0L) 0.0 else currentBytes.toDouble() / codeCacheLimitBytes.toDouble()
             if (usageRatio < NON_HEAP_LONG_GROWTH_ALERT_MIN_CODECACHE_USAGE_RATIO) {
                 return NonHeapLongGrowthAlertDecision(
                     shouldAlert = false,
@@ -1669,10 +1872,21 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 }
 
                 // 2.5 非堆内存 (Metaspace, CodeCache)
-                writer.println("[非堆内存] Metaspace: ${report.metaspaceUsedMB}MB/${report.metaspaceLimitMB}MB, CodeCache: ${report.codeCacheUsedMB}MB/${CODECACHE_LIMIT_MB}MB")
+                writer.println(
+                    "[非堆内存] Metaspace: ${report.metaspaceUsedMB}MB/${report.metaspaceLimitMB}MB, " +
+                        "CodeCache: used=${report.codeCacheUsedMB}MB, committed=${report.codeCacheCommittedMB}MB, " +
+                        "max=${report.codeCacheLimitMB}MB, usage=${report.codeCacheUsagePercent}%, " +
+                        "limitSource=${report.codeCacheLimitSource}",
+                )
                 if (report.hasNonHeapIssue) {
                     writer.println("  告警:")
                     report.nonHeapIssueDetails.forEach { detail ->
+                        writer.println("    - $detail")
+                    }
+                }
+                if (report.hasNonHeapRecoveryEvent) {
+                    writer.println("  恢复:")
+                    report.nonHeapRecoveryDetails.forEach { detail ->
                         writer.println("    - $detail")
                     }
                 }
@@ -1686,7 +1900,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     writer.println("[非堆细分]")
                     report.nonHeapBreakdown.forEach { partition ->
                         writer.println(
-                            "  ${partition.name}: used=${partition.usedMB}MB, " +
+                            "  ${partition.name}: used=${partition.usedMB}MB, committed=${partition.committedMB}MB, " +
                                 "max=${partition.maxMB?.let { "${it}MB" } ?: "未设置"}, " +
                                 "usage=${partition.usagePercent?.let { "${it}%" } ?: "未知"}",
                         )
@@ -2001,7 +2215,13 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var metaspaceUsedMB: Long = 0,
         var metaspaceLimitMB: Long = METASPACE_FALLBACK_LIMIT_MB,
         var codeCacheUsedMB: Long = 0,
+        var codeCacheCommittedMB: Long = 0,
+        var codeCacheLimitMB: Long = CODECACHE_FALLBACK_LIMIT_MB,
+        var codeCacheUsagePercent: Int = 0,
+        var codeCacheLimitSource: CodeCacheLimitSource = CodeCacheLimitSource.FALLBACK,
+        var hasNonHeapRecoveryEvent: Boolean = false,
         var nonHeapIssueDetails: MutableList<String> = mutableListOf(),
+        var nonHeapRecoveryDetails: MutableList<String> = mutableListOf(),
         var nonHeapGrowthDetails: List<String> = emptyList(),
         var nonHeapLongGrowthDetails: List<String> = emptyList(),
         var nonHeapWarmupCompleted: Boolean = false,
@@ -2059,6 +2279,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             return hasTaskerIssue ||
                 hasMemoryIssue ||
                 hasNonHeapIssue ||
+                hasNonHeapRecoveryEvent ||
                 hasNonHeapLongGrowthIssue ||
                 hasRssSoftLimitIssue ||
                 hasConnectionIssue ||
@@ -2117,6 +2338,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private data class NonHeapPartitionUsage(
         val name: String,
         val usedMB: Long,
+        val committedMB: Long,
         val maxMB: Long?,
         val usagePercent: Int?,
     )

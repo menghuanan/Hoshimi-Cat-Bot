@@ -458,4 +458,25 @@ class ProcessGuardianResourceObservabilityTest {
         assertTrue(source.contains("lastNormalLogMinute"))
         assertTrue(source.contains("lastNormalLogMinute != currentMinute"))
     }
+
+    // CodeCache 汇总必须保留 used/committed/max 和上限来源，并继续输出每个 CodeHeap 分区。
+    @Test
+    fun `process guardian should report actual code cache used committed max and source`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(source.contains("codeCacheCommittedMB"))
+        assertTrue(source.contains("codeCacheLimitMB"))
+        assertTrue(source.contains("codeCacheLimitSource"))
+        assertTrue(source.contains("ReservedCodeCacheSize"))
+        assertTrue(source.contains("committed=\${partition.committedMB}MB"))
+        assertFalse(source.contains("CODECACHE_LIMIT_MB"))
+    }
+
+    // 启动入口需要在 Skiko 初始化完成后输出当前进程真正生效的 JVM 参数摘要。
+    @Test
+    fun `main should log effective jvm runtime options at startup`() {
+        val main = read("src/main/kotlin/top/bilibili/Main.kt")
+
+        assertTrue(main.contains("logJvmRuntimeSummary()"))
+    }
 }

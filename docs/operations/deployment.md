@@ -53,8 +53,8 @@ Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 L
 - G1GC。
 - `NativeMemoryTracking=summary`。
 - heap 默认 `-Xms64m -Xmx160m`。
-- Metaspace 上限 56m。
-- CodeCache 上限 32m。
+- Metaspace 上限 64m。
+- CodeCache 初始 32m、保留上限 48m，保留完整分层 JIT。
 - DirectMemory 上限 32m。
 - Skiko software rendering。
 - jemalloc `background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000,narenas:1,tcache:false`。
@@ -88,6 +88,7 @@ Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 L
 - 合并 CMD 传入的 heap 参数。
 - 固定 `-Dfile.encoding=UTF-8`。
 - 固定 `-Duser.timezone=Asia/Shanghai`。
+- 固定 `-Dapp.deployment=docker`，供启动日志标记部署来源。
 - 可选启用 RSS watchdog。
 - 捕获 SIGTERM/SIGINT 并给 JVM 最多 100 秒优雅退出窗口，超时后发送 `SIGKILL`。
 
@@ -120,7 +121,9 @@ Windows `start.bat`：
 - `chcp 65001`
 - 优先使用发行包内 `runtime\bin\java.exe`，不再依赖系统 PATH 中的 Java
 - `-Xms64m -Xmx160m`
-- Metaspace 初始触发点 16m、上限 56m，与 Docker 保持一致
+- Metaspace 初始触发点 16m、上限 64m，与 Docker 保持一致
+- CodeCache 初始 32m、保留上限 48m，并启用 flushing、2 个编译线程和 10000 编译阈值
+- 使用 `-Dapp.deployment=windows-release` 标记部署来源
 - G1 周期回收和 heap shrink 参数
 - UTF-8、时区、Skiko software rendering
 
@@ -131,7 +134,9 @@ Linux `start.sh`：
 - jemalloc 可用时会自动启用并设置 `LD_PRELOAD` 和默认 `MALLOC_CONF`
 - 缺少 jemalloc 时，交互终端会询问是否通过受支持的系统包管理器安装；拒绝安装、非交互运行、安装失败或安装后仍不可用都会以状态码 1 退出
 - 使用与 Windows 类似的 JVM heap/G1/Skiko 参数
-- Metaspace 初始触发点 16m、上限 56m，与 Docker 和 Windows 保持一致
+- Metaspace 初始触发点 16m、上限 64m，与 Docker 和 Windows 保持一致
+- CodeCache 初始 32m、保留上限 48m，并启用 flushing、2 个编译线程和 10000 编译阈值
+- 使用 `-Dapp.deployment=linux-release` 标记部署来源
 - 发行包内置 runtime 会额外携带 `jdk.charsets`，以保证二维码生成等依赖 GB2312 字符集的路径在精简运行时内可用
 
 ## 运行环境差异
@@ -141,6 +146,10 @@ Linux `start.sh`：
 | Docker | 使用 Dockerfile 完整 `JAVA_TOOL_OPTIONS`，默认启用 NMT summary | 镜像内置并通过 `LD_PRELOAD` 强制启用 | Compose `restart: unless-stopped` 可在状态码 78 后重新拉起 |
 | Linux 裸机发行包 | 使用 `start.sh` 的 heap shrink、编码、时区和 software rendering 参数，不保证与 Docker 完整参数相同 | 启动前必须可用，否则尝试交互安装或失败退出 | 启动脚本不自动重启，需要 systemd 等外部管理器 |
 | Windows 裸机发行包 | 使用 `start.bat` 的 heap shrink、编码、时区和 software rendering 参数 | 不使用 jemalloc | 启动脚本不自动重启，需要外部管理器或人工处理 |
+
+三种环境当前统一使用 `InitialCodeCacheSize=32m`、`ReservedCodeCacheSize=48m`、`UseCodeCacheFlushing`、`CICompilerCount=2` 和 `CompileThreshold=10000`；不设置 `TieredStopAtLevel=1`，避免未经性能验证就关闭更高层级 JIT。启动日志会输出实际 VM option，监控仍以运行 JVM 的真实上限为准。
+
+Skiko 初始化完成后，启动日志会在同一条摘要中输出 `deployment`、`MaxMetaspaceSize`、`ReservedCodeCacheSize`、`InitialCodeCacheSize`、`TieredStopAtLevel`、`CICompilerCount`、`NativeMemoryTracking` 和 Skiko native resource cache 实际上限。直接运行 jar 且未设置 `app.deployment` 时来源标记为 `unknown`。
 
 Linux 的 RSS 软限制依赖 `/proc` 指标。连续超过 300 MB 达 30 分钟时，`ProcessGuardian` 会先执行停机，再以状态码 78 退出；该动作本身不负责拉起新进程。WebUI `request-restart` 默认也只返回需要人工或外部管理器接管的结果。
 

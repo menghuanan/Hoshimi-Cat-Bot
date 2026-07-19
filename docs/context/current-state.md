@@ -1,6 +1,6 @@
 # 当前迭代状态
 
-_最后更新：2026-07-13_
+_最后更新：2026-07-19_
 
 ## 本轮已完成
 
@@ -10,10 +10,11 @@ _最后更新：2026-07-13_
 - [x] 建立联系人级持久化交付账本，补齐构建与发送双阶段租约、跨重启重试、平台回执终态和旧动态历史兼容。
 - [x] 收口业务数据候选快照提交、Cookie 完整替换、二维码登录原子提交及 WebUI 凭据损坏保留策略。
 - [x] 统一远程图片公网校验、逐跳重定向复检、25 MiB 响应上限与全局并发闸门，并对齐 Docker 90/100/110 秒停机预算。
+- [x] 将三种部署环境统一到 64 MiB Metaspace 与 32/48 MiB CodeCache，修复 CodeCache 实际上限监控、容量告警抑噪和启动参数摘要。
 
 ## 进行中
 
-- [ ] G1 周期回收、heap shrink 与默认 `-Xmx160m` 当前运行观测正常，继续积累长时间静默和峰值场景数据；Metaspace 因约 42 MB 使用量接近原 48 MB 上限，已单独提高到 56 MB。
+- [ ] G1 周期回收、heap shrink 与默认 `-Xmx160m` 当前运行观测正常；继续验证统一 48 MiB CodeCache 下的完整预热、链接解析、绘图和至少 7 天运行趋势。
 
 ## 当前实现基线
 
@@ -26,13 +27,13 @@ _最后更新：2026-07-13_
 - React WebUI 前端位于 `webui-frontend`，构建后打包到 `src/main/resources/webui/react`，页面覆盖登录、仪表盘、设置、订阅和日志，并使用全局 Toast、确认上下文和 Portal 弹窗统一反馈。
 - 动态列表按 item 粒度容错解码：单条坏数据会记录摘要并跳过，分页外层结构仍严格解码；已撤销且只剩空字段的预约附加卡片不会绘制空白图。
 - Skia 当前实际主路径是 in-process drawing。
-- `ProcessGuardian` 直接采集三条 core 业务队列与 `SendTasker` 队列填充率，并记录 Skia Graphics native resource cache 字节数。
+- `ProcessGuardian` 直接采集三条 core 业务队列与 `SendTasker` 队列填充率，记录 Skia Graphics native resource cache 字节数，并按运行 JVM 实际值输出 CodeCache `used/committed/max` 与 CodeHeap 分区。
 - 动态、开播和下播按联系人写入 `data/delivery-ledger.json`；构建与发送失败共享 6 次/24 小时预算，只有平台成功回执进入 `DELIVERED`。
 - 远程图片统一经共享下载器校验公网 DNS 与每跳重定向，单响应上限 25 MiB、全局并发 2；内网和回环图床不受支持。
 - 已有 `bot.yml` 损坏时保留原件并拒绝核心启动；WebUI 凭据损坏时只禁用 WebUI，核心 Bot 继续运行。
 - Docker 和发行包默认使用 software rendering。
 - Docker 默认内存限制为 512m，应用 heap 默认 `64m~160m`。
-- Docker、Windows 裸机和 Linux 裸机的 Metaspace 上限统一为 56m；本轮未提高 heap 上限，也未调整 G1 周期回收和 heap shrink 参数。
+- Docker、Windows 裸机和 Linux 裸机的 Metaspace 上限统一为 64m，CodeCache 统一为初始 32m/保留 48m；不设置 `TieredStopAtLevel=1`，heap、G1 周期回收和 heap shrink 参数保持不变。
 
 ## 当前维护约束
 

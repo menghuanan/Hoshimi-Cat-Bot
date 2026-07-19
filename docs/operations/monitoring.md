@@ -55,17 +55,22 @@ critical 会触发紧急清理。
 
 当前限制口径：
 
-- Metaspace：优先采用 JVM `MemoryPoolMXBean` 报告的实际上限；未报告或报告值不足 1 MB 时，使用发行基线 56 MB 兜底。
-- CodeCache：32 MB。
+- Metaspace：优先采用 JVM `MemoryPoolMXBean` 报告的实际上限；未报告或报告值不足 1 MB 时，使用发行基线 64 MB 兜底。
+- CodeCache：优先读取 `ReservedCodeCacheSize` VM option；不可用时汇总所有 `CodeHeap`/`CodeCache` 的有效 `usage.max`；仍不可用时使用 48 MB 兜底。
 - 非堆 warning threshold：80%。
+- 非堆 recovery threshold：75%。
+- 容量高位持续提醒：每个区域一小时最多一次。
 
 监控会记录：
 
 - NON_HEAP 分区。
-- Metaspace/CodeCache 总量。
+- Metaspace 总量与 CodeCache `used/committed/max`、上限来源。
+- `profiled nmethods`、`non-profiled nmethods`、`non-nmethods` 等 CodeHeap 分区明细。
 - 突发增长。
 - 预热完成后的长期增长趋势。
 - 增长回落日志。
+
+Metaspace 与 CodeCache 容量告警采用状态迁移：首次跨越 80% 写 WARN；高位持续期间只在一小时冷却到期后再次提醒，其余巡检降为 DEBUG；回落到 75% 或以下写恢复日志；再次跨越 80% 后重新告警。daemon 正常快照仍按约 10 分钟记录当前容量，不会因为高位状态每 30 秒重复落盘。
 
 ## Native/NMT 采样
 
