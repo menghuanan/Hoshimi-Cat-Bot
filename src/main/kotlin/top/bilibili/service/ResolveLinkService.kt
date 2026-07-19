@@ -120,6 +120,11 @@ private suspend fun resolveLinkMatch(
 ): ResolvedLinkInfo? {
     val id = matchResult.destructured.component1()
 
+    // PGC 候选必须与订阅和 API 层的业务格式保持一致，避免宽松扫描结果进入绘图与失败回复链。
+    if (type == LinkType.Pgc && !pgcRegex.matches(id)) {
+        return null
+    }
+
     if (type == LinkType.ShortLink) {
         val realLink = biliClient.redirect("https://b23.tv/$id")
         if (realLink != null) {
@@ -234,7 +239,8 @@ sealed class LinkType(val regex: List<Regex> = emptyList()) {
      * 匹配番剧相关链接，兼容 ss、ep、md 三种常见标识。
      */
     object Pgc : LinkType(listOf(
-        """(?:(?:www|m)\.bilibili\.com/bangumi/(?:play|media)/)?((?:ss|ep|md)\d+)""".toRegex()
+        """(?:www|m)\.bilibili\.com/bangumi/(?:play|media)/((?:ss|ep|md)\d{4,10})(?![0-9A-Za-z])""".toRegex(),
+        """(?<![0-9A-Za-z])((?:ss|ep|md)\d{4,10})(?![0-9A-Za-z])""".toRegex(),
     )) {
         override val stableName: String = "Pgc"
     }

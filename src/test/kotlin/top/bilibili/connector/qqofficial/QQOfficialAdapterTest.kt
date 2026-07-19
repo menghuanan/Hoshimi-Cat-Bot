@@ -239,6 +239,38 @@ class QQOfficialAdapterTest {
         }
     }
 
+    // QQ 官方入站预筛必须拒绝位数不足的番剧片段，避免无效消息进入业务解析链。
+    @Test
+    fun `undersized pgc identifiers should be blocked before event flow`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+
+        try {
+            val events = mutableListOf<top.bilibili.connector.PlatformInboundMessage>()
+            val collectJob = async {
+                withTimeoutOrNull(200) {
+                    adapter.eventFlow.take(1).toList(events)
+                }
+            }
+
+            // 让事件收集先订阅，再投递会被旧 PGC 预筛误判的短标识。
+            delay(10)
+            transport.emitGatewayText(
+                groupMessageFrame(
+                    seq = 9,
+                    eventId = "evt-short-pgc",
+                    messageId = "msg-short-pgc",
+                    content = "随机参数 ss9",
+                ),
+            )
+
+            assertEquals(null, collectJob.await())
+            assertTrue(events.isEmpty(), "undersized PGC identifiers should not enter business event flow")
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
     @Test
     fun `access token should refresh at official sixty second window`() = runBlocking {
         var now = 0L

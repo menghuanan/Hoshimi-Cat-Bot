@@ -1708,8 +1708,8 @@ internal class QQOfficialAdapter(
             """(?:https?://)?(?:www|m)\.bilibili\.com/opus/\d+""",
             """(?:https?://)?live\.bilibili\.com/(?:h5/)?\d+""",
             """(?:https?://)?space\.bilibili\.com/\d+""",
-            """(?:https?://)?(?:www|m)\.bilibili\.com/bangumi/(?:play|media)/(?:ss|ep|md)\d+""",
-            """(?<![0-9A-Za-z])(?:ss|ep|md)\d+(?![0-9A-Za-z])""",
+            """(?:https?://)?(?:www|m)\.bilibili\.com/bangumi/(?:play|media)/(?:ss|ep|md)\d{4,10}(?![0-9A-Za-z])""",
+            """(?<![0-9A-Za-z])(?:ss|ep|md)\d{4,10}(?![0-9A-Za-z])""",
             """(?:https?://)?(?:b23\.tv|bili2233\.cn)/[0-9A-Za-z]+""",
         ).map { pattern -> Regex(pattern, RegexOption.IGNORE_CASE) }
     }
