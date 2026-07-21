@@ -27,15 +27,15 @@ class BotConfigFileStoreTest {
             napcat:
               host: "host.docker.internal"
               port: 6199
-              token: ".NK@FFlU4@,WBM39"
+              token: "test-token-value"
               use_tls: false
             targets:
             - type: "group"
               id: 10086
             admins:
-            - groupId: 1072150397
+            - groupId: 1527089724
               userIds:
-              - 793122294
+              - 175666611
             first_run_flag: 1
             """.trimIndent(),
             StandardCharsets.UTF_8,
@@ -48,7 +48,7 @@ class BotConfigFileStoreTest {
 
         assertEquals("host.docker.internal", config.selectedOneBot11Config().host)
         assertEquals(6199, config.selectedOneBot11Config().port)
-        assertEquals(".NK@FFlU4@,WBM39", config.selectedOneBot11Config().token)
+        assertEquals("test-token-value", config.selectedOneBot11Config().token)
         assertFalse(config.webui.enabled)
         assertEquals(1, config.targets.size)
         assertEquals(1, config.admins.size)
