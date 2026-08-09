@@ -151,7 +151,7 @@ Linux `start.sh`：
 
 Skiko 初始化完成后，启动日志会在同一条摘要中输出 `deployment`、`MaxMetaspaceSize`、`ReservedCodeCacheSize`、`InitialCodeCacheSize`、`TieredStopAtLevel`、`CICompilerCount`、`NativeMemoryTracking` 和 Skiko native resource cache 实际上限。直接运行 jar 且未设置 `app.deployment` 时来源标记为 `unknown`。
 
-Linux 的 RSS 软限制依赖 `/proc` 指标。连续超过 300 MB 达 30 分钟时，`ProcessGuardian` 会先执行停机，再以状态码 78 退出；该动作本身不负责拉起新进程。WebUI `request-restart` 默认也只返回需要人工或外部管理器接管的结果。
+Linux 的 RSS 软限制依赖 `/proc` 指标。`ProcessGuardian` 优先采用正数 `MEMORY_THRESHOLD_MB`，否则按 cgroup v2/v1 实际内存上限的 90% 自动计算；无有限 cgroup 的裸机环境按 Heap、Metaspace、CodeCache、DirectMemory 与 Skia resource cache 实际上限总和的 90% 计算。裸机存在无法确认的无限分区时不会猜测固定容量，自动重启策略降级为不可用。连续超过有效阈值达 30 分钟时会先执行停机，再以状态码 78 退出；该动作本身不负责拉起新进程。WebUI `request-restart` 默认也只返回需要人工或外部管理器接管的结果。
 
 发布流程约束：
 

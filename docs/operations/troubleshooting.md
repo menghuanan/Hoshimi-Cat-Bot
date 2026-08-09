@@ -98,7 +98,7 @@ cat /proc/<pid>/status
 cat /proc/<pid>/smaps_rollup
 ```
 
-RSS 连续超过 300 MB 时，`ProcessGuardian` 在 10 分钟后告警，在 30 分钟后执行停机并以状态码 78 退出。Compose 的 `restart: unless-stopped` 会重新拉起容器；裸机启动脚本不会自动重启，需要外部进程管理器。
+先检查守护日志 `[RSS 软限制]` 中的 `threshold/capacity/source/detail`。正数 `MEMORY_THRESHOLD_MB` 具有最高优先级；否则容器取 cgroup 实际容量的 90%，裸机取有限 JVM 分区容量总和的 90%。RSS 连续超过有效阈值时，`ProcessGuardian` 在 10 分钟后告警，在 30 分钟后执行停机并以状态码 78 退出。容量变化会重置连续计时；无法获得完整有限容量时阈值为 `UNAVAILABLE`，不会按猜测值退出。Compose 的 `restart: unless-stopped` 会重新拉起容器；裸机启动脚本不会自动重启，需要外部进程管理器。
 
 ### Skia 清理后仍有高水位
 

@@ -86,9 +86,17 @@ Metaspace 与 CodeCache 容量告警采用状态迁移：首次跨越 80% 写 WA
 
 ## RSS 软限制
 
-当前默认：
+当前阈值按以下优先级自动解析：
 
-- `RSS_SOFT_LIMIT_MB=300`
+1. 正数 `MEMORY_THRESHOLD_MB`：直接作为最终 RSS 阈值，供外部 supervisor 显式覆盖。
+2. Linux cgroup v2/v1 有限内存上限：取实际容量的 90%。
+3. 无有限 cgroup 的裸机环境：取 Heap、Metaspace、CodeCache、DirectMemory 与 Skia resource cache 实际上限总和的 90%。
+4. 裸机任一必要分区无有限上限：阈值标记为 `UNAVAILABLE`，不执行基于猜测容量的自动重启。
+
+容量来源或数值在运行中改变时，连续超限计时会重置。守护日志同步输出 `threshold/capacity/source/detail`，用于确认本轮采用的外部容量口径。
+
+固定策略：
+
 - hold：30 分钟
 - warning after：10 分钟
 - restart exit code：78

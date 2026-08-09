@@ -2,6 +2,7 @@ package top.bilibili.tasker
 
 import kotlinx.coroutines.isActive
 import org.slf4j.LoggerFactory
+import top.bilibili.SkikoInitializer
 import top.bilibili.readHotSpotVmOption
 import top.bilibili.client.BiliClient
 import top.bilibili.connector.PlatformObservabilitySnapshot
@@ -185,7 +186,6 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val NATIVE_MEMORY_DESTROY_WAIT_MS = 500L
     private const val PROCESS_OUTPUT_DRAIN_TIMEOUT_MS = 1_000L
     private const val NATIVE_TASK_CORRELATION_LIMIT = 8
-    private const val RSS_SOFT_LIMIT_MB = 300L
     private const val RSS_SOFT_LIMIT_HOLD_MS = 30 * 60 * 1000L
     private const val RSS_SOFT_LIMIT_WARN_AFTER_MS = 10 * 60 * 1000L
     private const val RSS_SOFT_LIMIT_RESTART_EXIT_CODE = 78
@@ -210,6 +210,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private val nonHeapCapacityAlertStatesByArea: MutableMap<String, NonHeapCapacityAlertState> = mutableMapOf()
     private var lastBusinessOwnerRunTotals: Map<String, Long> = emptyMap()
     private var rssAboveSoftLimitSinceMillis = 0L
+    private var lastRssSoftLimitResolution: RssSoftLimitResolution? = null
     private var lastNormalLogMinute = -1L
 
     override fun init() {
@@ -1739,10 +1740,36 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         // 把 VmRSS-NMT committed 的正向差值记录为“未归类 native 区”估算，便于长期趋势对比。
         report.unattributedNativeMB = report.rssMinusNmtMB?.coerceAtLeast(0L)
 
-        report.rssSoftLimitMB = RSS_SOFT_LIMIT_MB
+        val resolution = resolveCurrentRssSoftLimit()
+        val thresholdMB = resolution.thresholdMB
+        report.rssSoftLimitMB = thresholdMB
+        report.rssSoftLimitCapacityMB = resolution.capacityMB
+        report.rssSoftLimitSource = resolution.source
+        report.rssSoftLimitDetail = resolution.detail
         report.rssSoftLimitHoldSeconds = RSS_SOFT_LIMIT_HOLD_MS / 1000L
 
-        if (rssMB < RSS_SOFT_LIMIT_MB) {
+        // 容量来源或数值发生变化时重新开始连续窗口，避免外部缩容后沿用旧阈值的累计时间立即退出。
+        if (resolution != lastRssSoftLimitResolution) {
+            rssAboveSoftLimitSinceMillis = 0L
+            lastRssSoftLimitResolution = resolution
+            logger.info(
+                "RSS 软限制已更新: threshold={}MB, capacity={}MB, source={}, detail={}",
+                thresholdMB,
+                resolution.capacityMB,
+                resolution.source,
+                resolution.detail,
+            )
+        }
+
+        if (thresholdMB == null) {
+            rssAboveSoftLimitSinceMillis = 0L
+            report.rssSoftLimitActive = false
+            report.rssSoftLimitDurationSeconds = 0L
+            report.rssSoftLimitIssueLevel = "UNAVAILABLE"
+            return
+        }
+
+        if (rssMB < thresholdMB) {
             rssAboveSoftLimitSinceMillis = 0L
             report.rssSoftLimitActive = false
             report.rssSoftLimitDurationSeconds = 0L
@@ -1762,7 +1789,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             report.rssSoftLimitIssueLevel = "RESTART_PENDING"
             report.rssSoftRestartPending = true
             report.rssSoftRestartReason =
-                "VmRSS=$rssMB MB 连续 ${(continuousHighDurationMs / 1000L) / 60L} 分钟超过阈值 ${RSS_SOFT_LIMIT_MB} MB"
+                "VmRSS=$rssMB MB 连续 ${(continuousHighDurationMs / 1000L) / 60L} 分钟超过阈值 $thresholdMB MB " +
+                    "(source=${resolution.source}, ${resolution.detail})"
             return
         }
 
@@ -1772,6 +1800,46 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         } else {
             report.rssSoftLimitIssueLevel = "OBSERVING"
         }
+    }
+
+    /**
+     * 从当前环境解析 RSS 预算：显式环境变量和 cgroup 优先，裸机再读取运行 JVM 的实际分区上限。
+     */
+    private fun resolveCurrentRssSoftLimit(): RssSoftLimitResolution {
+        val memoryPools = ManagementFactory.getMemoryPoolMXBeans()
+            .filter { pool -> pool.type == MemoryType.NON_HEAP }
+        val metaspacePoolMaxBytes = memoryPools
+            .firstOrNull { pool -> pool.name.contains("Metaspace", ignoreCase = true) }
+            ?.usage
+            ?.max
+            ?.takeIf { bytes -> bytes > 0L }
+            ?: -1L
+        val metaspaceOptionBytes = parseJvmMemorySizeBytes(readHotSpotVmOption("MaxMetaspaceSize"))
+            ?.takeIf { bytes -> bytes > 0L }
+        val codeCacheLimit = resolveCodeCacheLimitBytes(
+            reservedCodeCacheSizeValue = readHotSpotVmOption("ReservedCodeCacheSize"),
+            poolMaxBytes = memoryPools
+                .filter { pool ->
+                    pool.name.contains("CodeCache", ignoreCase = true) ||
+                        pool.name.contains("CodeHeap", ignoreCase = true)
+                }
+                .mapNotNull { pool -> pool.usage?.max },
+            fallbackLimitBytes = 0L,
+        )
+        val heapMaxBytes = Runtime.getRuntime().maxMemory()
+        val configuredDirectMemoryBytes = parseJvmMemorySizeBytes(readHotSpotVmOption("MaxDirectMemorySize"))
+            ?.takeIf { bytes -> bytes > 0L }
+
+        // HotSpot 的 MaxDirectMemorySize=0 表示沿用最大 heap，按实际 heap 上限纳入裸机预算。
+        return resolveRssSoftLimit(
+            explicitThresholdMB = System.getenv("MEMORY_THRESHOLD_MB"),
+            cgroupCapacity = readCgroupMemoryCapacity(),
+            heapMaxBytes = heapMaxBytes,
+            metaspaceMaxBytes = metaspaceOptionBytes ?: metaspacePoolMaxBytes,
+            codeCacheMaxBytes = codeCacheLimit.maxBytes.takeIf { bytes -> bytes > 0L } ?: -1L,
+            directMemoryMaxBytes = configuredDirectMemoryBytes ?: heapMaxBytes,
+            skiaCacheMaxBytes = SkikoInitializer.effectiveResourceCacheLimitBytes(),
+        )
     }
 
     /**
@@ -2116,10 +2184,13 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
                 writer.println("[RSS 软限制]")
                 writer.println(
-                    "  threshold=${report.rssSoftLimitMB}MB, hold=${report.rssSoftLimitHoldSeconds}s, " +
+                    "  threshold=${report.rssSoftLimitMB?.let { "${it}MB" } ?: "不可用"}, " +
+                        "capacity=${report.rssSoftLimitCapacityMB?.let { "${it}MB" } ?: "不可用"}, " +
+                        "source=${report.rssSoftLimitSource}, hold=${report.rssSoftLimitHoldSeconds}s, " +
                         "active=${report.rssSoftLimitActive}, duration=${report.rssSoftLimitDurationSeconds}s, " +
                         "level=${report.rssSoftLimitIssueLevel}"
                 )
+                writer.println("  detail=${report.rssSoftLimitDetail}")
                 writer.println(
                     "  RssMinusNmt=${report.rssMinusNmtMB?.let { "${it}MB" } ?: "不可用"} " +
                         "(VmRSS - NMT_committed)"
@@ -2248,7 +2319,10 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var rssMinusNmtMB: Long? = null,
         var unattributedNativeMB: Long? = null,
         var hasRssSoftLimitIssue: Boolean = false,
-        var rssSoftLimitMB: Long = RSS_SOFT_LIMIT_MB,
+        var rssSoftLimitMB: Long? = null,
+        var rssSoftLimitCapacityMB: Long? = null,
+        var rssSoftLimitSource: RssSoftLimitSource = RssSoftLimitSource.UNAVAILABLE,
+        var rssSoftLimitDetail: String = "not evaluated",
         var rssSoftLimitHoldSeconds: Long = RSS_SOFT_LIMIT_HOLD_MS / 1000L,
         var rssSoftLimitActive: Boolean = false,
         var rssSoftLimitDurationSeconds: Long = 0L,

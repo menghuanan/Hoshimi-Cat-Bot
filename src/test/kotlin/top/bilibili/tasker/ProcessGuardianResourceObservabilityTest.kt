@@ -437,8 +437,8 @@ class ProcessGuardianResourceObservabilityTest {
         val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
 
         assertTrue(
-            source.contains("RSS_SOFT_LIMIT_MB"),
-            "ProcessGuardian should define an RSS soft limit threshold",
+            source.contains("resolveCurrentRssSoftLimit"),
+            "ProcessGuardian should resolve the RSS soft limit from the current runtime capacity",
         )
         assertTrue(
             source.contains("RSS_SOFT_LIMIT_HOLD_MS"),
