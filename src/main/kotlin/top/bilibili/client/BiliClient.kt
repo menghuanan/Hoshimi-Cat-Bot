@@ -305,6 +305,9 @@ open class BiliClient(
     // 重试槽位默认保留 2 个，但仅在真正轮到某个槽位发请求时才创建，避免轮询刚启动就一次性常驻多套 OkHttp 资源。
     private val retrySlots = MutableList<RetrySlotEntry?>(RETRY_SLOT_CAPACITY) { null }
 
+    // ticket 兑换会跟随重定向，拦截器按原始 ticket 归集链路中各响应的 Set-Cookie。
+    private val ticketCookies = ConcurrentHashMap<String, MutableList<String>>()
+
     /**
      * 创建单个底层 HTTP 客户端实例。
      */
@@ -316,6 +319,18 @@ open class BiliClient(
             config {
                 dispatcher(dispatcher)
                 connectionPool(connectionPool)
+            }
+            // 读取二维码 ticket 兑换链上的 Cookie，不能只依赖最终响应的 headers。
+            addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                val ticket = chain.call().request().url.queryParameter("ticket")
+                if (!ticket.isNullOrBlank()) {
+                    response.headers.values("Set-Cookie").forEach { cookie ->
+                        ticketCookies.computeIfAbsent(ticket) { mutableListOf() }
+                            .add(cookie)
+                    }
+                }
+                response
             }
         }
         defaultRequest {
@@ -426,6 +441,32 @@ open class BiliClient(
                 block()
             }.body()
         }.decode()
+
+    /**
+     * 立即访问新版二维码回调链接，并返回兑换链收集到的 Set-Cookie 响应头。
+     *
+     * @param url B 站轮询成功返回的 ticket 兑换链接
+     */
+    suspend fun redeemLoginTicket(url: String): List<String> {
+        val ticket = Url(url).parameters["ticket"]?.takeIf(String::isNotBlank)
+            ?: return emptyList()
+        return try {
+            useHttpClient<String>(
+                // trace 只保留路径，避免把一次性 ticket 写入异常日志。
+                trace = ApiRequestTrace(
+                    source = "QrLoginCoordinator.commit",
+                    api = "LOGIN_TICKET",
+                    url = url.substringBefore('?'),
+                ),
+            ) { httpClient ->
+                httpClient.get(url).body()
+            }
+            ticketCookies.remove(ticket).orEmpty().toList()
+        } finally {
+            // ticket 失败或取消时也要清理临时凭据，避免短时缓存积累。
+            ticketCookies.remove(ticket)
+        }
+    }
 
     /**
      * 发送 POST 请求并将响应解码为指定类型。

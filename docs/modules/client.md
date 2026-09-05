@@ -1,6 +1,6 @@
 # Client 模块
 
-_最后复核：2026-07-12_
+_最后复核：2026-09-06_
 
 ## 模块定位
 
@@ -25,6 +25,8 @@ Client 模块封装 B 站 HTTP 请求、重试、超时、代理、连接池资�
 ## 关键流程
 
 调用方通过 API 扩展函数进入 `BiliClient`，由 client 统一补齐请求头、cookie、timeout、trace 和重试策略，再把响应交回 API/data 层解析。新增网络路径必须保持 ownerTag 和 `ApiRequestTrace` 可观测，不能在调用方临时创建独立 HTTP 栈。
+
+二维码登录的新版 ticket 兑换也必须复用 `BiliClient`：客户端访问轮询成功返回的回调链接，并在重定向链的网络拦截层收集 `Set-Cookie`；ticket 和 Cookie 不写入 trace 或运行期快照。
 
 ## 重试策略
 

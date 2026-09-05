@@ -129,7 +129,16 @@ class QrLoginCoordinator(
     private val renderQr: suspend (String) -> ByteArray = ::loginQrCodeBytes,
     private val queryStatus: suspend (String) -> QrLoginPollPayload? = { qrcodeKey ->
         client.loginInfo(qrcodeKey)?.let { payload ->
-            QrLoginPollPayload(payload.code, payload.url, payload.message)
+            val callbackUrl = payload.url?.let { url ->
+                if (url.contains("ticket=")) {
+                    // 新版回调只提供一次性 ticket，必须在 poll 成功后立即兑换 Cookie。
+                    val cookies = client.redeemLoginTicket(url)
+                    cookiesToCallbackUrl(cookies)
+                } else {
+                    url
+                }
+            }
+            QrLoginPollPayload(payload.code, callbackUrl, payload.message)
         }
     },
     private val commitCallback: (String) -> Boolean = ::commitQrLoginCallback,
@@ -610,4 +619,17 @@ private fun commitQrLoginCallback(callbackUrl: String): Boolean {
     // 登录成功后才恢复失效提醒门闩，避免启动期普通成功请求造成重复提醒。
     markBiliLoginSucceeded()
     return true
+}
+
+/** 将兑换链的 Cookie 头压缩为旧解析器可兼容的回调查询参数，避免扩大提交接口。 */
+internal fun cookiesToCallbackUrl(setCookies: List<String>): String? {
+    val values = setCookies.mapNotNull { header ->
+        header.substringBefore(';').split('=', limit = 2).takeIf { it.size == 2 }
+    }.associate { it[0] to it[1] }
+    val parameters = listOf("SESSDATA", "bili_jct", "DedeUserID")
+        .mapNotNull { name -> values[name]?.let { "$name=$it" } }
+    return parameters.takeIf { it.isNotEmpty() }?.joinToString(
+        prefix = "https://passport.bilibili.com/x/passport-login/web/crossDomain?",
+        separator = "&",
+    )
 }
