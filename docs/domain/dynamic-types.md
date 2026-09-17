@@ -110,7 +110,7 @@ PGC 路由规则：
 ## 新增动态类型 checklist
 
 - [ ] 在 `DynamicType` 中增加枚举或确认继续走 `DYNAMIC_TYPE_UNKNOWN`。
-- [ ] 检查 `DynamicCheckTasker.banType` 是否需要过滤。
+- [ ] 检查 `DynamicCheckTasker.dynamicPollingExcludedTypes` / `filterDynamicPollingItems()` 是否需要过滤。
 - [ ] 检查 `SendTasker.mapDynamicType()` 是否需要新增过滤器映射。
 - [ ] 检查 `TemplateRenderService` 占位符是否足够表达新类型。
 - [ ] 检查绘图层是否需要新增 major/additional 模块。

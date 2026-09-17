@@ -2,6 +2,20 @@ package top.bilibili.data
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.nullable
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
 import top.bilibili.utils.decode
 
 
@@ -199,6 +213,7 @@ data class ModuleAuthor(
     @SerialName("face_nft")
     val faceNFT: Boolean? = null,
     @SerialName("following")
+    @Serializable(with = FollowingStatusSerializer::class)
     val following: Int? = null,
     @SerialName("icon_badge")
     val iconBadge: IconBadge? = null,
@@ -1413,6 +1428,34 @@ data class ModuleInteraction(
     @SerialName("items")
     val items: List<ModuleDynamic>,
 )
+
+/**
+ * 兼容动态接口将关注状态返回为布尔值或数字的历史与灰度响应，仅保留 0/1 数字状态码。
+ */
+@OptIn(ExperimentalSerializationApi::class)
+object FollowingStatusSerializer : KSerializer<Int?> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("FollowingStatus", PrimitiveKind.INT).nullable
+
+    override fun serialize(encoder: Encoder, value: Int?) {
+        if (value == null) encoder.encodeNull() else encoder.encodeInt(value)
+    }
+
+    override fun deserialize(decoder: Decoder): Int? {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("FollowingStatusSerializer requires JSON input")
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            JsonNull -> null
+            is JsonPrimitive -> if (element.isString) {
+                null
+            } else {
+                element.intOrNull?.takeIf { it == 0 || it == 1 }
+                    ?: element.booleanOrNull?.let { if (it) 1 else 0 }
+            }
+            else -> null
+        }
+    }
+}
 
 /**
  * 动态警告

@@ -7,6 +7,7 @@ import top.bilibili.BiliData
 import top.bilibili.api.getNewDynamic
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.data.DynamicDetail
+import top.bilibili.data.DynamicItem
 import top.bilibili.data.DynamicList
 import top.bilibili.data.DynamicType
 import top.bilibili.delivery.DeliveryCoordinator
@@ -15,6 +16,30 @@ import top.bilibili.service.PushFanoutService
 import top.bilibili.utils.logger
 import top.bilibili.utils.sendAll
 import top.bilibili.utils.time
+
+/**
+ * 判断动态轮询是否应排除直播类型；直播通知由独立直播任务负责。
+ */
+internal val dynamicPollingExcludedTypes = listOf(
+    DynamicType.DYNAMIC_TYPE_LIVE,
+    DynamicType.DYNAMIC_TYPE_LIVE_RCMD,
+    // DynamicType.DYNAMIC_TYPE_PGC,
+    // DynamicType.DYNAMIC_TYPE_PGC_UNION
+)
+
+/**
+ * 复用动态轮询的直播类型排除规则，保证自动和手动检查保持一致。
+ */
+internal fun isExcludedFromDynamicPolling(type: DynamicType): Boolean = when (type) {
+    in dynamicPollingExcludedTypes -> true
+    else -> false
+}
+
+/**
+ * 在动态进入联系人解析和交付账本前移除由直播任务负责的动态类型。
+ */
+internal fun filterDynamicPollingItems(items: List<DynamicItem>): List<DynamicItem> =
+    items.filterNot { isExcludedFromDynamicPolling(it.type) }
 
 /**
  * 轮询最新动态并将需要推送的动态投递到消息流水线。
@@ -30,13 +55,6 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
     private val bangumi by BiliData::bangumi
 
     private val listenAllDynamicMode = false
-
-    private val banType = listOf(
-        DynamicType.DYNAMIC_TYPE_LIVE,
-        DynamicType.DYNAMIC_TYPE_LIVE_RCMD,
-        // DynamicType.DYNAMIC_TYPE_PGC,
-        // DynamicType.DYNAMIC_TYPE_PGC_UNION
-    )
 
     private const val HISTORY_CAPACITY = 200
     private val historyDynamic = ArrayDeque<String>(HISTORY_CAPACITY)
@@ -73,8 +91,7 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
             return@withTimeout
         }
 
-        val dynamics = dynamicList.items
-            .filter { !banType.contains(it.type) }
+        val dynamics = filterDynamicPollingItems(dynamicList.items)
             .filter { it.time > lastDynamic }
             // 旧 history 已导入联系人账本，升级去重按业务 ID 查询，不再让旧文本集合参与新交付状态推进。
             .filter { !DeliveryCoordinator.isLegacyDynamicCompleted(it.did) }
@@ -147,8 +164,7 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
 
         val followingUsers = dynamic.filter { it.value.contacts.isNotEmpty() }.map { it.key }
 
-        val dynamics = dynamicList.items
-            .filter { !banType.contains(it.type) }
+        val dynamics = filterDynamicPollingItems(dynamicList.items)
             .filter {
                 if (listenAllDynamicMode) {
                     true

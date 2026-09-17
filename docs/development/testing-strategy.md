@@ -63,8 +63,11 @@ Skia native memory 证据测试：
 - `NonHeapMemoryLimitTest`
 - `ProcessGuardianMemoryPolicyTest`
 - `ProcessGuardianResourceObservabilityTest`
+- `DynamicCheckTaskerFilterTest`
 
 新增 Tasker、worker 或资源策略时必须运行。
+
+动态轮询筛选变更还必须确认直播类型不会进入联系人解析或 `dynamicChannel` 投递链。
 
 ### Core 与资源监督
 

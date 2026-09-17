@@ -19,6 +19,7 @@ Data 模块定义 B 站响应模型、业务消息模型和持久化数据结构
 ## 序列化规则
 
 - B 站字段不稳定时优先使用可空字段或安全默认值。
+- `ModuleAuthor.following` 通过专用 JSON 反序列化器兼容 `true`/`false`/`1`/`0`/`null` 和字段缺失，统一为 `1`/`0`/`null`；其他类型或数字状态降级为 `null`，不得因无业务用途的字段异常丢弃整条动态。
 - 未知动态类型必须降级为 `DYNAMIC_TYPE_UNKNOWN`。
 - 动态预约附加卡片的描述、按钮和首映信息需要接受撤销后的空值；不要用非空断言恢复旧假设。
 - 持久化结构变更必须考虑 `BiliDataWrapper` 和 legacy wrapper。
@@ -38,6 +39,7 @@ Data 定义可序列化结构和业务状态字段，但不拥有写入权。新
 ## 测试与验证
 
 - 修改 B 站响应模型后，运行对应 decode 测试或 API 回归测试。
+- 修改动态作者关注状态解码时，运行 `DynamicListDecodeTest`，并覆盖布尔、`0/1`、`null`、缺失和异常值输入。
 - 修改 `DynamicItem`、`ModuleDynamic.Additional` 或预约字段后，运行 `DynamicListDecodeTest`、`DynamicListSafeDecodeTest` 和 `DynamicAdditionalCardRegressionTest`。
 - 修改持久化数据结构后，运行 `BiliDataWrapperFeatureTest` 和相关迁移测试。
 - 修改动态类型、模板相关字段或展示字段后，检查 [`../domain/dynamic-types.md`](../domain/dynamic-types.md) 与 [`../domain/template-placeholders.md`](../domain/template-placeholders.md)。
