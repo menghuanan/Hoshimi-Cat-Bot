@@ -1,10 +1,10 @@
 # 架构总览
 
-本文描述当前 dynamic-bot 的静态结构、运行期启动流程和主要依赖方向。内容以现有 Kotlin/JVM 代码为准。
+本文描述当前 Hoshimi-Cat-Bot 的静态结构、运行期启动流程和主要依赖方向。内容以现有 Kotlin/JVM 代码为准。
 
 ## 系统定位
 
-dynamic-bot 是一个常驻运行的 B 站动态/直播推送机器人。它通过 B 站 API 轮询动态和直播状态，通过平台适配层接入 OneBot11/NapCat/LlBot/QQ 官方等消息平台，并使用 Skia/Skiko 生成图文推送卡片。
+Hoshimi-Cat-Bot 是一个常驻运行的 B 站动态/直播推送机器人。它通过 B 站 API 轮询动态和直播状态，通过平台适配层接入 OneBot11/NapCat/LlBot/QQ 官方等消息平台，并使用 Skia/Skiko 生成图文推送卡片。
 
 ## 运行期主链路
 

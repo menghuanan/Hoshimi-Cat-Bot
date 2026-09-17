@@ -22,7 +22,7 @@
 
 本次版本完成项目名称统一迁移：
 
-* dynamic-bot → hoshimi-cat-bot
+* dynamic-bot → Hoshimi-Cat-Bot
 
 涉及范围包括：
 
