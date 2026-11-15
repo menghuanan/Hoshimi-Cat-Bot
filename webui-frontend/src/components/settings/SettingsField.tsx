@@ -104,7 +104,7 @@ function FieldHelper({id, fieldKey, description}: {id: string | undefined, field
 }
 
 /**
- * 当前只有平台类型说明具备明确“不推荐”语义，先按 key 白名单升级为警示条。
+ * 当前只有平台类型说明需要强调色提示条，先按 key 白名单升级为警示条。
  */
 function isWarningDescription(fieldKey: string): boolean {
   return fieldKey === 'platform.type'

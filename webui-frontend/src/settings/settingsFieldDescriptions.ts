@@ -3,7 +3,7 @@
  */
 export const settingsFieldDescriptions: Record<string, string> = {
   // 对接配置
-  'platform.type': '当前 QQ 官方机器人没有做适配，不推荐使用。',
+  'platform.type': '当前优先推荐使用QQ官方机器人接入',
   'platform.adapter': '优先选择 NapCat 或 llbot；只有兼容现有环境时才改动。',
   'platform.onebot11.host': '填写 OneBot11 主机地址，同机部署时通常使用 127.0.0.1。',
   'platform.onebot11.port': '填写 OneBot11 实际开放端口。',

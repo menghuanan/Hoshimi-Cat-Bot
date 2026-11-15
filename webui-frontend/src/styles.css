@@ -328,14 +328,14 @@ body {
   align-items: flex-start;
   gap: 0.5rem;
   margin-top: 0.75rem;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  border: 1px solid #065f46;
   border-radius: 0.5rem;
-  background: rgba(245, 158, 11, 0.1);
+  background: #047857;
   padding: 0.625rem 0.75rem;
   overflow-wrap: anywhere;
   font-size: 0.75rem;
   line-height: 1.25rem;
-  color: #92400e;
+  color: #ffffff;
 }
 
 .settings-helper-icon {
@@ -345,8 +345,8 @@ body {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 9999px;
-  background: rgba(245, 158, 11, 0.18);
-  color: #92400e;
+  background: #ffffff;
+  color: #047857;
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -566,9 +566,9 @@ body {
 }
 
 .theme-dark .settings-warning-helper {
-  border-color: rgba(251, 191, 36, 0.36);
-  background: rgba(251, 191, 36, 0.12);
-  color: #fde68a;
+  border-color: #34d399;
+  background: #047857;
+  color: #ffffff;
 }
 
 .theme-dark .subscription-info-block {
@@ -733,9 +733,9 @@ body {
   }
 
   .theme-system .settings-warning-helper {
-    border-color: rgba(251, 191, 36, 0.36);
-    background: rgba(251, 191, 36, 0.12);
-    color: #fde68a;
+    border-color: #34d399;
+    background: #047857;
+    color: #ffffff;
   }
 
   .theme-system .subscription-info-block {

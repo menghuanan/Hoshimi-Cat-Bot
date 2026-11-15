@@ -434,7 +434,7 @@ describe('webui shell routing', () => {
   it('renders settings helper text and boolean fields with visual helper treatments', async () => {
     renderAtPath('/#settings')
 
-    const platformWarning = await screen.findByText('当前 QQ 官方机器人没有做适配，不推荐使用。')
+    const platformWarning = await screen.findByText('当前优先推荐使用QQ官方机器人接入')
     expect(platformWarning.closest('[data-field-helper-tone="warning"]')).not.toBeNull()
     expect(platformWarning.closest('[data-field-helper-tone="warning"]')).toHaveClass('settings-warning-helper')
 
@@ -882,7 +882,7 @@ describe('webui shell routing', () => {
     expect(screen.getByRole('heading', {name: '系统配置'})).toBeInTheDocument()
     expect(screen.getByText('保存后自动热重载生效')).toBeInTheDocument()
     expect(screen.getByText('保存后自动热重载生效')).toHaveClass('text-slate-600')
-    expect(screen.getByText('当前 QQ 官方机器人没有做适配，不推荐使用。')).toBeInTheDocument()
+    expect(screen.getByText('当前优先推荐使用QQ官方机器人接入')).toBeInTheDocument()
     expect(screen.getByText('默认关闭，按需开启独立 WebUI。')).toBeInTheDocument()
     expect(screen.queryByText('保存后需要重启')).not.toBeInTheDocument()
     expect(screen.getByRole('button', {name: '保存'}).parentElement?.parentElement).toHaveClass('justify-between')
