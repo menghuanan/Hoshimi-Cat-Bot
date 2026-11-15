@@ -324,6 +324,7 @@ private fun biliDataCapability(key: String): WebUiFieldCapability {
  */
 private fun botConfigCapability(key: String): WebUiFieldCapability {
     return when (key) {
+        "admin" -> WebUiFieldCapability.EDITABLE
         "platform.type",
         "platform.adapter",
         "platform.onebot11.host",

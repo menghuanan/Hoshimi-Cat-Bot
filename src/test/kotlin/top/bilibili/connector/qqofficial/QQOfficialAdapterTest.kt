@@ -43,6 +43,30 @@ import top.bilibili.connector.PlatformType
 
 class QQOfficialAdapterTest {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** 真实网关归一链放行指定私聊绑定码，群内相同文本和普通私聊仍被原门禁拦截。 */
+    @Test
+    fun `binding predicate only extends private inbound gate`() = runBlocking {
+        val transport = FakeTransport()
+        val code = "QQ-TEST-BINDING"
+        val adapter = createStartedAdapter(transport, additionalInboundFilter = { it.messageText == code })
+        try {
+            val events = mutableListOf<top.bilibili.connector.PlatformInboundMessage>()
+            val collector = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                adapter.eventFlow.take(2).toList(events)
+            }
+            transport.emitGatewayText(groupMessageFrame(eventType = "GROUP_MESSAGE_CREATE", content = code))
+            transport.emitGatewayText(c2cMessageFrame().replace("/login", "ordinary-text"))
+            transport.emitGatewayText(c2cMessageFrame().replace("/login", code))
+            transport.emitGatewayText(c2cMessageFrame())
+            withTimeout(2_000) { collector.join() }
+            assertEquals(listOf(code, "/login"), events.map { it.messageText })
+            assertEquals("demo-app", events.first().metadata["app_id"])
+            assertEquals("user_openid_demo", events.first().senderContact.id)
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
     private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
 
     // 统一桥接适配器的 suspend 停机入口，避免每个 finally 重复包一层 runBlocking。
@@ -1037,6 +1061,7 @@ class QQOfficialAdapterTest {
     }
 
     // 启动测试适配器时，预置 Hello/Ready 帧，确保启动路径能完成首轮网关握手。
+    /** additionalInboundFilter 用来验证装配层绑定谓词，不替换真实网关归一与门禁。 */
     private fun createStartedAdapter(
         transport: FakeTransport,
         currentTimeMillis: () -> Long = { System.currentTimeMillis() },
@@ -1046,6 +1071,7 @@ class QQOfficialAdapterTest {
         groupQpmLimit: Int = QQOfficialAdapter.DEFAULT_GROUP_QPM_LIMIT,
         groupPassiveReplyWindowMillis: Long = QQOfficialAdapter.DEFAULT_GROUP_PASSIVE_REPLY_WINDOW_MILLIS,
         privatePassiveReplyWindowMillis: Long = QQOfficialAdapter.DEFAULT_PRIVATE_PASSIVE_REPLY_WINDOW_MILLIS,
+        additionalInboundFilter: (top.bilibili.connector.PlatformInboundMessage) -> Boolean = { false },
     ): QQOfficialAdapter {
         val adapter = QQOfficialAdapter(
             config = QQOfficialConfig(
@@ -1060,6 +1086,7 @@ class QQOfficialAdapterTest {
             groupQpmLimit = groupQpmLimit,
             groupPassiveReplyWindowMillis = groupPassiveReplyWindowMillis,
             privatePassiveReplyWindowMillis = privatePassiveReplyWindowMillis,
+            additionalInboundFilter = additionalInboundFilter,
         )
         adapter.start()
         return adapter

@@ -35,17 +35,21 @@ export function useSettingsFiles(options: UseSettingsFilesOptions = {}) {
   const [botConfig, setBotConfig] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
 
+  /** 刷新原子替换三个配置快照；失败保留原值，并释放加载状态供绑定弹窗提示重试。 */
   const reload = useCallback(async () => {
     setLoading(true)
-    const [nextBiliConfig, nextBiliData, nextBotConfig] = await Promise.all([
-      loadBiliConfig(requestOptions),
-      loadBiliData(requestOptions),
-      loadBotConfig(requestOptions),
-    ])
-    setBiliConfig(nextBiliConfig)
-    setBiliData(nextBiliData)
-    setBotConfig(nextBotConfig)
-    setLoading(false)
+    try {
+      const [nextBiliConfig, nextBiliData, nextBotConfig] = await Promise.all([
+        loadBiliConfig(requestOptions),
+        loadBiliData(requestOptions),
+        loadBotConfig(requestOptions),
+      ])
+      setBiliConfig(nextBiliConfig)
+      setBiliData(nextBiliData)
+      setBotConfig(nextBotConfig)
+    } finally {
+      setLoading(false)
+    }
   }, [requestOptions])
 
   useEffect(() => {
@@ -153,7 +157,11 @@ function patchSnapshotFields(
   if (!snapshot) {
     return snapshot
   }
-  const fields = Array.isArray(snapshot.fields) ? snapshot.fields as ConfigSnapshotField[] : []
+  const fields = Array.isArray(snapshot.fields) ? [...snapshot.fields as ConfigSnapshotField[]] : []
+  // 旧快照可能省略 nullable 管理员字段，首次保存时补齐键，避免回显退回旧 subject。
+  if (Object.prototype.hasOwnProperty.call(values, 'admin') && !fields.some((field) => field.key === 'admin')) {
+    fields.push({key: 'admin'})
+  }
   const nextFields = fields.map((field) => ({
     ...field,
     value: Object.prototype.hasOwnProperty.call(values, String(field.key || ''))

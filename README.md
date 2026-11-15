@@ -362,25 +362,35 @@ chmod +x gradlew
 ./gradlew shadowJar
 ```
 
-产物位于 `build/libs/hoshimi-cat-bot-<版本>.jar`。注意 `shadowJar` 会依次触发 WebUI 前端的 `npm install` 与 `npm run build`，并把产物输出到 `src/main/resources/webui/react`。
+产物位于 `build/libs/hoshimi-cat-bot-<版本>.jar`。注意 `shadowJar` 会依次触发 WebUI 前端的 `npm ci` 与 `npm run build`，并把产物输出到 `src/main/resources/webui/react`。
 
 **第 3 步（可选）：构建平台发行包**
 
 ```bash
-# Windows 发行包
-.\gradlew.bat windowsReleaseDistZip
+# Windows 完整包 / 测试包
+.\gradlew.bat fullPackage
+.\gradlew.bat testPackage
 
-# Linux 发行包
+# Linux 完整包 / 测试包
+./gradlew fullPackage
+./gradlew testPackage
+
+# 也可以直接指定平台任务
+.\gradlew.bat windowsReleaseDistZip
 ./gradlew linuxReleaseDistTar
 
-# Windows 交叉打包 Linux 发行包
+# Windows 交叉打包 Linux 完整包
 .\gradlew.bat linuxReleaseDistTar -PlinuxJdkHome=C:\path\to\jdk-17-linux-x64
 ```
 
 发行包输出到 `build/distributions/`：
 
-- Windows：`hoshimi-cat-bot-windows-x64-v<版本>.zip`
-- Linux：`hoshimi-cat-bot-linux-x64-v<版本>.tar.gz`
+- Windows 完整包：`hoshimi-cat-bot-windows-x64-v<版本>.zip`
+- Linux 完整包：`hoshimi-cat-bot-linux-x64-v<版本>.tar.gz`
+- Windows 测试包：`hoshimi-cat-bot-windows-x64-test-v<版本>.zip`
+- Linux 测试包：`hoshimi-cat-bot-linux-x64-test-v<版本>.tar.gz`
+
+完整包内置 jlink 精简运行时，目标机器不需要安装 JDK。测试包不内置运行时，目标机器需要安装 JDK 17；解压后同样通过 `bin\start.bat` 或 `bin/start.sh` 启动。
 
 `linuxJdkHome` 必须指向已解压的 Linux x64 JDK 17 根目录（目录下应存在 `release` 与 `jmods`），也可以用 `LINUX_JDK_HOME` 环境变量替代该参数。
 
@@ -1438,6 +1448,10 @@ templateConfig:
 
 # 打包
 ./gradlew shadowJar
+
+# 完整包 / 测试包
+./gradlew fullPackage
+./gradlew testPackage
 ```
 
 **前端**

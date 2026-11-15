@@ -19,7 +19,7 @@ object FirstRunService {
 
         BiliBiliBot.logger.info("首次运行检查: 检测到 first_run_flag=0，准备发送欢迎消息...")
 
-        val adminContact = BiliConfigManager.config.normalizedAdminSubject()?.let(::parsePlatformContact)
+        val adminContact = ConfigManager.resolvedAdminSubject()?.let(::parsePlatformContact)
         if (adminContact == null) {
             BiliBiliBot.logger.warn("首次运行检查：未配置管理员联系人，无法发送欢迎消息")
             return

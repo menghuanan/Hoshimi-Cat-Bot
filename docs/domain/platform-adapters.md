@@ -162,3 +162,7 @@
 - [ ] 声明 `declaredCapabilities()` 并实现运行时 guard。
 - [ ] 增加 connector、capability、message gateway 回归测试。
 - [ ] 更新本文件、[`../architecture/decisions/adr-001-platform-adapter.md`](../architecture/decisions/adr-001-platform-adapter.md) 和 [`../modules/connector.md`](../modules/connector.md)。
+
+### 管理员绑定门禁补充
+
+官方入站门禁额外允许装配层谓词精确匹配的限时私聊绑定代码；群消息和普通文本仍遵守原过滤规则。中立消息 metadata 携带 app_id，服务校验来源应用后从 senderContact 取得私聊 OpenID。候选适配器不写配置，绑定及生命周期见 service 模块。

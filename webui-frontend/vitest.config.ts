@@ -4,7 +4,8 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'jsdom',
-    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+    // 运行时守卫使用 node:test 独立执行，不加载浏览器 jsdom 环境。
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**', 'scripts/**'],
     globals: false,
     setupFiles: ['./src/test/setup.ts'],
   },

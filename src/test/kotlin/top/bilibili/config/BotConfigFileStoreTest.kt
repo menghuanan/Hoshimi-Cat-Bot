@@ -12,6 +12,19 @@ import kotlin.test.assertTrue
 class BotConfigFileStoreTest {
     private val tempRoot: Path = Files.createTempDirectory("bot-config-store")
 
+    /** 官方超管在 canonical 写回、空值和旧配置兼容加载中都必须保留正确语义。 */
+    @Test
+    fun `official admin survives canonical round trip and accepts missing or empty values`() {
+        val store = BotConfigFileStore(tempRoot.resolve("admin-round-trip").toFile())
+        for (admin in listOf(null, "", "user_OpenID_123")) {
+            store.save(BotConfig(admin = admin, firstRunFlag = 7))
+            assertEquals(admin, store.load().admin)
+            assertEquals(7, store.load().firstRunFlag)
+        }
+        Files.writeString(store.configFile().toPath(), "admin:\n", StandardCharsets.UTF_8)
+        assertEquals(null, store.load().admin)
+    }
+
     @AfterTest
     fun cleanup() {
         tempRoot.toFile().deleteRecursively()

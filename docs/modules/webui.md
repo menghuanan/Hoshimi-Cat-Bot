@@ -144,3 +144,9 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 - [ ] 新配置、数据结构、资源、协程、客户端、缓存、channel 或 native 对象是否有明确生命周期和归属边界？
 - [ ] 新外部行为是否同步更新相关 architecture、config、resources 或 development 文档？
 - [ ] 新测试是否只验证源码行为或产物，不复制项目文档内容？
+
+## 官方 QQ 快速绑定 API
+
+`POST /api/qq-admin-binding` 创建或复用等待会话，需要 session 与 CSRF；已有管理员、非官方平台或服务未启动时返回 409。`GET /api/qq-admin-binding/{sessionId}` 需要 session，返回 `sessionId/code/expiresAtEpochMillis/phase`，phase 为 WAITING、SUCCEEDED、EXPIRED 或 FAILED；未知会话返回 404。响应均为 no-store，审计不记录代码、OpenID 或应用密钥。
+
+官方超管的显式编辑经 `WebUiBotConfigWriteRequestDto.admin` 保存：缺省保留，空串清空，非空值仅接受单个 OpenID。旧 BiliConfig 管理员 DTO 保留兼容，但官方设置页改写 bot.yml；OneBot11 不变。绑定与配置热重载共用事务锁，绑定后前端必须刷新配置快照及 token。验证入口：`WebUiQQAdminBindingRoutesTest`。

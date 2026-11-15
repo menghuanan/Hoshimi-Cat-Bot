@@ -106,6 +106,7 @@ data class WebUiGroupAdminConfigWriteDto(
 /**
  * `bot.yml` 写请求保持文件级独立边界；空 token/appSecret 值表示保留后端当前敏感配置。
  * message_format 缺省时由后端规范化，admins 缺省时表示本次保存不修改管理员配置。
+ * admin 缺省保留现值；官方 QQ 显式空串清除超级管理员，非空值是私聊 user_openid。
  */
 @Serializable
 data class WebUiBotConfigWriteRequestDto(
@@ -133,4 +134,5 @@ data class WebUiBotConfigWriteRequestDto(
     val webUiStaticDir: String = "",
     val targets: List<WebUiTargetConfigWriteDto> = emptyList(),
     val admins: List<WebUiGroupAdminConfigWriteDto>? = null,
+    val admin: String? = null,
 )

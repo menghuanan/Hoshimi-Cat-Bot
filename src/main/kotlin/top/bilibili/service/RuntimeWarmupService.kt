@@ -1,6 +1,7 @@
 package top.bilibili.service
 
 import kotlinx.coroutines.withTimeout
+import top.bilibili.config.ConfigManager
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.api.getLive
@@ -187,7 +188,7 @@ object RuntimeWarmupService {
             BiliData.bangumi.values.forEach { bangumi ->
                 addAll(bangumi.contacts)
             }
-            BiliConfigManager.config.normalizedAdminSubject()?.let { adminSubject ->
+            ConfigManager.resolvedAdminSubject()?.let { adminSubject ->
                 add(adminSubject)
             }
         }

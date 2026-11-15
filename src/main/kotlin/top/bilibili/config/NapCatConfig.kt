@@ -164,6 +164,8 @@ data class PlatformConfig(
 @Serializable
 data class BotConfig(
     val platform: PlatformConfig = PlatformConfig(),
+    // QQ 官方超级管理员 user_openid；null 兼容旧 BiliConfig，显式空串表示尚未绑定。
+    val admin: String? = null,
     // Legacy OneBot11 config. Retained for backward-compatible config loading.
     val napcat: NapCatConfig = NapCatConfig(),
     // WebUI 运行时配置只描述本地管理面的启动行为，不承载业务配置读写职责。
@@ -174,6 +176,17 @@ data class BotConfig(
     @SerialName("first_run_flag")
     var firstRunFlag: Int = 0,
 ) {
+    /** 官方平台优先读取 bot.yml 的 OpenID；缺省字段才回退旧私聊 subject，不跨平台转换身份。 */
+    fun resolvedAdminSubject(legacySubject: String?): String? {
+        if (selectedPlatformType() != PlatformType.QQ_OFFICIAL) return legacySubject
+        if (admin != null) {
+            return admin.trim().takeIf(::isValidOfficialAdminId)?.let { "qq_official:private:$it" }
+        }
+        return legacySubject?.takeIf {
+            it.startsWith("qq_official:private:") && isValidOfficialAdminId(it.removePrefix("qq_official:private:"))
+        }
+    }
+
     /**
      * 返回当前启用的平台类型。
      */
@@ -262,6 +275,10 @@ data class BotConfig(
         }
     }
 }
+
+/** 管理员 OpenID 必须是单个非空标识，避免误把群 subject、空白或其它命名空间写成私聊身份。 */
+fun isValidOfficialAdminId(value: String): Boolean =
+    value.isNotBlank() && ':' !in value && value.none(Char::isWhitespace)
 
 /**
  * 将适配器枚举转换为配置文件中持久化使用的字符串。

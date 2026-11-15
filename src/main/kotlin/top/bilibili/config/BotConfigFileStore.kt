@@ -161,6 +161,7 @@ private data class BotConfigDecodeResult(
 @Serializable
 private data class BotConfigCompatDocument(
     val platform: PlatformCompatDocument = PlatformCompatDocument(),
+    val admin: String? = null,
     val napcat: NapCatConfig = NapCatConfig(),
     val webui: top.bilibili.webui.config.WebUiConfig = top.bilibili.webui.config.WebUiConfig(),
     val targets: MutableList<TargetConfig> = mutableListOf(),
@@ -174,6 +175,7 @@ private data class BotConfigCompatDocument(
     fun toLoadResult(sourceText: String): BotConfigDecodeResult {
         val runtimeConfig = BotConfig(
             platform = platform.toRuntimeConfig(),
+            admin = admin,
             napcat = napcat,
             webui = webui,
             targets = targets,
@@ -224,6 +226,7 @@ private data class PlatformCompatDocument(
 @Serializable
 private data class CanonicalBotConfigDocument(
     val platform: PlatformConfig = PlatformConfig(),
+    val admin: String? = null,
     @kotlinx.serialization.EncodeDefault
     val webui: top.bilibili.webui.config.WebUiConfig = top.bilibili.webui.config.WebUiConfig(),
     val targets: MutableList<TargetConfig> = mutableListOf(),
@@ -244,6 +247,7 @@ private data class CanonicalBotConfigDocument(
             }
             return CanonicalBotConfigDocument(
                 platform = platformConfig,
+                admin = normalized.admin,
                 webui = normalized.webui,
                 targets = normalized.targets,
                 admins = normalized.admins,

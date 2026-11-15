@@ -68,7 +68,7 @@ WebUI 保存链路使用热重载协调器统一处理 `BiliConfig.yml`、`BiliD
 
 `BiliDataRuntimeCoordinator` 是业务数据运行态 mutation 的唯一事务边界：从深快照构建候选，候选成功落盘后才安装。`bot.yml` 仅在文件缺失时生成默认值；已有文件解析失败会保留原件并报告原文件及最近备份位置。Cookie 的冷启动、热重载和回滚都使用完整替换，输入缺失字段会清除旧值。
 
-WebUI 对超级管理员字段采用 patch 语义：`admin`/`adminContact` 未提交时保留 `BiliConfig.yml` 当前值；OneBot11 显式保存同步写入旧数字 `admin` 与 `onebot11:private:<QQ>`，QQ 官方显式保存把旧 `admin` 归零并写入 `qq_official:private:<OpenID>`。平台切换本身不跨命名空间转换管理员标识。
+WebUI 对超级管理员字段采用 patch 语义：`admin`/`adminContact` 未提交时保留 `BiliConfig.yml` 当前值；OneBot11 显式保存同步写入旧数字 `admin` 与 `onebot11:private:<QQ>`。兼容的 BiliConfig API 仍支持把旧 `admin` 归零并写入 `qq_official:private:<OpenID>`；当前官方 QQ 设置页和快速绑定统一保存 `bot.yml.admin`。平台切换本身不跨命名空间转换管理员标识。
 
 ## 资源与生命周期
 
@@ -112,3 +112,9 @@ Config 模块拥有配置文件和业务数据文件的写入权，但不拥有�
 - [ ] 新配置、数据结构、资源、协程、客户端、缓存、channel 或 native 对象是否有明确生命周期和归属边界？
 - [ ] 新外部行为是否同步更新相关 domain、architecture、development 或 operations 文档？
 - [ ] 新测试是否只验证源码行为或产物，不复制项目文档内容？
+
+## 官方 QQ 管理员快速绑定
+
+`bot.yml.admin` 保存官方 QQ 私聊 `user_openid`，与群管理员映射 `admins` 独立。字段缺省或 null 时兼容 `BiliConfig.yml.admin_contact` 中有效的官方私聊 subject；显式空串表示未绑定，空白、错误 subject 和其它平台身份不算有效官方管理员。OneBot11 继续使用原有管理员配置。
+
+权限、管理通知和首次运行提示统一通过 `ConfigManager.resolvedAdminSubject()` 解析。绑定只修改 `admin`，由 `ConfigManager` 原子保存后安装运行态；写盘失败不授予权限。绑定与 WebUI 保存、回滚及显式重载共用 `ConfigManager.withConfigLock`，旧页面 snapshot token 会因绑定写入而失效。新字段不改变 BiliData 版本，不需要迁移或重连平台。

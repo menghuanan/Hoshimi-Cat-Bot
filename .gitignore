@@ -166,3 +166,12 @@ docs/**
 /diagnostics
 
 nul
+
+# 本地评审构建的临时工作目录（Gradle 发行包、JVM 性能数据与 npm 缓存）
+/.tmp/
+
+# Playwright 本地端到端运行产生的失败快照与追踪上下文
+webui-frontend/test-results/
+
+# Windows 重定向误创建的空文件
+_nul

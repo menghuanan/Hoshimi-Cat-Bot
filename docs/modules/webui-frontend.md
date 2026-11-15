@@ -7,6 +7,7 @@
 ## 代码入口
 
 - `webui-frontend/package.json`
+- `webui-frontend/.node-version`、`.npmrc`、`scripts/check-node-version.mjs`：统一构建运行时和安全版本检查。
 - `webui-frontend/vite.config.ts`
 - `webui-frontend/playwright.config.ts`
 - `webui-frontend/vitest.config.ts`
@@ -51,7 +52,7 @@
 - 所有 JSON 请求必须经过 `src/api/http.ts` 的统一入口，unsafe 方法自动携带 CSRF 头。
 - `settings/settingsSchema.ts` 是设置页字段来源；`settings/settingsPayload.ts` 负责把表单值转换为后端 DTO。
 - 设置页一次保存必须把已变更的 `biliConfig`、`biliData` 和 `botConfig` 归并到同一个 batch payload；`BiliData.yml` 的链接解析黑名单按 textarea 非空行转换为 `linkParseBlacklistContacts` 数组。
-- 超级管理员输入以 `platform.type` 为准：OneBot11 系列显示正整数 QQ 并写出 `onebot11:private:<QQ>`，QQ 官方显示 OpenID 并写出 `qq_official:private:<OpenID>`；只有用户实际编辑该字段时才提交 `admin`/`adminContact`，平台切换和其他设置保存不得自动转换或覆盖原 subject。
+- 超级管理员输入以 `platform.type` 为准：OneBot11 系列显示正整数 QQ 并向 BiliConfig 提交 `admin` 和 `onebot11:private:<QQ>`；QQ 官方显示 OpenID 并提交 `botConfig.admin`，后端解析为 `qq_official:private:<OpenID>`。只有用户实际编辑该字段时才提交管理员值，平台切换和其他设置保存不得自动转换或覆盖原身份。
 - 登录成功后只由 HttpOnly session cookie 维持认证；除改密外，设置、订阅、扫码登录和管理动作不得接收、缓存或转发 WebUI 登录密码，也不得把密码写入 `localStorage`、`sessionStorage`、cookie 或 URL。
 - B站扫码创建依赖当前 session 与 CSRF；浏览器不得读取或拼装二维码 URL、key、Cookie 或回调地址，只能渲染后端返回的 PNG Base64 和脱敏 phase。
 - `useSettingsFiles.saveBatch()` 只在 job 到达 `APPLIED` 后清理编辑态；`FAILED` 必须保留用户输入并展示后端 message，`webUiRedirectUrl` 需要作为新 WebUI 地址提示给用户。
@@ -88,6 +89,8 @@
 ## 配置与数据
 
 - `package.json` scripts 控制开发、构建、测试、预览和 E2E 入口。
+- `.node-version` 固定 CI/Release 使用的 Node 22.23.4；`package.json.engines.node` 只接受已修复的 22、24、26 分支（下限分别为 22.23.4、24.22.1、26.12.1）。后续安全公告需要同步更新该下限和固定版本。
+- npm 安装启用 `engine-strict`；所有工具命令及 Gradle 依赖安装前均执行无第三方依赖的版本检查。`npm run test:node` 验证旧版本、边界补丁、预发布和未批准分支的拒绝行为。
 - `vite.config.ts` 固定 `src` 为根目录，并把构建产物输出到后端静态资源目录。
 - `playwright.config.ts` 只针对 bundled runtime 的 mock 路径运行测试。
 - 前端页面只处理 API DTO、表单 payload 和浏览器状态，不写 `bot.yml`、`BiliConfig.yml` 或 `BiliData.yml`。
@@ -133,3 +136,11 @@
 - [ ] 新 API、payload、router、样式或测试是否保持与后端契约同步？
 - [ ] 新静态产物是否仍由 Vite 构建生成，而不是手工维护？
 - [ ] 新测试是否只验证前端行为和 bundled 产物，不复制项目文档内容？
+
+## 官方 QQ 快速绑定
+
+对接配置选择官方 QQ，或已保存官方平台的管理员分区，显示“快速绑定”按钮。平台连接参数须先保存才能生成可用代码。`QQAdminBindingModal` 使用现有 ModalPortal、配色、边框和遮罩，提示添加好友并私聊发送代码，每 2 秒串行查询状态；网络错误保留原会话，终态或卸载停止轮询，迟到响应不得更新新视图。Escape、焦点限制与关闭后的焦点恢复均由弹窗管理。关闭只关闭视图，共享代码仍按原有效期失效。
+
+成功后刷新真实配置快照与 token，回显 `bot.yml.admin`，其它未保存输入保留。官方管理员的手动编辑同样只提交 bot.yml.admin；新字段缺省时回显旧官方 subject，OneBot11 保留原管理员保存语义。验证包括 `QQAdminBindingModal.test.tsx`、App 测试和 bundled runtime 快速绑定场景。
+
+绑定已成功但配置刷新失败时，弹窗保留成功结果并提示刷新页面；配置 hook 必须释放 loading 且保留原快照，不能让设置页永久禁用，也不能重新创建绑定会话。

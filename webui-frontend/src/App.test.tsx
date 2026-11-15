@@ -129,6 +129,61 @@ function collectBotBatchPayloads(): {
 }
 
 describe('webui shell routing', () => {
+  /** 按平台选择显示入口；绑定完成刷新 OpenID/token，并保留用户尚未提交的对接设置。 */
+  it('quick binding refreshes admin and save token without losing pending settings', async () => {
+    let bound = false
+    const batchBodies: Array<Record<string, Record<string, unknown>>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const settingsResponse = createSettingsResponse(url, init, {onBatchBody: (body) => batchBodies.push(body)})
+      if (settingsResponse) return settingsResponse
+      // 模拟已保存的官方平台和绑定后的真实配置快照，不让页面自行推断新管理员。
+      if (url === '/api/config/bot') {
+        return {ok: true, status: 200, json: async () => ({
+          snapshotToken: bound ? 'bound-token' : 'empty-token',
+          fields: [
+            {key: 'platform.type', value: 'qq_official'},
+            {key: 'platform.qqOfficial.appId', value: 'demo-app'},
+            {key: 'admin', value: bound ? 'bound-openid' : ''},
+          ],
+        })}
+      }
+      if (url === '/api/qq-admin-binding') {
+        return {ok: true, status: 200, json: async () => ({
+          sessionId: 'binding', phase: 'WAITING', code: 'QQ-DEMO-CODE', expiresAtEpochMillis: Date.now() + 600_000,
+        })}
+      }
+      if (url === '/api/qq-admin-binding/binding') {
+        bound = true
+        return {ok: true, status: 200, json: async () => ({
+          sessionId: 'binding', phase: 'SUCCEEDED', code: null, expiresAtEpochMillis: Date.now() + 600_000,
+        })}
+      }
+      return {ok: true, status: 200, json: async () => ({success: true})}
+    }))
+
+    const user = userEvent.setup()
+    renderAtPath('/settings')
+    await screen.findByRole('button', {name: '快速绑定'})
+    await user.selectOptions(screen.getByLabelText('平台类型'), 'onebot11')
+    expect(screen.queryByRole('button', {name: '快速绑定'})).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('平台类型'), 'qq_official')
+    await user.type(screen.getByLabelText('QQ Bot Token'), 'pending-token')
+    await user.click(screen.getByRole('button', {name: '快速绑定'}))
+    expect(await screen.findByText('QQ-DEMO-CODE')).toBeInTheDocument()
+    await screen.findByText('绑定完成，管理员已保存。', {}, {timeout: 4_000})
+    await waitFor(() => expect(screen.getByRole('button', {name: '保存'})).toBeEnabled())
+    await user.click(screen.getByRole('button', {name: /^关闭$/}))
+    expect(screen.getByLabelText('QQ Bot Token')).toHaveValue('pending-token')
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await waitFor(() => expect(batchBodies).toHaveLength(1))
+    expect(batchBodies[0].botConfig).toMatchObject({snapshotToken: 'bound-token', qqOfficialBotToken: 'pending-token'})
+    expect(batchBodies[0].botConfig).not.toHaveProperty('admin')
+    await waitFor(() => expect(screen.getByRole('button', {name: '保存'})).toBeEnabled())
+    await user.click(screen.getByRole('button', {name: '管理员', pressed: false}))
+    expect(screen.getByLabelText('超级管理员 OpenID')).toHaveValue('bound-openid')
+  })
+
   /** 扫码登录必须位于 B站配置的 Cookie 下方，并完成二维码弹窗的创建和取消请求。 */
   it('starts and cancels BiliBili qr login below the cookie setting', async () => {
     const requests: Array<{url: string, method: string, body: string}> = []
@@ -819,6 +874,8 @@ describe('webui shell routing', () => {
     expect(await screen.findByText('平台配置')).toBeInTheDocument()
     expect(screen.getByText('WebUI 配置')).toBeInTheDocument()
     expect(screen.getByLabelText('OneBot11 主机')).toBeInTheDocument()
+    // 快速绑定只适用于官方 QQ，不能在 OneBot11 配置下出现。
+    expect(screen.queryByRole('button', {name: '快速绑定'})).not.toBeInTheDocument()
     expect(screen.queryByLabelText('QQ App ID')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('WebUI 主机')).not.toBeInTheDocument()
     expect(screen.getByRole('button', {name: '对接配置'}).parentElement).toHaveClass('justify-start')
@@ -839,6 +896,7 @@ describe('webui shell routing', () => {
     expect(platformGroup?.querySelector('div')).not.toHaveClass('xl:grid-cols-2')
 
     await user.selectOptions(screen.getByLabelText('平台类型'), 'qq_official')
+    expect(screen.getByRole('button', {name: '快速绑定'})).toBeInTheDocument()
     expect(screen.getByLabelText('QQ App ID')).toBeInTheDocument()
     expect(screen.queryByLabelText('OneBot11 主机')).not.toBeInTheDocument()
 
@@ -1334,10 +1392,9 @@ describe('webui shell routing', () => {
     await user.click(screen.getByRole('button', {name: '保存'}))
 
     await waitFor(() => expect(batchBodies).toHaveLength(1))
-    expect(batchBodies[0].biliConfig).toMatchObject({
-      admin: 0,
-      adminContact: 'qq_official:private:next_openid',
-    })
+    // 官方超管显式编辑与快速绑定共用 bot.yml.admin，避免两份管理员配置互相覆盖。
+    expect(batchBodies[0].botConfig).toMatchObject({admin: 'next_openid'})
+    expect(batchBodies[0]).not.toHaveProperty('biliConfig')
     await waitFor(() => expect(screen.getByRole('button', {name: '保存'})).toBeEnabled())
     expect(screen.getByLabelText('超级管理员 OpenID')).toHaveValue('next_openid')
   })

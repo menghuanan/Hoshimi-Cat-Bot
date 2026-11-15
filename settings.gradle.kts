@@ -7,8 +7,8 @@ pluginManagement {
         mavenLocal()
         gradlePluginPortal()
         mavenCentral()
-        // 步骤 2：补充 Kotlin EAP 仓库。
-        maven("https://dl.bintray.com/kotlin/kotlin-eap")
+        // 步骤 2：Kotlin EAP 的 dl.bintray.com 仓库已于 2021 年停止服务，不再参与插件解析。
+        // 当前构建固定使用 Kotlin 2.0.0 正式版，只保留上方稳定仓库，避免过期地址拖慢或阻断干净环境构建。
     }
 }
 rootProject.name = "hoshimi-cat-bot"

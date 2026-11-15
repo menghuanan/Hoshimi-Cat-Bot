@@ -38,16 +38,26 @@
 
 ## 构建约束
 
+- 构建基线固定为 Gradle wrapper 8.5、JDK 17（完整 JDK，包含 `jmods`）和 `webui-frontend/.node-version` 指定的 Node.js；wrapper 通过 `distributionSha256Sum` 校验发行包。
+- `gradle.properties` 中的 `org.gradle.jvmargs` 只影响构建期 Gradle daemon，不进入发行包运行参数；调整时必须同时验证完整包与测试包。
+- 完整包入口为 `./gradlew fullPackage`，按构建机平台产出内置 jlink runtime 的 Windows zip 或 Linux tar.gz。
+- 测试包入口为 `./gradlew testPackage`，产出 `hoshimi-cat-bot-windows-x64-test-v<版本>.zip` 或 `hoshimi-cat-bot-linux-x64-test-v<版本>.tar.gz`，不内置 runtime，要求目标机器安装 JDK 17。
+- 测试包与完整包共用 fat jar、资源和启动脚本；启动脚本在缺少内置 runtime 时回退到目标机器 PATH 上的 `java`，找不到时明确失败。
+- Windows `start.bat` 必须在生成阶段写成 CRLF；LF-only 批处理会让 `cmd.exe` 错拆 `set` 行，导致完整包和测试包都无法启动。
+- 构建机 PATH 未包含 Node.js 时，可用 `-PnodeExecutable=<node 路径>`、`-PnpmExecutable=<npm 路径>` 或 `NODE_EXECUTABLE`、`NPM_EXECUTABLE` 显式指定。
 - Kotlin、依赖和插件升级必须说明兼容影响，并优先运行最小相关测试，再运行完整测试。
 - 新增 Gradle task 必须有清晰输入、输出和是否参与 CI/Release 的说明。
 - 变更 `gradle.properties` 时必须确认 JVM 参数是否只影响构建期，还是也影响运行期。
 - `webui-frontend` 是独立 Node/Vite 工程；`npm run build` 会把 React 静态产物输出到 `src/main/resources/webui/react`，随后再由 Gradle `processResources` 打入后端发行包。
+- CI 和三个 release 构建 job 从 `webui-frontend/.node-version` 安装 Node 22.23.4，并在安装后检查实际运行版本；该基线包含 2026-10-21 Node.js 安全修复。
+- `checkWebUiNodeVersion` 每次执行实际运行时检查，不声明输出缓存；即使依赖或前端产物已是最新状态，也必须先通过检查。Gradle 安装使用 `npm ci`，输入包含 lockfile、`.npmrc`、版本文件和检查脚本。
 - `processResources` 依赖前端构建；干净 checkout 中 Gradle 会先执行 npm 依赖安装，再执行 Vite build。不要假设已有 `node_modules` 或旧静态产物可替代这条链路。
 - 前端依赖、TypeScript、Tailwind、Vite 或 Playwright 升级时，必须同时验证 `npm run lint`、`npm run test`、`npm run build` 和 `npm run test:e2e` 的影响。
 
 ## CI 约束
 
 - CI workflow 必须保持可重复执行，不依赖本地未提交文件。
+- CI 的 `Build Test Package` 阶段执行 `./gradlew testPackage`，验证测试包在没有内置 runtime 时仍可产出并上传归档。
 - 新增缓存必须有 key 失效策略，不能缓存 secrets 或临时诊断输出。
 - 新增矩阵维度必须说明覆盖目的，避免无意义拉长反馈时间。
 - 当前 CI 的 `Check WebUI Frontend` 阶段直接运行 npm 依赖安装、lint 和 Vitest，不直接运行 Vite build 或 Playwright E2E。后续 Gradle `test` 与 `shadowJar` 链路会通过 `processResources` 触发 Vite build；修改 bundled runtime 页面流时必须在本地或专项任务补跑 `npm run test:e2e`。

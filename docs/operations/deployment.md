@@ -4,9 +4,11 @@
 
 ## 构建要求
 
-- JDK 17。
+- JDK 17。构建完整包需要完整 JDK（含 `jmods`）；测试包本身不内置运行时，目标机器也需要 JDK 17。
 - Gradle wrapper。
-- Node.js `^20.19.0` 或 `>=22.12.0` 与 npm，用于 WebUI 前端打包和静态检查；该下限来自当前 Vite 锁定版本。
+- Node.js 22.23.4（CI 固定版本，见 `webui-frontend/.node-version`）与 npm；本地也允许 24.22.1 及以上的 24.x、26.12.1 及以上的 26.x。该安全下限高于 Vite 自身兼容下限，20.x、奇数分支、预发布版本和未知新分支不纳入当前构建支持范围。
+- 安装或切换 Node 后运行 `node --version` 和 `node webui-frontend/scripts/check-node-version.mjs`。不要把 `@types/node` 或 npm 包升级当成 Node 二进制升级；Gradle 会使用当前 PATH 的 Node/npm，安全检查失败时应先切换工具链；PATH 不可控时可用 `-PnodeExecutable`/`-PnpmExecutable` 或 `NODE_EXECUTABLE`/`NPM_EXECUTABLE` 显式指定。
+- 标准 JVM/Docker 发行包不需要 Node；若另外部署 NapCat、LlBot 或 Electron 平台进程，应通过其厂商发行版更新内置 Node，并确认实际嵌入版本或厂商回补证据，不能仅升级宿主 PATH 中的 Node。
 - Kotlin JVM 单模块项目。
 - 主类：`top.bilibili.MainKt`。
 
@@ -20,6 +22,16 @@
 
 ```powershell
 ./gradlew.bat windowsReleaseDistZip linuxReleaseDistTar
+```
+
+统一交付入口：
+
+```powershell
+# 完整包：按构建机平台选择 Windows zip 或 Linux tar.gz，内置 jlink 精简运行时。
+./gradlew.bat fullPackage
+
+# 测试包：按构建机平台产出归档，不内置运行时，目标机器必须安装 JDK 17。
+./gradlew.bat testPackage
 ```
 
 Windows 本地交叉编译 Linux 发行包时，必须额外提供已解压的 Linux x64 JDK 17：
@@ -113,13 +125,17 @@ WebUI 默认关闭并监听 `127.0.0.1:18080`，仓库 Compose 默认不映射�
 
 Gradle 会生成：
 
-- Windows：`hoshimi-cat-bot-windows-x64-v<version>.zip`
-- Linux：`hoshimi-cat-bot-linux-x64-v<version>.tar.gz`
+- Windows 完整包：`hoshimi-cat-bot-windows-x64-v<version>.zip`
+- Linux 完整包：`hoshimi-cat-bot-linux-x64-v<version>.tar.gz`
+- Windows 测试包：`hoshimi-cat-bot-windows-x64-test-v<version>.zip`
+- Linux 测试包：`hoshimi-cat-bot-linux-x64-test-v<version>.tar.gz`
+
+完整包内置 jlink 精简运行时；测试包不内置运行时，只携带 fat jar、资源和启动脚本，解压后需要目标机器 PATH 中提供 JDK 17。
 
 Windows `start.bat`：
 
 - `chcp 65001`
-- 优先使用发行包内 `runtime\bin\java.exe`，不再依赖系统 PATH 中的 Java
+- 完整包优先使用 `runtime\bin\java.exe`；测试包没有内置 runtime 时回退到系统 PATH 中的 `java`，找不到时明确失败
 - `-Xms64m -Xmx160m`
 - Metaspace 初始触发点 16m、上限 64m，与 Docker 保持一致
 - CodeCache 初始 32m、保留上限 48m，并启用 flushing、2 个编译线程和 10000 编译阈值
@@ -129,7 +145,7 @@ Windows `start.bat`：
 
 Linux `start.sh`：
 
-- 优先使用发行包内 `./runtime/bin/java`，不再依赖系统 PATH 中的 Java
+- 完整包优先使用 `./runtime/bin/java`；测试包没有内置 runtime 时回退到系统 PATH 中的 `java`，找不到时以状态码 1 退出
 - 启动前探测 `libjemalloc.so.2`
 - jemalloc 可用时会自动启用并设置 `LD_PRELOAD` 和默认 `MALLOC_CONF`
 - 缺少 jemalloc 时，交互终端会询问是否通过受支持的系统包管理器安装；拒绝安装、非交互运行、安装失败或安装后仍不可用都会以状态码 1 退出

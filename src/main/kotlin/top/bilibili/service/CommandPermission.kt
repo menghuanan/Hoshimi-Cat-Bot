@@ -14,7 +14,7 @@ object CommandPermission {
      * 使用平台联系人判断超级管理员，兼容旧 OneBot11 数字管理员配置。
      */
     fun isSuperAdmin(user: PlatformContact): Boolean {
-        val adminSubject = BiliConfigManager.config.normalizedAdminSubject() ?: return false
+        val adminSubject = ConfigManager.resolvedAdminSubject() ?: return false
         return subjectsEquivalent(user.toSubject(), adminSubject)
     }
 

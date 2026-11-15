@@ -1,6 +1,7 @@
 package top.bilibili.config
 
 import org.slf4j.LoggerFactory
+import top.bilibili.BiliConfigManager
 import top.bilibili.core.deepCopyForRuntimeSnapshot
 import java.io.File
 
@@ -14,12 +15,14 @@ object ConfigManager {
     // bot.yml 只负责平台接入配置；旧业务配置与运行数据仍由 BiliConfigManager 管理。
     private val store = BotConfigFileStore(configDir)
 
+    @Volatile
     lateinit var botConfig: BotConfig
         private set
 
     /**
      * 初始化运行期配置，并在必要时创建或迁移 `bot.yml`。
      */
+    @Synchronized
     fun init() {
         if (!configDir.exists()) {
             configDir.mkdirs()
@@ -54,6 +57,7 @@ object ConfigManager {
     /**
      * 将当前运行期配置规范化后保存到磁盘，并返回真实落盘结果。
      */
+    @Synchronized
     fun saveConfig(): Boolean {
         return saveConfig(botConfig)
     }
@@ -62,6 +66,7 @@ object ConfigManager {
      * 将指定运行期配置规范化后保存到磁盘，供外部 owner 入口统一写回 `bot.yml`。
      * 只有磁盘写入成功后才替换运行态快照，避免出现“内存已更新、文件未提交”的半提交状态。
      */
+    @Synchronized
     fun saveConfig(configToSave: BotConfig): Boolean {
         return try {
             val normalizedConfig = configToSave.normalizedBotConfig()
@@ -78,6 +83,7 @@ object ConfigManager {
     /**
      * 只把候选 bot.yml 写入磁盘，不替换 ConfigManager.botConfig。
      */
+    @Synchronized
     fun persistConfigSnapshot(configSnapshot: BotConfig): Boolean {
         return try {
             store.save(configSnapshot.normalizedBotConfig())
@@ -92,13 +98,22 @@ object ConfigManager {
     /**
      * 导出当前 bot.yml 运行态深度快照，供热重载代际构建和失败回滚使用。
      */
+    @Synchronized
     fun runtimeSnapshot(): BotConfig {
         return botConfig.deepCopyForRuntimeSnapshot()
     }
 
+    /** 统一解析运行期超管；legacySubject 默认取旧配置，未初始化 bot.yml 时仍兼容旧配置。 */
+    fun resolvedAdminSubject(legacySubject: String? = BiliConfigManager.config.normalizedAdminSubject()): String? =
+        if (::botConfig.isInitialized) botConfig.resolvedAdminSubject(legacySubject) else legacySubject
+
+    /** 配置事务共用此监视器，绑定与 WebUI 的快照、写盘、安装及回滚不能交错。 */
+    fun <T> withConfigLock(action: () -> T): T = synchronized(this) { action() }
+
     /**
      * 安装已验证的 bot.yml 运行态快照；磁盘写入仍只能通过 saveConfig 完成。
      */
+    @Synchronized
     fun installRuntimeSnapshot(configSnapshot: BotConfig) {
         botConfig = configSnapshot.normalizedBotConfig().deepCopyForRuntimeSnapshot()
     }
@@ -106,6 +121,7 @@ object ConfigManager {
     /**
      * 重新执行一次完整的配置初始化流程。
      */
+    @Synchronized
     fun reload() {
         logger.info("正在重新加载配置...")
         init()

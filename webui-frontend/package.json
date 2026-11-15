@@ -3,13 +3,19 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.23.4 <23 || >=24.22.1 <25 || >=26.12.1 <27"
+  },
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
-    "test": "vitest run",
-    "test:e2e": "npm run build && playwright test",
-    "lint": "eslint .",
-    "preview": "vite preview --host 127.0.0.1"
+    "check:node": "node scripts/check-node-version.mjs",
+    "preinstall": "node scripts/check-node-version.mjs",
+    "test:node": "node --test scripts/check-node-version.test.mjs",
+    "dev": "node scripts/check-node-version.mjs && vite --host 127.0.0.1",
+    "build": "node scripts/check-node-version.mjs && tsc -b && vite build",
+    "test": "node scripts/check-node-version.mjs && npm run test:node && vitest run",
+    "test:e2e": "node scripts/check-node-version.mjs && npm run build && playwright test",
+    "lint": "node scripts/check-node-version.mjs && eslint .",
+    "preview": "node scripts/check-node-version.mjs && vite preview --host 127.0.0.1"
   },
   "dependencies": {
     "react": "^19.2.6",

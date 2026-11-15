@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { useLogs } from './useLogs'
 import { useRuntimeSummary } from './useRuntimeSummary'
@@ -15,6 +15,25 @@ const createJsonResponse = (status: number, payload: unknown) => ({
 const renderDomainHook = (callback: Parameters<typeof renderHook>[0]) => renderHook(callback)
 
 describe('webui domain hooks', () => {
+  /** 绑定后的刷新失败保留原快照并解除加载状态，后续重试仍能取到新 token。 */
+  it('useSettingsFiles releases loading after a failed refresh and allows retry', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {snapshotToken: 'before-binding', fields: []}))
+    const {result} = renderHook(() => useSettingsFiles({fetchImpl}))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    fetchImpl.mockRejectedValueOnce(new Error('offline'))
+    await act(async () => {
+      await expect(result.current.reload()).rejects.toThrow('offline')
+    })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.botConfig?.snapshotToken).toBe('before-binding')
+
+    fetchImpl.mockResolvedValue(createJsonResponse(200, {snapshotToken: 'after-binding', fields: []}))
+    await act(() => result.current.reload())
+    expect(result.current.loading).toBe(false)
+    expect(result.current.botConfig?.snapshotToken).toBe('after-binding')
+  })
+
   it('useRuntimeSummary should call the runtime summary endpoint', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(createJsonResponse(200, {appVersion: '1.0.0'}))
 

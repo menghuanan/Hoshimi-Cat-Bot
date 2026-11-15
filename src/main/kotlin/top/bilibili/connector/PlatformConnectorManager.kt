@@ -17,10 +17,12 @@ import top.bilibili.connector.onebot11.vendors.napcat.NapCatAdapter
 import top.bilibili.connector.onebot11.vendors.napcat.NapCatClient
 import top.bilibili.connector.qqofficial.QQOfficialAdapter
 
+/** 平台生命周期入口；额外入站谓词由装配层注入，仅接触平台中立消息。 */
 class PlatformConnectorManager(
     config: BotConfig,
     private val adapterFactory: (() -> PlatformAdapter)? = null,
     private val bridgeScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val additionalInboundFilter: (PlatformInboundMessage) -> Boolean = { false },
 ) {
     private val lifecycleLock = Any()
     private var activeConfig: BotConfig = config
@@ -230,7 +232,10 @@ class PlatformConnectorManager(
                 val oneBotConfig = config.selectedOneBot11Config()
                 GenericOneBot11Adapter(KtorOneBot11Transport(oneBotConfig))
             }
-            PlatformAdapterKind.QQ_OFFICIAL -> QQOfficialAdapter(config.platform.qqOfficial)
+            PlatformAdapterKind.QQ_OFFICIAL -> QQOfficialAdapter(
+                config.platform.qqOfficial,
+                additionalInboundFilter = additionalInboundFilter,
+            )
         }
     }
 

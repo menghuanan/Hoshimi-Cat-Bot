@@ -53,6 +53,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
+/** 官方协议转换保留原有门禁，仅允许装配层注入当前绑定消息的额外放行谓词。 */
 internal class QQOfficialAdapter(
     private val config: QQOfficialConfig = QQOfficialConfig(),
     internal val transport: QQOfficialTransport = KtorQQOfficialTransport(),
@@ -64,6 +65,7 @@ internal class QQOfficialAdapter(
     internal val groupQpmLimit: Int = DEFAULT_GROUP_QPM_LIMIT,
     internal val groupPassiveReplyWindowMillis: Long = DEFAULT_GROUP_PASSIVE_REPLY_WINDOW_MILLIS,
     internal val privatePassiveReplyWindowMillis: Long = DEFAULT_PRIVATE_PASSIVE_REPLY_WINDOW_MILLIS,
+    private val additionalInboundFilter: (PlatformInboundMessage) -> Boolean = { false },
 ) : PlatformAdapter {
     private val logger = LoggerFactory.getLogger(QQOfficialAdapter::class.java)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -750,7 +752,8 @@ internal class QQOfficialAdapter(
             rawPayload = frame,
             eventId = frame.id,
             messageId = message.id.ifBlank { null },
-            metadata = buildOpenIdMetadata(groupOpenId, memberOpenId, userOpenId, openId),
+            // 应用身份随消息传递，热切换期间旧应用的在途消息不能参与新应用绑定。
+            metadata = buildOpenIdMetadata(groupOpenId, memberOpenId, userOpenId, openId) + ("app_id" to config.appId),
         )
     }
 
@@ -787,6 +790,7 @@ internal class QQOfficialAdapter(
 
     /**
      * QQ 官方适配层只向业务层投递登录入口和 B 站链接消息，其他命令在这里完成截断。
+     * 唯一额外入口是注入谓词确认的限时管理员绑定私聊。
      */
     private fun recordInboundEventIfAllowed(inbound: PlatformInboundMessage): Boolean {
         if (shouldForwardInboundMessage(inbound)) {
@@ -803,8 +807,11 @@ internal class QQOfficialAdapter(
 
     /**
      * 精确 `/login` 仅在私聊或群 AT 场景下放行；其他斜杠命令继续阻断，非命令文本只有命中 B 站链接预筛时才继续下传。
+     * 绑定谓词仅扩展当前绑定码，不放宽其它普通消息的门禁。
      */
     private fun shouldForwardInboundMessage(inbound: PlatformInboundMessage): Boolean {
+        // 绑定尚无管理员权限，因此必须在普通命令过滤之前允许当前一次性代码通过。
+        if (inbound.chatType == PlatformChatType.PRIVATE && additionalInboundFilter(inbound)) return true
         val normalizedText = inbound.messageText.trim()
         if (normalizedText == QQ_OFFICIAL_ALLOWED_LOGIN_COMMAND) {
             // 群聊登录命令必须来自 AT 事件；私聊没有 AT 语义，保留直接登录入口。

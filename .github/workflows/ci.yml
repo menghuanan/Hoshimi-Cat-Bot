@@ -38,9 +38,13 @@ jobs:
     - name: Set up Node.js 22
       uses: actions/setup-node@v6
       with:
-        node-version: '22'
+        node-version-file: 'webui-frontend/.node-version'
         cache: 'npm'
         cache-dependency-path: webui-frontend/package-lock.json
+
+    # 在任何构建工具启动前校验实际 Node 版本，拒绝缓存中未修复的运行时。
+    - name: Verify Node.js security baseline
+      run: node webui-frontend/scripts/check-node-version.mjs
 
     # 步骤 4：初始化 Gradle 环境。
     - name: Setup Gradle
@@ -108,7 +112,14 @@ jobs:
         set -o pipefail
         ./gradlew shadowJar --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/package.log
 
-    # 步骤 10：发布构建摘要。
+    # 步骤 10：构建测试包，验证不依赖 jlink runtime 的测试交付链路。
+    - name: Build Test Package
+      id: gradle_test_package
+      run: |
+        set -o pipefail
+        ./gradlew testPackage --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/test-package.log
+
+    # 步骤 11：发布构建摘要。
     - name: Publish CI Summary
       if: always()
       run: |
@@ -121,11 +132,12 @@ jobs:
           echo "- Compile step: ${{ steps.gradle_compile.outcome }}"
           echo "- Test step: ${{ steps.gradle_test.outcome }}"
           echo "- Package step: ${{ steps.gradle_package.outcome }}"
+          echo "- Test package step: ${{ steps.gradle_test_package.outcome }}"
           echo ""
           echo "### Diagnostic files"
           find diagnostics/ci build/reports build/test-results -type f 2>/dev/null | sed 's#^#- #'
         } >> "$GITHUB_STEP_SUMMARY"
-    # 步骤 11：上传诊断文件。
+    # 步骤 12：上传诊断文件。
     - name: Upload CI Diagnostics
       if: always()
       uses: actions/upload-artifact@v7
@@ -138,11 +150,19 @@ jobs:
           build/tmp/**
         retention-days: 7
         if-no-files-found: warn
-    # 步骤 12：仅在成功时上传构建产物。
+    # 步骤 13：仅在成功时上传构建产物。
     - name: Upload Build Artifact
       if: success()
       uses: actions/upload-artifact@v7
       with:
         name: hoshimi-cat-bot-artifacts.zip
         path: build/libs/*.jar
+        retention-days: 7
+    # 步骤 14：上传测试包，便于在不安装 jlink 的机器上直接验证交付链路。
+    - name: Upload Test Package
+      if: success()
+      uses: actions/upload-artifact@v7
+      with:
+        name: hoshimi-cat-bot-test-package
+        path: build/distributions/*test*
         retention-days: 7

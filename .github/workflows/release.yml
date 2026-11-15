@@ -48,9 +48,13 @@ jobs:
       - name: Set up Node.js 22
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version-file: "webui-frontend/.node-version"
           cache: npm
           cache-dependency-path: webui-frontend/package-lock.json
+
+      # 在任何构建工具启动前校验实际 Node 版本，拒绝缓存中未修复的运行时。
+      - name: Verify Node.js security baseline
+        run: node webui-frontend/scripts/check-node-version.mjs
 
       # 步骤 4：初始化 Gradle 环境。
       - name: Setup Gradle
@@ -157,9 +161,13 @@ jobs:
       - name: Set up Node.js 22
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version-file: "webui-frontend/.node-version"
           cache: npm
           cache-dependency-path: webui-frontend/package-lock.json
+
+      # 在任何构建工具启动前校验实际 Node 版本，拒绝缓存中未修复的运行时。
+      - name: Verify Node.js security baseline
+        run: node webui-frontend/scripts/check-node-version.mjs
 
       # 步骤 4：初始化 Gradle 环境。
       - name: Setup Gradle
@@ -221,9 +229,13 @@ jobs:
       - name: Set up Node.js 22
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version-file: "webui-frontend/.node-version"
           cache: npm
           cache-dependency-path: webui-frontend/package-lock.json
+
+      # 在任何构建工具启动前校验实际 Node 版本，拒绝缓存中未修复的运行时。
+      - name: Verify Node.js security baseline
+        run: node webui-frontend/scripts/check-node-version.mjs
 
       # 步骤 4：初始化 Gradle 环境。
       - name: Setup Gradle

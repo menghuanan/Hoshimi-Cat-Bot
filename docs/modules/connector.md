@@ -112,3 +112,7 @@ Connector 只读取 `bot.yml` 中的平台配置、targets 和管理员配置，
 - [ ] 新配置、数据结构、资源、协程、客户端、缓存、channel 或 native 对象是否有明确生命周期和归属边界？
 - [ ] 新外部行为是否同步更新相关 domain、architecture、development 或 operations 文档？
 - [ ] 新测试是否只验证源码行为或产物，不复制项目文档内容？
+
+### 管理员绑定门禁补充
+
+官方入站门禁额外允许装配层谓词精确匹配的限时私聊绑定代码；群消息和普通文本仍遵守原过滤规则。中立消息 metadata 携带 app_id，服务校验来源应用后从 senderContact 取得私聊 OpenID。候选适配器不写配置，绑定及生命周期见 service 模块。

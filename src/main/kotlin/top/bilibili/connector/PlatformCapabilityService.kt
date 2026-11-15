@@ -1,5 +1,6 @@
 package top.bilibili.connector
 
+import top.bilibili.config.ConfigManager
 import top.bilibili.BiliConfigManager
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.service.FeatureSwitchService
@@ -82,8 +83,7 @@ object PlatformCapabilityService {
         if (!FeatureSwitchService.canSendManagedAdminNotice(subject = subject)) {
             return false
         }
-        val adminContact = BiliConfigManager.config
-            .normalizedAdminSubject()
+        val adminContact = ConfigManager.resolvedAdminSubject()
             ?.let(::parsePlatformContact)
             ?: return false
         return canSendMessageTo(adminContact)

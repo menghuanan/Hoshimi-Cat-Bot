@@ -56,6 +56,12 @@ class WebUiConfigHotReloadApplyService(
     suspend fun apply(
         jobId: String,
         request: WebUiConfigBatchSaveRequestDto,
+    ): WebUiConfigHotReloadJobDto = ConfigManager.withConfigLock { applyLocked(jobId, request) }
+
+    /** 从捕获基线到回滚共用配置事务锁，防止已成功绑定的管理员被旧候选快照覆盖。 */
+    private fun applyLocked(
+        jobId: String,
+        request: WebUiConfigBatchSaveRequestDto,
     ): WebUiConfigHotReloadJobDto {
         val oldSnapshot = captureRuntimeSnapshot()
         val requestedFiles = request.fileKinds()
@@ -121,6 +127,8 @@ class WebUiConfigHotReloadApplyService(
                 ),
             )
         }
+        // 只有整笔事务成功后才刷新绑定提示，候选失败不能开启另一个应用的绑定入口。
+        top.bilibili.core.BiliBiliBot.qqAdminBinding.refreshIfStarted()
         return WebUiConfigHotReloadJobDto(
             jobId = jobId,
             phase = WebUiConfigHotReloadPhase.APPLIED,
@@ -151,7 +159,11 @@ class WebUiConfigHotReloadApplyService(
     /**
      * 订阅页已完成 BiliData.yml 持久化时，只基于当前内存数据刷新运行代际，不再重复写盘。
      */
-    suspend fun applyAlreadyPersistedBiliData(jobId: String): WebUiConfigHotReloadJobDto {
+    suspend fun applyAlreadyPersistedBiliData(jobId: String): WebUiConfigHotReloadJobDto =
+        ConfigManager.withConfigLock { applyAlreadyPersistedBiliDataLocked(jobId) }
+
+    /** 已落盘数据刷新的失败回滚也可能恢复 bot 快照，必须与管理员绑定串行。 */
+    private fun applyAlreadyPersistedBiliDataLocked(jobId: String): WebUiConfigHotReloadJobDto {
         val oldSnapshot = captureRuntimeSnapshot()
         val candidateSnapshot = oldSnapshot.copy(
             biliData = BiliDataWrapper.deepCopyFrom(BiliData),

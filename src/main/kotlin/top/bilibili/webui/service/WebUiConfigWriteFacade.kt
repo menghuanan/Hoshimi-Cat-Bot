@@ -311,6 +311,8 @@ class WebUiConfigWriteFacade(
 
         val selectedOneBot11 = current.selectedOneBot11Config()
         val updatedConfig = current.copy(
+            // 官方超管独立于群管理员映射，省略字段不能覆盖快速绑定的结果。
+            admin = request.admin?.trim() ?: current.admin,
             platform = PlatformConfig(
                 type = parsePlatformType(request.platformType) ?: PlatformType.ONEBOT11,
                 adapter = request.adapter.trim().lowercase(),
@@ -357,8 +359,13 @@ class WebUiConfigWriteFacade(
 
     /**
      * 保存 `bot.yml` 的受控平台参数；配置持久化后明确提示重启级别影响。
+     * 兼容单文件入口也持有配置事务锁，不能在校验快照后被管理员绑定插入写盘。
      */
-    fun saveBotConfig(request: WebUiBotConfigWriteRequestDto): WebUiConfigSaveResultDto {
+    fun saveBotConfig(request: WebUiBotConfigWriteRequestDto): WebUiConfigSaveResultDto =
+        ConfigManager.withConfigLock { saveBotConfigLocked(request) }
+
+    /** 单文件写入在锁内完成版本校验和持久化，沿用原有响应与错误语义。 */
+    private fun saveBotConfigLocked(request: WebUiBotConfigWriteRequestDto): WebUiConfigSaveResultDto {
         val current = botConfigProvider()
         val prepared = prepareBotConfig(request, current)
         if (!prepared.result.success) {
@@ -397,6 +404,11 @@ class WebUiConfigWriteFacade(
     ): List<String> {
         val errors = mutableListOf<String>()
         val platformType = parsePlatformType(request.platformType)
+        // 只允许官方平台编辑新 OpenID 字段，空串用于显式解绑后重新绑定。
+        if (request.admin != null && (platformType != PlatformType.QQ_OFFICIAL ||
+                (request.admin.isNotBlank() && !top.bilibili.config.isValidOfficialAdminId(request.admin.trim())))) {
+            errors += "admin must be a QQ official private OpenID"
+        }
         if (platformType == null) {
             errors += "platformType is invalid"
         }

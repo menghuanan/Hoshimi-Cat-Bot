@@ -89,6 +89,45 @@ test('completes BiliBili qr login from the bundled settings page', async ({page}
   await expect(page.getByText('BiliBili 登录成功')).toBeVisible()
 })
 
+/** 打包页面只在官方平台显示入口，绑定后刷新 OpenID，并覆盖暗色与窄屏弹窗布局。 */
+test('binds official QQ admin from the bundled settings modal', async ({page}) => {
+  // 新弹窗复用全局暗色主题样式，不维护第二套颜色状态。
+  await page.addInitScript(() => window.localStorage.setItem('hoshimi_cat_bot_webui_theme', 'dark'))
+  await page.goto('/login')
+  await page.getByLabel('WebUI 密码').fill('secret-password')
+  await page.getByRole('button', {name: '登录'}).click()
+  await page.goto('/settings')
+  await expect(page.getByRole('button', {name: '快速绑定'})).toHaveCount(0)
+  let bound = false
+  await page.route('**/api/config/bot', (route) => route.fulfill({json: {
+    sourceFile: 'bot.yml', snapshotToken: bound ? 'bound' : 'empty', fields: [
+      {key: 'platform.type', value: 'qq_official'},
+      {key: 'admin', value: bound ? 'new-openid' : ''},
+    ],
+  }}))
+  await page.route('**/api/qq-admin-binding', (route) => route.fulfill({json: {
+    sessionId: 'binding', phase: 'WAITING', code: 'QQ-DEMO-CODE', expiresAtEpochMillis: Date.now() + 600_000,
+  }}))
+  await page.route('**/api/qq-admin-binding/binding', async (route) => {
+    bound = true
+    await route.fulfill({json: {sessionId: 'binding', phase: 'SUCCEEDED', code: null, expiresAtEpochMillis: Date.now() + 600_000}})
+  })
+  await page.setViewportSize({width: 390, height: 844})
+  await page.reload()
+  await page.getByRole('button', {name: '快速绑定'}).click()
+  const dialog = page.getByRole('dialog', {name: '快速绑定'})
+  await expect(dialog).toContainText('请在QQ内添加bot好友后发送以下代码：')
+  await expect(dialog).toContainText('QQ-DEMO-CODE')
+  const box = await dialog.boundingBox()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390)
+  await page.screenshot({path: test.info().outputPath('qq-admin-binding.png')})
+  await expect(dialog).toContainText('绑定完成，管理员已保存。')
+  await page.getByRole('button', {name: '关闭', exact: true}).click()
+  await page.getByRole('button', {name: '管理员', pressed: false}).click()
+  await expect(page.getByLabel('超级管理员 OpenID')).toHaveValue('new-openid')
+})
+
 test('keeps dark theme hover states on dark surfaces', async ({page}) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('hoshimi_cat_bot_webui_theme', 'dark')

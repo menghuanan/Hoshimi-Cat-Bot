@@ -34,6 +34,7 @@ import top.bilibili.webui.routes.registerWebUiActionRoutes
 import top.bilibili.webui.routes.registerWebUiAuthRoutes
 import top.bilibili.webui.routes.registerWebUiApiRoutes
 import top.bilibili.webui.routes.registerWebUiBiliLoginRoutes
+import top.bilibili.webui.routes.registerWebUiQQAdminBindingRoutes
 import top.bilibili.webui.routes.registerWebUiLogRoutes
 import top.bilibili.webui.routes.registerWebUiStaticRoutes
 import top.bilibili.webui.service.WebUiActionFacade
@@ -213,6 +214,8 @@ fun Application.installWebUiModule(
         registerWebUiLogRoutes(authService, logFacade, auditService)
         registerWebUiActionRoutes(authService, actionFacade, auditService)
         registerWebUiBiliLoginRoutes(authService, biliLoginFacade, auditService)
+        // 官方 QQ 快速绑定复用统一认证与 CSRF 路由保护。
+        registerWebUiQQAdminBindingRoutes(authService, auditService)
     }
 }
 

@@ -8,6 +8,12 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 // ESLint 覆盖前端源码，忽略构建产物以保持本地检查只针对可维护代码。
 export default defineConfig([
   globalIgnores(['dist', '../src/main/resources/webui/react']),
+  // 构建运行时守卫只使用 Node 内置模块，独立于 React/浏览器规则检查。
+  {
+    files: ['scripts/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.node },
+  },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

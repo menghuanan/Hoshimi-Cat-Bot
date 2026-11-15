@@ -146,6 +146,8 @@ object BiliBiliBot : CoroutineScope {
     var cookie = BiliCookie()
 
     private var connectorManager: PlatformConnectorManager? = null
+    // 绑定只保留一个内存会话，关闭权随 gateway-platform 入口回收，不另建后台任务。
+    val qqAdminBinding = top.bilibili.service.QQAdminBindingService()
     // Bot 启动层只保留 WebUI 生命周期接线权，不在 core 内承载任何路由或页面逻辑。
     private var webUiManager: WebUiManager? = null
     private var webUiManagerPendingStop: WebUiManager? = null
@@ -207,11 +209,14 @@ object BiliBiliBot : CoroutineScope {
 
     /**
      * 统一重载 manager-owned 配置快照，并同步刷新 core 缓存过的 bot 配置与图片主题配置。
+     * 与管理员绑定共用事务锁，避免显式重载覆盖绑定中的快照。
      */
-    fun reloadManagedConfiguration() {
+    fun reloadManagedConfiguration() = ConfigManager.withConfigLock {
         BiliConfigManager.reloadAll()
         ConfigManager.reload()
         config = ConfigManager.botConfig
+        // 显式重载后同步废弃旧绑定上下文或提示缺失的管理员。
+        qqAdminBinding.refreshIfStarted()
         top.bilibili.data.BiliImageTheme.reload()
         top.bilibili.data.BiliImageQuality.reload()
         top.bilibili.draw.FontManager.reloadRuntimeConfig()
@@ -559,13 +564,13 @@ object BiliBiliBot : CoroutineScope {
 
             logger.info("正在初始化平台适配器...")
             // 启动入口只依赖 connector manager，由其统一封装平台选择、适配器组装与生命周期。
-            connectorManager = PlatformConnectorManager(config).also { manager ->
+            connectorManager = PlatformConnectorManager(config, additionalInboundFilter = qqAdminBinding::matches).also { manager ->
                 manager.initialize()
             }
             MessageGatewayProvider.register(
                 DefaultMessageGateway(
                     sendMessageEntryPoint = { contact, message -> requireConnectorManager().sendMessage(contact, message) },
-                    adminContactProvider = { BiliConfigManager.config.normalizedAdminSubject() },
+                    adminContactProvider = { ConfigManager.resolvedAdminSubject() },
                     logger = logger,
                 ),
             )
@@ -589,6 +594,9 @@ object BiliBiliBot : CoroutineScope {
             }
 
             requireConnectorManager().start()
+
+            // 平台启动完成后才提示绑定；WebUI 与日志使用同一个会话。
+            qqAdminBinding.startIfNeeded()
 
             registerResourcePartitions()
 
@@ -908,11 +916,12 @@ object BiliBiliBot : CoroutineScope {
         resourceSupervisor.register(
             LambdaResourcePartition(
                 id = "gateway-platform",
-                owns = listOf("PlatformConnectorManager", "MessageGatewayProvider"),
+                owns = listOf("PlatformConnectorManager", "MessageGatewayProvider", "QQAdminBindingService"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
                 shutdownPhase = ShutdownPhase.INGRESS,
                 stopAction = {
                     // 先停入口再清空发送网关，避免停机过程中继续接收事件或产生新的发送请求。
+                    qqAdminBinding.stop()
                     if (isPlatformAdapterInitialized()) {
                         requireConnectorManager().stop()
                     }
@@ -1010,6 +1019,8 @@ object BiliBiliBot : CoroutineScope {
         }
 
         runFallbackStep("入口资源", shutdownDeadlineNanos) {
+            // 兜底停机同样撤销尚未使用的绑定码。
+            qqAdminBinding.stop()
             if (isPlatformAdapterInitialized()) {
                 requireConnectorManager().stop()
             }

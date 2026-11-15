@@ -1,5 +1,6 @@
 import org.gradle.internal.os.OperatingSystem
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 plugins {
     val kotlinVersion = "2.0.0"
@@ -102,22 +103,55 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // 全量测试会加载 Skia、Ktor 与资源扫描用例，显式抬高测试 JVM 上限，避免并行测试在默认堆上抖动。
+    maxHeapSize = "1g"
 }
 
 val webUiFrontendDir = layout.projectDirectory.dir("webui-frontend")
 val webUiFrontendNodeModulesDir = webUiFrontendDir.dir("node_modules")
 val bundledReactWebUiDir = layout.projectDirectory.dir("src/main/resources/webui/react")
-val npmExecutableName = if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "npm.cmd" else "npm"
+// Node 检查与 npm 命令默认使用当前 PATH，并允许通过 Gradle 属性或环境变量显式覆盖。
+// IDE、CI 与长期运行的 Gradle daemon 可能持有旧 PATH，覆盖入口可以保证构建始终使用同一套 Node 工具链。
+val nodeExecutableName = providers.gradleProperty("nodeExecutable")
+    .orElse(providers.environmentVariable("NODE_EXECUTABLE"))
+    .getOrElse(if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "node.exe" else "node")
+val npmExecutableName = providers.gradleProperty("npmExecutable")
+    .orElse(providers.environmentVariable("NPM_EXECUTABLE"))
+    .getOrElse(if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "npm.cmd" else "npm")
+
+// 显式覆盖为路径时提前校验存在性；未带路径分隔符的值仍交给 PATH 解析，保留原有跨平台行为。
+fun requireToolExecutable(executable: String, propertyName: String) {
+    if (executable.contains('/') || executable.contains('\\')) {
+        check(File(executable).isFile) {
+            "$propertyName points to a missing executable: ${File(executable).absolutePath}"
+        }
+    }
+}
+requireToolExecutable(nodeExecutableName, "nodeExecutable/NODE_EXECUTABLE")
+requireToolExecutable(npmExecutableName, "npmExecutable/NPM_EXECUTABLE")
+
+// 无输出缓存：即使前端产物未变化，每次构建也必须检查当前实际 Node 二进制。
+val checkWebUiNodeVersion = tasks.register<Exec>("checkWebUiNodeVersion") {
+    description = "Checks the frontend Node.js security baseline before installing dependencies."
+    group = "verification"
+    workingDir = webUiFrontendDir.asFile
+    commandLine(nodeExecutableName, "scripts/check-node-version.mjs")
+    inputs.files(webUiFrontendDir.file("package.json"), webUiFrontendDir.file("scripts/check-node-version.mjs"))
+}
 
 // 前端依赖安装独立成任务，保证干净 checkout 只运行 Gradle 也能复现 React 构建。
 val installWebUiFrontendDependencies = tasks.register<Exec>("installWebUiFrontendDependencies") {
     description = "Installs npm dependencies for the React WebUI frontend."
     group = "build"
+    dependsOn(checkWebUiNodeVersion)
     workingDir = webUiFrontendDir.asFile
-    commandLine(npmExecutableName, "install")
+    commandLine(npmExecutableName, "ci")
     inputs.files(
         webUiFrontendDir.file("package.json"),
         webUiFrontendDir.file("package-lock.json"),
+        webUiFrontendDir.file(".npmrc"),
+        webUiFrontendDir.file(".node-version"),
+        webUiFrontendDir.file("scripts/check-node-version.mjs"),
     )
     outputs.dir(webUiFrontendNodeModulesDir)
 }
@@ -134,6 +168,7 @@ val buildWebUiFrontend = tasks.register<Exec>("buildWebUiFrontend") {
             include("src/**")
             include("package.json")
             include("package-lock.json")
+            include("scripts/check-node-version.mjs")
             include("tsconfig*.json")
             include("vite.config.ts")
             include("eslint.config.js")
@@ -367,6 +402,7 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
     doLast {
         outputDir.mkdirs()
 
+        // CMD 对 LF-only 批处理的分行解析不稳定，Windows 启动脚本必须显式写成 CRLF。
         outputDir.resolve("start.bat").writeText(
             """
             @echo off
@@ -390,18 +426,23 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
             set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
             set JAVA_OPTS=%JAVA_OPTS% -Dskiko.hardwareAcceleration=false
+            rem 完整包优先使用内置 runtime；测试包不内置 runtime，回退到目标机器 PATH 上的 JDK 17。
             set "JAVA_BIN=runtime\bin\java.exe"
+            if exist "%JAVA_BIN%" goto :runBot
 
-            if not exist "%JAVA_BIN%" (
-                echo ERROR: bundled runtime not found at "%JAVA_BIN%".
-                echo Please re-download the release package or rebuild with jlink enabled.
+            set "JAVA_BIN=java"
+            where java >nul 2>nul
+            if errorlevel 1 (
+                echo ERROR: bundled runtime not found and "java" is not available on PATH.
+                echo Install JDK 17 or use the full package that includes runtime\bin\java.exe.
                 pause
                 exit /b 1
             )
 
+            :runBot
             "%JAVA_BIN%" %JAVA_OPTS% -jar lib\hoshimi-cat-bot-${version}.jar
             pause
-            """.trimIndent()
+            """.trimIndent().replace("\n", "\r\n")
         )
 
         outputDir.resolve("start.sh").writeText(
@@ -503,10 +544,15 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.hardwareAcceleration=false"
             JAVA_BIN="./runtime/bin/java"
 
+            # 完整包优先使用内置 runtime；测试包不内置 runtime，回退到目标机器 PATH 上的 JDK 17。
             if [ ! -x "${'$'}JAVA_BIN" ]; then
-                echo "ERROR: bundled runtime not found at ${'$'}JAVA_BIN."
-                echo "Please re-download the release package or rebuild with jlink enabled." >&2
-                exit 1
+                if command -v java >/dev/null 2>&1; then
+                    JAVA_BIN="${'$'}(command -v java)"
+                else
+                    echo "ERROR: bundled runtime not found and java is not available on PATH." >&2
+                    echo "Install JDK 17 or use the full package that includes runtime/bin/java." >&2
+                    exit 1
+                fi
             fi
 
             "${'$'}JAVA_BIN" ${'$'}JAVA_OPTS -jar lib/hoshimi-cat-bot-${version}.jar
@@ -581,6 +627,69 @@ val linuxReleaseDistTar = tasks.register<Tar>("linuxReleaseDistTar") {
         fileMode = 0b111101101 // 755
     }
 }
+
+// 测试包复用同一份 fat jar、资源和启动脚本，但不内置 jlink runtime。
+// 目标机器需要自备 JDK 17，便于测试真实 JVM 环境并在不同机器间快速传递较小产物。
+val testReleaseDistZip = tasks.register<Zip>("testReleaseDistZip") {
+    group = "distribution"
+    description = "Builds the Windows x64 test archive that runs on the target machine's JDK 17."
+    dependsOn(stageSharedReleaseContents, createDistributionStartScripts)
+    onlyIf { hostOs.isWindows }
+
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    archiveFileName.set("hoshimi-cat-bot-windows-x64-test-v${project.version}.zip")
+
+    from(sharedReleaseContentsDir)
+    from(createDistributionStartScripts) {
+        include("start.bat")
+        into("bin")
+    }
+}
+
+// Linux 测试包同样不内置 runtime，并且可以直接在 Windows 上交叉生成，供 Linux 测试机解压使用。
+val testReleaseDistTar = tasks.register<Tar>("testReleaseDistTar") {
+    group = "distribution"
+    description = "Builds the Linux x64 test archive that runs on the target machine's JDK 17."
+    dependsOn(stageSharedReleaseContents, createDistributionStartScripts)
+
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    archiveFileName.set("hoshimi-cat-bot-linux-x64-test-v${project.version}.tar.gz")
+    compression = Compression.GZIP
+
+    from(sharedReleaseContentsDir)
+    from(createDistributionStartScripts) {
+        include("start.sh")
+        into("bin")
+        fileMode = 0b111101101 // 755
+    }
+}
+
+// 统一入口按当前构建机选择完整包类型，避免在 Windows 上误触发需要 Linux JDK 的交叉打包。
+val fullPackage = tasks.register("fullPackage") {
+    group = "distribution"
+    description = "Builds the host platform full release archive with a bundled jlink runtime."
+    when {
+        hostOs.isWindows -> dependsOn(windowsReleaseDistZip)
+        hostOs.isLinux -> dependsOn(linuxReleaseDistTar)
+        else -> doFirst {
+            throw GradleException("fullPackage supports Windows x64 and Linux x64 hosts only.")
+        }
+    }
+}
+
+// 测试包入口与完整包保持相同的平台选择规则，但产物不包含 runtime，体积更小、构建更快。
+val testPackage = tasks.register("testPackage") {
+    group = "distribution"
+    description = "Builds the host platform test archive that uses the target machine's JDK 17."
+    when {
+        hostOs.isWindows -> dependsOn(testReleaseDistZip)
+        hostOs.isLinux -> dependsOn(testReleaseDistTar)
+        else -> doFirst {
+            throw GradleException("testPackage supports Windows x64 and Linux x64 hosts only.")
+        }
+    }
+}
+
 // Distribution 配置
 distributions {
     main {

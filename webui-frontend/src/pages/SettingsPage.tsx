@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { BiliQrLoginModal } from '../components/BiliQrLoginModal'
+import { QQAdminBindingModal } from '../components/QQAdminBindingModal'
 import { PageSection } from '../components/PageSection'
 import { SettingsField } from '../components/settings/SettingsField'
 import { SettingsTabs } from '../components/settings/SettingsTabs'
@@ -34,7 +35,7 @@ type AdminDraftPair = {
  * 设置页按元数据渲染八个分区，敏感字段只允许空输入触发保留语义。
  */
 export function SettingsPage() {
-  const {loading, biliConfig, biliData, botConfig, saveBatch, patchBiliConfig, patchBiliData, patchBotConfig} = useSettingsFiles()
+  const {loading, biliConfig, biliData, botConfig, reload, saveBatch, patchBiliConfig, patchBiliData, patchBotConfig} = useSettingsFiles()
   const {showToast} = useToast()
   const {refresh: refreshRuntime} = useRuntimeSummary({pollIntervalMs: 60_000})
   const [activeCategoryId, setActiveCategoryId] = useState<SettingsCategoryId>('integration')
@@ -42,6 +43,20 @@ export function SettingsPage() {
   const [categoryMotionToken, setCategoryMotionToken] = useState(0)
   const [editedValues, setEditedValues] = useState<SettingsFormValues>({})
   const [saving, setSaving] = useState(false)
+  const [bindingOpen, setBindingOpen] = useState(false)
+
+  /** 关闭仅卸载视图，后台启动提示与浏览器共用的绑定会话仍按原有效期收敛。 */
+  const closeBinding = useCallback(() => setBindingOpen(false), [])
+  /** 绑定成功刷新真实快照及版本令牌，保留其它未提交输入并清除旧管理员编辑值。 */
+  const handleBindingSucceeded = useCallback(async () => {
+    setEditedValues((current) => {
+      const next = {...current}
+      delete next.adminContactIdentity
+      return next
+    })
+    showToast('success', 'QQ 管理员绑定完成')
+    await reload()
+  }, [reload, showToast])
   const activeCategory = settingsCategories.find((category) => category.id === activeCategoryId) || settingsCategories[0]
   const allSettingsFields = useMemo(() => settingsCategories.flatMap((category) => category.fields), [])
 
@@ -123,6 +138,8 @@ export function SettingsPage() {
       const biliDataValues = pickValuesForFile(visibleSettingsFields, values, 'biliData')
       const botValues = pickValuesForFile(visibleSettingsFields, values, 'botConfig')
       const submittedAdminIdentity = shouldSubmitAdminIdentity(visibleSettingsFields, editedValues)
+      // 官方管理员改写 bot.yml；OneBot11 继续使用原有 BiliConfig 字段。
+      const officialAdminEdit = submittedAdminIdentity && adminPlatformType === 'qq_official'
       const validationValues = submittedAdminIdentity
         ? {...biliValues, ...biliDataValues, ...botValues}
         : omitKey({...biliValues, ...biliDataValues, ...botValues}, 'adminContactIdentity')
@@ -138,9 +155,9 @@ export function SettingsPage() {
       const biliToken = String(biliConfig?.snapshotToken || '')
       const biliDataToken = String(biliData?.snapshotToken || '')
       const botToken = String(botConfig?.snapshotToken || '')
-      const shouldSaveBili = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'biliConfig')
+      const shouldSaveBili = hasChangedValuesForFile(visibleSettingsFields.filter((field) => !officialAdminEdit || field.key !== 'adminContactIdentity'), editedValues, initialValues, values, 'biliConfig')
       const shouldSaveBiliData = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'biliData')
-      const shouldSaveBot = hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'botConfig')
+      const shouldSaveBot = officialAdminEdit || hasChangedValuesForFile(visibleSettingsFields, editedValues, initialValues, values, 'botConfig')
       // 没有有效差异时不向后端提交 batch，避免空保存触发热重载或写盘。
       if (!shouldSaveBili && !shouldSaveBiliData && !shouldSaveBot) {
         showToast('warning', '没有检测到配置变更')
@@ -148,7 +165,7 @@ export function SettingsPage() {
       }
       const batchPayload: Record<string, Record<string, unknown>> = {}
       if (biliToken && shouldSaveBili) {
-        const biliFields = submittedAdminIdentity
+        const biliFields = submittedAdminIdentity && !officialAdminEdit
           ? omitKey(completeBiliValues, 'proxyConfig.proxy')
           : omitKeys(completeBiliValues, ['proxyConfig.proxy', 'adminContactIdentity'])
         batchPayload.biliConfig = buildBiliConfigSavePayload({
@@ -173,6 +190,8 @@ export function SettingsPage() {
           token: String(completeBotValues['platform.onebot11.token'] || ''),
           fields: botFields,
         })
+        // 超管只在实际编辑时提交，平台切换和普通保存不能覆盖快速绑定结果。
+        if (officialAdminEdit) batchPayload.botConfig.admin = String(values.adminContactIdentity || '').trim()
       }
 
       const job = await saveBatch(batchPayload)
@@ -195,7 +214,7 @@ export function SettingsPage() {
         : completeBiliValues
       patchBiliConfig(biliSnapshotPatch, outcomeToken(job, 'BILI_CONFIG'))
       patchBiliData(completeBiliDataValues, outcomeToken(job, 'BILI_DATA'))
-      patchBotConfig(completeBotValues, outcomeToken(job, 'BOT_CONFIG'))
+      patchBotConfig(officialAdminEdit ? {...completeBotValues, admin: batchPayload.botConfig.admin} : completeBotValues, outcomeToken(job, 'BOT_CONFIG'))
       setEditedValues({})
       showToast('success', formatHotReloadJobMessage(job))
     } catch (error) {
@@ -213,6 +232,12 @@ export function SettingsPage() {
         actions={(
           <>
             {/* 顶部只保留保存操作和保存结果，标题由 PageSection 承载。 */}
+            {/* 官方平台增加快速绑定入口，未保存的平台切换需要先落盘才能获取有效代码。 */}
+            {((activeCategoryId === 'integration' && values['platform.type'] === 'qq_official') ||
+              (activeCategoryId === 'admin' && adminPlatformType === 'qq_official')) ? (
+              <button type="button" disabled={saving || loading} onClick={() => setBindingOpen(true)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">快速绑定</button>
+            ) : null}
             <button
               type="button"
               className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -247,6 +272,7 @@ export function SettingsPage() {
         onClose={biliLogin.closeLogin}
         onRetry={biliLogin.retryLogin}
       />
+      {bindingOpen ? <QQAdminBindingModal onClose={closeBinding} onSucceeded={handleBindingSucceeded} /> : null}
     </div>
   )
 }
@@ -538,6 +564,9 @@ function readInitialFieldValue(field: SettingsFieldDefinition, fieldValues: Reco
   }
   if (field.key === 'adminContactIdentity') {
     const platformType = fieldValues.botConfig.get('platform.type') === 'qq_official' ? 'qq_official' : 'onebot11'
+    // 新字段优先；null/缺省仍回显旧官方 subject，显式空串则代表已解绑。
+    const officialAdmin = fieldValues.botConfig.get('admin')
+    if (platformType === 'qq_official' && officialAdmin !== undefined && officialAdmin !== 'null') return officialAdmin
     return adminIdentityFromContact(
       fieldValues.biliConfig.get('adminContact') || '',
       fieldValues.biliConfig.get('admin') || '',

@@ -32,7 +32,7 @@ object FeatureSwitchService {
      * 管理通知默认不回发给触发通知的管理员联系人，避免自回环。
      */
     fun canSendManagedAdminNotice(config: BiliConfig = BiliConfigManager.config, subject: String? = null): Boolean {
-        val adminSubject = config.normalizedAdminSubject()
+        val adminSubject = top.bilibili.config.ConfigManager.resolvedAdminSubject(config.normalizedAdminSubject())
         return config.enableConfig.notifyEnable && (subject == null || adminSubject == null || subject != adminSubject)
     }
 }

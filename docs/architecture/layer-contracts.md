@@ -247,3 +247,7 @@ _最后复核：2026-07-12_
 | 新增共享工具 | `utils/*` 低依赖工具 | 在 utils 中隐藏 service/tasker 调用 |
 | 新增运行资源 | `src/main/resources/*` + 对应加载工具 | 提交临时产物或无授权资源 |
 | 修改 CI/发布 | Gradle / workflow / Docker 入口 | 只改脚本不更新部署约束 |
+
+## 官方 QQ 管理员绑定边界
+
+绑定业务由 `QQAdminBindingService` 持有，core 只接线并随 gateway-platform 回收。connector 通过注入的平台中立消息谓词放行当前私聊代码，保留消息来源 AppID，不反向依赖 service，也不写配置。服务通过 ConfigManager 保存 bot.yml.admin 后安装运行态，WebUI 路由只执行认证、CSRF、审计和 DTO 映射。配置绑定、WebUI 保存及回滚共用 ConfigManager 事务锁；门禁谓词无锁，普通消息不会等待配置事务，避免平台 stop/join 与配置锁互相等待。

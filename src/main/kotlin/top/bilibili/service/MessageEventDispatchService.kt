@@ -18,6 +18,8 @@ object MessageEventDispatchService {
             BiliBiliBot.logger.debug("忽略 Bot 自己发送的消息事件: chat={}, sender={}", event.chatContact.id, event.senderContact.id)
             return
         }
+        // 绑定码在普通消息日志和命令权限检查前消费，避免把临时凭据写入消息日志。
+        if (BiliBiliBot.qqAdminBinding.consume(event)) return
         BusinessLifecycleManager.run(
             owner = "MessageEventDispatchService",
             operation = "event:${event.chatType.name.lowercase()}",

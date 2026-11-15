@@ -42,6 +42,27 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class WebUiConfigWriteFacadeTest {
+    /** 官方管理员使用 patch 语义；旧页面令牌不能覆盖快速绑定产生的新配置。 */
+    @Test
+    fun `official admin patch preserves omissions clears explicitly and rejects stale tokens`() {
+        val original = BotConfig(
+            platform = PlatformConfig(type = PlatformType.QQ_OFFICIAL, qqOfficial = QQOfficialConfig("app", "secret")),
+            admin = "bound-user",
+        )
+        val token = WebUiConfigFacade(botConfigProvider = { original }).readBotConfig().snapshotToken
+        val request = WebUiBotConfigWriteRequestDto(
+            snapshotToken = token, platformType = "qq_official", adapter = "qq_official",
+            oneBot11Host = "127.0.0.1", oneBot11Port = 3001, qqOfficialAppId = "app",
+        )
+        val facade = WebUiConfigWriteFacade()
+        assertEquals("bound-user", facade.prepareBotConfig(request, original).config?.admin)
+        assertEquals("", facade.prepareBotConfig(request.copy(admin = ""), original).config?.admin)
+        assertEquals("new-user", facade.prepareBotConfig(request.copy(admin = "new-user"), original).config?.admin)
+        assertFalse(facade.prepareBotConfig(request.copy(admin = "qq_official:group:group"), original).result.success)
+        assertFalse(facade.prepareBotConfig(request.copy(admin = "new-user", platformType = "onebot11"), original).result.success)
+        assertFalse(facade.prepareBotConfig(request, original.copy(admin = "another-binding")).result.success)
+    }
+
     private val originalDataVersion = BiliData.dataVersion
     private val originalDynamic = BiliData.dynamic.toMutableMap()
     private val originalGroup = BiliData.group.toMutableMap()

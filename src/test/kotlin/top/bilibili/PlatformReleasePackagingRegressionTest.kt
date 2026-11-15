@@ -56,4 +56,50 @@ class PlatformReleasePackagingRegressionTest {
             "release runtime should include jdk.charsets so ZXing QR generation keeps working in the bundled jlink image",
         )
     }
+
+    // 锁定完整包与测试包的一体化入口：完整包内置 runtime，测试包回退到目标机器 JDK 17。
+    @Test
+    fun `build script should expose stable full and test package entrypoints`() {
+        val buildScript = read("build.gradle.kts")
+
+        assertTrue(
+            buildScript.contains("val fullPackage = tasks.register(\"fullPackage\")"),
+            "build script should expose a host-independent full package entrypoint",
+        )
+        assertTrue(
+            buildScript.contains("val testPackage = tasks.register(\"testPackage\")"),
+            "build script should expose a host-independent test package entrypoint",
+        )
+        assertTrue(
+            buildScript.contains("hoshimi-cat-bot-windows-x64-test-v") &&
+                buildScript.contains("hoshimi-cat-bot-linux-x64-test-v"),
+            "test packages should keep platform-specific archive names",
+        )
+        assertTrue(
+            buildScript.contains("command -v java") && buildScript.contains("where java"),
+            "test packages should fall back to the target machine's JDK when runtime is absent",
+        )
+    }
+
+    // 锁定 Windows 启动脚本的 CRLF 生成约束，避免 CMD 在 LF-only 批处理上错拆 set 行。
+    @Test
+    fun `windows launcher should be generated with crlf line endings`() {
+        val buildScript = read("build.gradle.kts")
+
+        assertTrue(
+            buildScript.contains(".trimIndent().replace(\"\\n\", \"\\r\\n\")"),
+            "start.bat must be generated with CRLF so cmd.exe parses every launcher line",
+        )
+    }
+
+    // 锁定构建期堆基线，避免完整包构建再次退回 Gradle 默认的 512 MiB 上限。
+    @Test
+    fun `gradle properties should keep build time heap baseline`() {
+        val properties = read("gradle.properties")
+
+        assertTrue(
+            properties.contains("org.gradle.jvmargs=-Xmx2048m"),
+            "gradle.properties should keep the build-time heap baseline for full package builds",
+        )
+    }
 }

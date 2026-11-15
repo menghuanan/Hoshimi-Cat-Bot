@@ -173,3 +173,9 @@ Service 可以通过 manager 或协调器修改订阅、分组、过滤、模板
 - [ ] 新配置、数据结构、资源、协程、客户端、缓存、channel 或 native 对象是否有明确生命周期和归属边界？
 - [ ] 新外部行为是否同步更新相关 domain、architecture、development 或 operations 文档？
 - [ ] 新测试是否只验证源码行为或产物，不复制项目文档内容？
+
+## 官方 QQ 首次管理员绑定
+
+`QQAdminBindingService` 由 core 持有。启动或配置保存成功后，若官方平台没有有效管理员，生成 96 位安全随机代码并在日志中提示；WebUI 复用同一个未过期会话。只接受同一 AppID 的好友私聊、非自回显、完整代码匹配，不能使用群成员 OpenID 领取管理员。代码有效期 10 分钟，成功或写盘失败后失效，已有管理员时禁止直接覆盖。
+
+服务只有一个内存会话，不创建 worker、定时任务或客户端；过期在访问时处理，终态不保留代码。`MessageEventDispatchService` 在消息日志和普通命令权限检查之前消费代码。配置基线变更或平台切换撤销等待态，`gateway-platform` 分区及 fallback 停机清空会话。验证入口：`QQAdminBindingServiceTest`。
