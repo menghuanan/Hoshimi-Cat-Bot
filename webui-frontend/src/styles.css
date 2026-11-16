@@ -6,9 +6,9 @@ body {
 }
 
 /* 路由切换只作用于右侧内容区，侧边栏保持稳定不参与动画。 */
+/* 页面与字段只在入场时参与变换，不常驻 will-change 合成层，避免静止文字持续被纹理采样。 */
 .page-transition-surface {
   animation: page-fade-up 180ms ease-out;
-  will-change: opacity, transform;
 }
 
 @keyframes page-fade-up {
@@ -24,14 +24,13 @@ body {
 
 /* 设置页大分组复用路由入场幅度，保持系统配置页与子配置层级的动效关系一致。 */
 .settings-group-motion {
-  animation: page-fade-up 180ms ease-out both;
-  will-change: opacity, transform;
+  /* backwards 仅保留延迟阶段的起始帧，结束后释放 transform 和层叠上下文。 */
+  animation: page-fade-up 180ms ease-out backwards;
 }
 
 /* 设置字段卡片使用更大的下到上位移，短间隔串联后最长分区仍在 1 秒内完成。 */
 .settings-field-motion {
-  animation: settings-field-rise 560ms cubic-bezier(0.2, 0.72, 0.22, 1) both;
-  will-change: opacity, transform;
+  animation: settings-field-rise 560ms cubic-bezier(0.2, 0.72, 0.22, 1) backwards;
 }
 
 .settings-field-motion:nth-child(2) {
@@ -123,10 +122,11 @@ body {
 
 /* 用户开启减少动态效果时直接显示配置项，避免动效影响可读性。 */
 @media (prefers-reduced-motion: reduce) {
+  .page-transition-surface,
   .settings-group-motion,
   .settings-field-motion {
-    animation-duration: 1ms;
-    animation-delay: 0ms;
+    /* 路由与字段一起跳过入场，避免减少动态效果时仍发生整页位移。 */
+    animation: none;
   }
 }
 

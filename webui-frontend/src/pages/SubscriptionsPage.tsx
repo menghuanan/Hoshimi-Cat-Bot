@@ -74,7 +74,7 @@ export function SubscriptionsPage() {
   }
 
   return (
-    <div data-page="subscriptions" className="space-y-6">
+    <div data-page="subscriptions" className="flex flex-1 flex-col gap-6">
       <PageSection
         title="订阅管理"
         description="管理动态、番剧和分组订阅，并按后端支持范围编辑附属配置和主题色。"
@@ -83,20 +83,25 @@ export function SubscriptionsPage() {
         {loading ? <p className="text-sm text-slate-500">正在加载</p> : null}
       </PageSection>
 
-      <PageSection title="订阅">
-        <div className="grid gap-3 xl:grid-cols-2">
-          {subscriptionItems.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">暂无订阅</div>
-          ) : subscriptionItems.map((item, index) => (
-            <SubscriptionCard
-              key={readItemField(item, 'id') || index}
-              item={item}
-              pending={pending}
-              onEdit={() => setEditingItem(item)}
-              onDelete={() => requestDeletion(item)}
-            />
-          ))}
-        </div>
+      <PageSection title="订阅" className="flex flex-1 flex-col">
+        {/* 空状态独立于两列卡片网格，在标题下方剩余区域居中；窄屏保持内边距和自适应宽度。 */}
+        {subscriptionItems.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            <div className="flex min-h-64 w-full max-w-3xl items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500 sm:min-h-96">暂无订阅</div>
+          </div>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {subscriptionItems.map((item, index) => (
+              <SubscriptionCard
+                key={readItemField(item, 'id') || index}
+                item={item}
+                pending={pending}
+                onEdit={() => setEditingItem(item)}
+                onDelete={() => requestDeletion(item)}
+              />
+            ))}
+          </div>
+        )}
       </PageSection>
 
       <SubscriptionModal open={createOpen} pending={pending} onClose={() => setCreateOpen(false)} onSubmit={submitSubscription} />
