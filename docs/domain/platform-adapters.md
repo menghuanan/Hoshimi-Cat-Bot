@@ -166,3 +166,11 @@
 ### 管理员绑定门禁补充
 
 官方入站门禁额外允许装配层谓词精确匹配的限时私聊绑定代码；群消息和普通文本仍遵守原过滤规则。中立消息 metadata 携带 app_id，服务校验来源应用后从 senderContact 取得私聊 OpenID。候选适配器不写配置，绑定及生命周期见 service 模块。
+
+## 官方 QQ 群目录能力边界
+
+`GROUP_DIRECTORY` 表示能够观察群身份并尝试补全资料，不表示可枚举机器人加入的全部群，也不代表拥有白名单或发送权限。group_openid 不是数字群号，必须按 AppID 隔离；订阅存储仍用完整 `qq_official:group:<openid>`。
+
+机器人入群事件、普通群消息或 @消息能补录 OpenID，退群事件使记录不可新选。启动加载本地目录并刷新已知群；首次启用前已经加入且从未被本机观察的群，需要新消息触发发现。群名使用 GET `/v2/groups/{group_openid}/info` 的 group_name，通知状态使用 GET `/v2/groups/{group_openid}/bot_state` 的 allow_proactive_msg。这两个接口需要官方白名单（11253），各自 30 QPM；无权限保留本地名称或用户备注。统一 OpenAPI 域名为 `https://api.bot.qq.com`。
+
+目录仅辅助管理 UI，离线记录不证明仍在群中；没有收到的历史退群事件无法仅凭缓存补齐。任何发送仍受原 capability、运行态可达缓存与平台权限约束。

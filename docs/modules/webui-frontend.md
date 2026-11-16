@@ -144,3 +144,9 @@
 成功后刷新真实配置快照与 token，回显 `bot.yml.admin`，其它未保存输入保留。官方管理员的手动编辑同样只提交 bot.yml.admin；新字段缺省时回显旧官方 subject，OneBot11 保留原管理员保存语义。验证包括 `QQAdminBindingModal.test.tsx`、App 测试和 bundled runtime 快速绑定场景。
 
 绑定已成功但配置刷新失败时，弹窗保留成功结果并提示刷新页面；配置 hook 必须释放 loading 且保留原快照，不能让设置页永久禁用，也不能重新创建绑定会话。
+
+## 官方 QQ 群聊多选
+
+`usePlatformGroups` 只在创建/目标编辑弹窗打开时串行轮询目录（3 秒），关闭后忽略迟到响应。选择绑定 generation，账号切换或退群自动使旧选择失效，加载失败禁止提交。`GroupTargetPicker` 复用现有弹窗风格：左侧群名/备注，右侧 OpenID，支持搜索、多选、最多 100 项、备注保存和刷新已知群信息；无群名权限显示提示而非虚构名称。创建动态、番剧、分组和编辑推送群聊共用选择组件。OneBot 仍用数字输入框。
+
+列表是本机观察记录，并非官方全部群的枚举结果；空列表引导用户在目标群 @机器人发消息。无权限时可设置本地备注。新增验证入口：`GroupTargetPicker.test.tsx`、`official-group-picker.spec.ts`，以及后端目录/群事件/批量保存/路由认证测试。

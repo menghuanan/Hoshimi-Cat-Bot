@@ -28,6 +28,61 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class WebUiSubscriptionManagementFacadeTest {
+    /** 官方多选只准备一次元数据并落盘一次，追加目标时保留原来源且重复选项幂等。 */
+    @Test fun `official targets commit atomically and preserve direct sources`() = runBlocking {
+        BiliData.dynamic.clear()
+        var prepared = 0; var saved = 0
+        val targets = listOf("qq_official:group:a", "qq_official:group:b")
+        val facade = WebUiSubscriptionManagementFacade(
+            officialPlatform = { true }, validateGroupSelection = { _, generation -> require(generation == "current") },
+            prepareDynamic = { prepared++; "测试UP" }, saveDataAction = { saved++; true },
+        )
+        val created = facade.createSubscription(WebUiSubscriptionCreateRequestDto(type = "dynamic", uid = "123", targetGroups = targets + targets[0], directoryGeneration = "current"))
+        assertTrue(created.success); assertEquals(1, prepared); assertEquals(1, saved)
+        assertEquals(targets.toSet(), BiliData.dynamic[123L]!!.contacts)
+        val appended = facade.saveSubscriptionTarget("dynamic:123", WebUiSubscriptionTargetSaveRequestDto(targetGroups = listOf(targets[0], "qq_official:group:c"), directoryGeneration = "current"))
+        assertTrue(appended.success); assertEquals(1, prepared); assertEquals(2, saved)
+        assertEquals((targets + "qq_official:group:c").map { "direct:$it" }.toSet(), BiliData.dynamic[123L]!!.sourceRefs)
+    }
+
+    /** 保存失败不能出现只绑定第一个群的半成品，原有 UID 也不能被候选修改污染。 */
+    @Test fun `official bulk failure leaves original data intact`() = runBlocking {
+        BiliData.dynamic.clear()
+        BiliData.dynamic[123L] = SubData("原UP", contacts = mutableSetOf("qq_official:group:old"), sourceRefs = mutableSetOf("direct:qq_official:group:old"))
+        val facade = WebUiSubscriptionManagementFacade(officialPlatform = { true }, validateGroupSelection = { _, _ -> }, saveDataAction = { false })
+        val result = facade.saveSubscriptionTarget("dynamic:123", WebUiSubscriptionTargetSaveRequestDto(targetGroups = listOf("qq_official:group:a", "qq_official:group:b"), directoryGeneration = "current"))
+        assertFalse(result.success)
+        assertEquals(setOf("qq_official:group:old"), BiliData.dynamic[123L]!!.contacts)
+    }
+
+    /** 网络准备期间切换账号会使代际失效，提交前复核阻止写入并不调用持久化。 */
+    @Test fun `official create revalidates generation after metadata preparation`() = runBlocking {
+        BiliData.dynamic.clear()
+        var generation = "before"; var saved = false
+        val facade = WebUiSubscriptionManagementFacade(
+            officialPlatform = { true }, validateGroupSelection = { _, selected -> require(selected == generation) },
+            prepareDynamic = { generation = "after"; "测试UP" }, saveDataAction = { saved = true; true },
+        )
+        val result = facade.createSubscription(WebUiSubscriptionCreateRequestDto(type = "dynamic", uid = "123", targetGroups = listOf("qq_official:group:a"), directoryGeneration = "before"))
+        assertFalse(result.success); assertFalse(saved); assertTrue(BiliData.dynamic.isEmpty())
+    }
+
+    /** 分组保留 groupRef 模型，番剧一次解析后绑定全部目标，避免逐群外部关注。 */
+    @Test fun `official groups and bangumi share bulk target semantics`() = runBlocking {
+        BiliData.dynamic.clear(); BiliData.group.clear(); BiliData.bangumi.clear()
+        val targets = listOf("qq_official:group:a", "qq_official:group:b")
+        var prepared = 0
+        val facade = WebUiSubscriptionManagementFacade(
+            officialPlatform = { true }, validateGroupSelection = { _, _ -> }, saveDataAction = { true },
+            prepareDynamic = { "测试UP" }, prepareBangumi = { prepared++; Bangumi("测试番剧", 12345, 54321, "番剧") },
+        )
+        assertTrue(facade.createSubscription(WebUiSubscriptionCreateRequestDto(type = "group", groupName = "测试分组", uid = "123", targetGroups = targets, directoryGeneration = "current")).success)
+        assertEquals(setOf("groupRef:测试分组"), BiliData.dynamic[123L]!!.sourceRefs)
+        assertEquals(targets.toSet(), BiliData.dynamic[123L]!!.contacts)
+        assertTrue(facade.createSubscription(WebUiSubscriptionCreateRequestDto(type = "bangumi", bangumiId = "ss12345", targetGroups = targets, directoryGeneration = "current")).success)
+        assertEquals(1, prepared); assertEquals(targets.toSet(), BiliData.bangumi[12345L]!!.contacts)
+    }
+
     private val originalDynamic = BiliData.dynamic.toMutableMap()
     private val originalFilter = BiliData.filter.toMutableMap()
     private val originalDynamicTemplatePolicies = BiliData.dynamicTemplatePolicyByScope.toMutableMap()

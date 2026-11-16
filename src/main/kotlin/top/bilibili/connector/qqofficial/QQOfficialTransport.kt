@@ -44,7 +44,8 @@ import top.bilibili.connector.PlatformHttpClientSnapshot
 import top.bilibili.connector.PlatformObservabilitySnapshot
 
 internal const val QQ_OFFICIAL_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
-internal const val QQ_OFFICIAL_API_BASE = "https://api.sgroup.qq.com"
+// 官方统一 OpenAPI 域名同时承载发送、网关发现与群资料查询。
+internal const val QQ_OFFICIAL_API_BASE = "https://api.bot.qq.com"
 // 同时订阅公域消息与群成员事件，覆盖开发平台已勾选的群聊交互入口。
 internal const val QQ_OFFICIAL_GATEWAY_INTENT_PUBLIC_MESSAGES = 1 shl 25
 internal const val QQ_OFFICIAL_GATEWAY_INTENT_GROUP_MEMBERS = 1 shl 24

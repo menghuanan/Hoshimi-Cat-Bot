@@ -35,6 +35,7 @@ import top.bilibili.webui.routes.registerWebUiAuthRoutes
 import top.bilibili.webui.routes.registerWebUiApiRoutes
 import top.bilibili.webui.routes.registerWebUiBiliLoginRoutes
 import top.bilibili.webui.routes.registerWebUiQQAdminBindingRoutes
+import top.bilibili.webui.routes.registerWebUiGroupDirectoryRoutes
 import top.bilibili.webui.routes.registerWebUiLogRoutes
 import top.bilibili.webui.routes.registerWebUiStaticRoutes
 import top.bilibili.webui.service.WebUiActionFacade
@@ -202,6 +203,7 @@ fun Application.installWebUiModule(
         installWebUiRequestBoundaries(requestBodyLimitBytes)
         registerWebUiStaticRoutes(settings, authService)
         registerWebUiAuthRoutes(authService, auditService)
+        registerWebUiGroupDirectoryRoutes(authService, auditService)
         registerWebUiApiRoutes(
             authService,
             runtimeFacade,

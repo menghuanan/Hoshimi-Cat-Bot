@@ -7,6 +7,8 @@ export type SubscriptionCreateInput = {
   groupUid?: string
   groupTarget?: string
   bangumiTarget?: string
+  targetGroups?: string[]
+  directoryGeneration?: string
 }
 
 export type SubscriptionFilterPayload = {
@@ -37,6 +39,8 @@ export type SubscriptionThemePayload = {
 
 export type SubscriptionTargetPayload = {
   targetGroup: string
+  targetGroups?: string[]
+  directoryGeneration?: string
 }
 
 export type SubscriptionUidPayload = {
@@ -51,6 +55,13 @@ export type SubscriptionRandomTemplatePayload = {
  * 订阅新增接口按当前类型拼装 payload，只提交业务字段。
  */
 export function buildSubscriptionCreatePayload(input: SubscriptionCreateInput): Record<string, unknown> {
+  // 官方 QQ 多选提交平台 subject 和目录代际，不转换不透明 OpenID 为数字。
+  if (input.targetGroups !== undefined) {
+    const targets = {targetGroups: input.targetGroups, directoryGeneration: input.directoryGeneration || ''}
+    if (input.type === 'group') return {type: input.type, groupName: input.groupName || '', uid: input.groupUid || input.uid || '', ...targets}
+    if (input.type === 'bangumi') return {type: input.type, bangumiId: input.bangumiId || '', ...targets}
+    return {type: input.type, uid: input.uid || '', ...targets}
+  }
   if (input.type === 'group') {
     return {
       type: input.type,
@@ -126,6 +137,8 @@ export function buildSubscriptionThemePayload(
  * 推送群聊保存 payload 保留原始输入，正整数和 subject 归一化由后端兜底校验。
  */
 export function buildSubscriptionTargetPayload(input: SubscriptionTargetPayload): SubscriptionTargetPayload {
+  // 编辑入口与新增入口共用多选契约，单群旧客户端仍保留原请求形状。
+  if (input.targetGroups !== undefined) return {targetGroup: '', targetGroups: input.targetGroups, directoryGeneration: input.directoryGeneration || ''}
   return {
     targetGroup: input.targetGroup,
   }

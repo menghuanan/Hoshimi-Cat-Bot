@@ -32,6 +32,8 @@ object TaskBootstrapService {
         TaskRecoveryRegistration("LiveMessageTasker", { LiveMessageTasker }, autoRecover = true, critical = true),
         TaskRecoveryRegistration("SendTasker", { SendTasker }, autoRecover = true, critical = true),
         TaskRecoveryRegistration("CacheClearTasker", { CacheClearTasker }, autoRecover = true, critical = false),
+        // 群目录属于可降级维护任务，受统一恢复预算和停机管理。
+        TaskRecoveryRegistration("PlatformGroupDirectoryTasker", { top.bilibili.tasker.PlatformGroupDirectoryTasker }, autoRecover = true, critical = false),
         TaskRecoveryRegistration("LogClearTasker", { LogClearTasker }, autoRecover = true, critical = false),
         TaskRecoveryRegistration("SkiaCleanupTasker", { SkiaCleanupTasker }, autoRecover = true, critical = false),
         // Guardian 不自我监督；其异常由根生命周期和健康日志暴露，避免形成递归恢复环。

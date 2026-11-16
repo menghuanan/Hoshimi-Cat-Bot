@@ -51,6 +51,8 @@ type SubscriptionThemeDraft = {
 }
 type SubscriptionTargetDraft = {
   targetGroup: string
+  targetGroups?: string[]
+  directoryGeneration?: string
 }
 type SubscriptionUidDraft = {
   uid: string
@@ -105,6 +107,8 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
       groupName: String(payload.groupName || ''),
       groupUid: String(payload.groupUid || ''),
       groupTarget: String(payload.groupTarget || ''),
+      targetGroups: Array.isArray(payload.targetGroups) ? payload.targetGroups.map(String) : undefined,
+      directoryGeneration: String(payload.directoryGeneration || ''),
     }), requestOptions)
     return ensureSubscriptionWriteSucceeded(result, '新增订阅失败')
   }, [requestOptions])
@@ -185,6 +189,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}) {
 
   /**
    * 保存推送群聊时页面只负责正整数输入校验。
+   * 官方 QQ 则传递目录中选择的 subject 列表及代际，由后端复核成员关系。
    */
   const saveTarget = useCallback(async (itemId: string, draft: SubscriptionTargetDraft) => {
     return ensureSubscriptionWriteSucceeded(await saveSubscriptionTarget(itemId, draft, requestOptions), '保存推送群聊失败')

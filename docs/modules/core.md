@@ -78,3 +78,7 @@ Core 可以读取已加载配置并把存储入口传递给 service/tasker，但
 - [ ] 新 registry、manager 或 supervisor 是否有紧邻注释说明职责边界？
 - [ ] 新资源是否声明 strictness、关闭超时和所属分区？
 - [ ] 新 channel 是否有容量、生产者、消费者和停机退出路径说明？
+
+## 群目录装配
+
+`BiliBiliBot.groupDirectory` 持有有界元数据服务，connector 初始化前恢复缓存，观察回调只合并内存；刷新借用当前 manager，不新建根 scope 或 HTTP client。`gateway-platform` 正常停机与 fallback 在关闭 connector 后冲刷目录，周期 worker 由 Tasker 统一停止。旧连接门关闭后不能继续发布观察。目录失效不阻断主机器人启动，错误通过管理面状态与日志可见。

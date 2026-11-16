@@ -150,3 +150,9 @@ WebUI 服务端模块负责把 Ktor 服务端、静态 React shell、认证会�
 `POST /api/qq-admin-binding` 创建或复用等待会话，需要 session 与 CSRF；已有管理员、非官方平台或服务未启动时返回 409。`GET /api/qq-admin-binding/{sessionId}` 需要 session，返回 `sessionId/code/expiresAtEpochMillis/phase`，phase 为 WAITING、SUCCEEDED、EXPIRED 或 FAILED；未知会话返回 404。响应均为 no-store，审计不记录代码、OpenID 或应用密钥。
 
 官方超管的显式编辑经 `WebUiBotConfigWriteRequestDto.admin` 保存：缺省保留，空串清空，非空值仅接受单个 OpenID。旧 BiliConfig 管理员 DTO 保留兼容，但官方设置页改写 bot.yml；OneBot11 不变。绑定与配置热重载共用事务锁，绑定后前端必须刷新配置快照及 token。验证入口：`WebUiQQAdminBindingRoutesTest`。
+
+## 官方群目录 API 与批量订阅
+
+`WebUiGroupDirectoryRoutes` 提供 GET `/api/platform/groups`（session、no-store）、POST `/api/platform/groups/refresh` 和 POST `/api/platform/groups/alias`（session + CSRF）。刷新与备注要求当前 generation，审计只保留动作/结果，不记录 AppID、OpenID 或备注内容。列表由 facade 映射中立目录，仅返回当前账号记录、连接/权限/持久化状态。
+
+官方 QQ 新增订阅及新增推送群聊提交 `targetGroups: string[]`（完整 `qq_official:group:<openid>`）和 `directoryGeneration`；不能同时填单目标，最多 100 个并去重。`WebUiSubscriptionManagementFacade` 在平台配置锁内重新校验代际，并在一个 BiliData 候选事务提交全部联系人，保存失败不安装运行态。动态、番剧与分组使用同一批量规则；空分组可创建。其他适配器保留单个数字群号入口。

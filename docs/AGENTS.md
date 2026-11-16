@@ -111,3 +111,7 @@
 | 后台任务 | `tasker/*`、`TaskBootstrapService`、`TaskResourcePolicyRegistry` | `modules/tasker.md`、`architecture/invariants.md`、`operations/monitoring.md` | 启动顺序、worker 自愈、队列容量、推送统计、清理和守护 |
 
 `docs/plans/`、`docs/release/`、`docs/规则/` 和 `docs/过期文档/` 不作为当前规则改写来源；若需要追溯历史，只能回到当前维护文档确认是否已经落地。
+
+## 官方 QQ 群目录阅读入口
+
+维护群发现、名称补全和订阅多选时，联读 `modules/connector.md`、`modules/config.md`、`modules/service.md`、`modules/core.md`、`modules/tasker.md`、`modules/webui.md`、`modules/webui-frontend.md` 与 `domain/platform-adapters.md`。群目录为独立元数据存储，不能当成发送授权来源或官方全量群列表。

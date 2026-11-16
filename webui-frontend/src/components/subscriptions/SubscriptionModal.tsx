@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { ModalPortal } from '../ModalPortal'
+import { usePlatformGroups } from '../../hooks/usePlatformGroups'
+import { GroupTargetPicker } from './GroupTargetPicker'
 
 type SubscriptionModalProps = {
   open: boolean
@@ -21,6 +23,8 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
   const [groupUid, setGroupUid] = useState('')
   const [groupTarget, setGroupTarget] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const directory = usePlatformGroups(open)
+  const official = directory.data?.enabled === true
 
   if (!open) {
     return null
@@ -31,6 +35,8 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
    */
   const submitForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    // 未确认当前平台时禁止提交，避免官方账号的 OpenID 被旧数字路径接收。
+    if (!directory.ready) { setErrorMessage('请等待群列表加载或机器人启动完成'); return }
     const errors = validateSubscriptionDraft({
       type,
       uid,
@@ -40,12 +46,19 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
       groupName,
       groupUid,
       groupTarget,
+      official,
+      selectedCount: directory.selected.length,
     })
     if (errors.length > 0) {
       setErrorMessage(errors.join('；'))
       return
     }
     setErrorMessage('')
+    // 一次请求提交全部所选群，后端在一个候选快照内原子保存。
+    if (official) {
+      await onSubmit({type, uid: uid.trim(), groupName: groupName.trim(), groupUid: groupUid.trim(), bangumiId: bangumiId.trim().toLowerCase(), targetGroups: directory.selected, directoryGeneration: directory.data!.generation})
+      return
+    }
     if (type === 'group') {
       await onSubmit({type, groupName: groupName.trim(), groupUid: groupUid.trim(), groupTarget: groupTarget.trim()})
       return
@@ -93,10 +106,10 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
                   <span>分组 UID</span>
                   <input value={groupUid} onChange={(event) => setGroupUid(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                 </label>
-                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                {!official ? <label className="grid gap-1 text-sm font-medium text-slate-700">
                   <span>分组目标群</span>
                   <input value={groupTarget} onChange={(event) => setGroupTarget(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                </label>
+                </label> : null}
               </div>
             ) : null}
             {type === 'bangumi' ? (
@@ -105,10 +118,10 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
                   <span>番剧 ID</span>
                   <input value={bangumiId} onChange={(event) => setBangumiId(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                 </label>
-                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                {!official ? <label className="grid gap-1 text-sm font-medium text-slate-700">
                   <span>番剧目标群</span>
                   <input value={bangumiTarget} onChange={(event) => setBangumiTarget(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                </label>
+                </label> : null}
               </div>
             ) : null}
             {type === 'dynamic' ? (
@@ -117,15 +130,16 @@ export function SubscriptionModal({open, pending, onClose, onSubmit}: Subscripti
                   <span>UID</span>
                   <input value={uid} onChange={(event) => setUid(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                 </label>
-                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                {!official ? <label className="grid gap-1 text-sm font-medium text-slate-700">
                   <span>目标群聊</span>
                   <input value={targetGroup} onChange={(event) => setTargetGroup(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                </label>
+                </label> : null}
               </div>
             ) : null}
+            {official ? <GroupTargetPicker directory={directory} /> : directory.error ? <p role="alert" className="text-sm text-rose-700">{directory.error}</p> : !directory.data ? <p className="text-sm text-slate-500">正在读取当前平台…</p> : null}
             <div className="flex justify-end gap-3">
               <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">取消</button>
-              <button type="submit" disabled={pending} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400">
+              <button type="submit" disabled={pending || !directory.ready} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400">
                 {pending ? <span className="button-spinner" aria-hidden="true" /> : null}
                 {pending ? '提交中…' : '确认新增'}
               </button>
@@ -146,12 +160,19 @@ type SubscriptionDraftValues = {
   groupName: string
   groupUid: string
   groupTarget: string
+  official: boolean
+  selectedCount: number
 }
 
 /**
  * 新增订阅先做浏览器侧格式检查，避免明显错误值进入后端写入链路。
  */
 function validateSubscriptionDraft(draft: SubscriptionDraftValues): string[] {
+  // 官方目标来自目录，不走 OneBot 群号的正整数规则；分组允许先创建空分组。
+  if (draft.official) {
+    if (draft.type === 'group') return [...validateRequired('分组名称', draft.groupName), ...validateOptionalPositiveInteger('分组 UID', draft.groupUid), ...(draft.groupUid.trim() && !draft.selectedCount ? ['填写分组 UID 时必须至少选择一个群聊'] : [])]
+    return [...(draft.type === 'bangumi' ? validateBangumiId(draft.bangumiId) : validatePositiveInteger('UID', draft.uid)), ...(draft.selectedCount ? [] : ['目标群聊必须至少选择一个'])]
+  }
   if (draft.type === 'group') {
     return [
       ...validateRequired('分组名称', draft.groupName),

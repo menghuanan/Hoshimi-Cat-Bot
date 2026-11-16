@@ -116,3 +116,9 @@ Connector 只读取 `bot.yml` 中的平台配置、targets 和管理员配置，
 ### 管理员绑定门禁补充
 
 官方入站门禁额外允许装配层谓词精确匹配的限时私聊绑定代码；群消息和普通文本仍遵守原过滤规则。中立消息 metadata 携带 app_id，服务校验来源应用后从 senderContact 取得私聊 OpenID。候选适配器不写配置，绑定及生命周期见 service 模块。
+
+## 官方 QQ 群目录
+
+`PlatformGroups.kt` 定义中立观察、查询结果和连接代际。`PlatformConnectorManager` 为候选连接缓冲最多 10000 个群观察，只有 commit 后发布；回滚或退场关闭观察门，迟到事件与查询结果不能跨代际生效。网络补全通过 `GROUP_DIRECTORY` 能力门禁和 `lookupGroup`，业务层不得访问 vendor transport。
+
+`QQOfficialAdapter` 在普通消息过滤前收集 group_openid，并区分入群、退群、通知开关。`GROUP_MSG_REJECT` 只标记通知关闭，不能当作退群。资料查询使用官方 `/v2/groups/{group_openid}/info` 与 `/bot_state`，两端点独立处理权限失败；查询结果和持久目录绝不回填短期 reachableContacts 或授予发送权限。

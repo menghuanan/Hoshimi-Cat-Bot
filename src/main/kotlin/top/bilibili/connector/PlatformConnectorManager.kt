@@ -17,16 +17,21 @@ import top.bilibili.connector.onebot11.vendors.napcat.NapCatAdapter
 import top.bilibili.connector.onebot11.vendors.napcat.NapCatClient
 import top.bilibili.connector.qqofficial.QQOfficialAdapter
 
-/** 平台生命周期入口；额外入站谓词由装配层注入，仅接触平台中立消息。 */
+/**
+ * 平台生命周期入口；额外入站谓词由装配层注入，仅接触平台中立消息。
+ * 群目录观察回调同样由装配层注入，仅接触中立群模型。
+ */
 class PlatformConnectorManager(
     config: BotConfig,
     private val adapterFactory: (() -> PlatformAdapter)? = null,
     private val bridgeScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val additionalInboundFilter: (PlatformInboundMessage) -> Boolean = { false },
+    private val groupObserver: (String, PlatformGroupObservation) -> Unit = { _, _ -> },
 ) {
     private val lifecycleLock = Any()
     private var activeConfig: BotConfig = config
     private var platformAdapter: PlatformAdapter? = null
+    private var groupGate: PlatformGroupObservationGate? = null
     private val stableEventFlow = MutableSharedFlow<PlatformInboundMessage>(extraBufferCapacity = 64)
     private var eventBridgeJob: Job? = null
     private var lifecycleState: ConnectorLifecycleState = ConnectorLifecycleState.IDLE
@@ -68,6 +73,8 @@ class PlatformConnectorManager(
             adapterToStart.start()
             synchronized(lifecycleLock) {
                 if (platformAdapter === adapterToStart) {
+                    // 激活已完成握手的初始代际，并补发启动期间缓冲的群目录事件。
+                    groupGate?.activate()
                     startEventBridgeLocked(adapterToStart)
                     lifecycleState = ConnectorLifecycleState.STARTED
                 }
@@ -75,6 +82,8 @@ class PlatformConnectorManager(
         } catch (throwable: Throwable) {
             synchronized(lifecycleLock) {
                 if (platformAdapter === adapterToStart) {
+                    groupGate?.close()
+                    groupGate = null
                     platformAdapter = null
                 }
                 lifecycleState = ConnectorLifecycleState.IDLE
@@ -93,6 +102,7 @@ class PlatformConnectorManager(
                 return
             }
             lifecycleState = ConnectorLifecycleState.STOPPING
+            groupGate?.close()
             currentAdapter
         }
 
@@ -104,6 +114,7 @@ class PlatformConnectorManager(
                     eventBridgeJob?.cancel()
                     eventBridgeJob = null
                     platformAdapter = null
+                    groupGate = null
                 }
                 lifecycleState = ConnectorLifecycleState.IDLE
             }
@@ -117,7 +128,9 @@ class PlatformConnectorManager(
         newConfig: BotConfig,
         adapterFactory: (() -> PlatformAdapter)? = null,
     ): PlatformConnectorPrepareResult {
-        val candidateAdapter = createPlatformAdapter(newConfig, adapterFactory)
+        // 候选事件只进入本代际内存缓冲，prepare 失败不会污染持久群目录。
+        val candidateGate = newGroupGate(newConfig)
+        val candidateAdapter = createPlatformAdapter(newConfig, adapterFactory, candidateGate)
         return try {
             candidateAdapter.start()
             val ready = runBlocking {
@@ -132,9 +145,11 @@ class PlatformConnectorManager(
                 prepared = PreparedPlatformConnector(
                     candidateConfig = newConfig,
                     candidateAdapter = candidateAdapter,
+                    groupGate = candidateGate,
                 ),
             )
         } catch (throwable: Throwable) {
+            candidateGate.close()
             runBlockingStop(candidateAdapter)
             PlatformConnectorPrepareResult(
                 success = false,
@@ -156,9 +171,12 @@ class PlatformConnectorManager(
                 return PlatformConnectorReloadResult(success = false, message = "platform connector candidate is not active")
             }
             val previous = platformAdapter
+            groupGate?.close()
             eventBridgeJob?.cancel()
             platformAdapter = prepared.candidateAdapter
             activeConfig = prepared.candidateConfig
+            groupGate = prepared.groupGate
+            groupGate?.activate()
             startEventBridgeLocked(prepared.candidateAdapter)
             lifecycleState = ConnectorLifecycleState.STARTED
             prepared.committed = true
@@ -209,12 +227,38 @@ class PlatformConnectorManager(
             ?: PlatformObservabilitySnapshot.empty("platform adapter is not initialized")
     }
 
+    /** 只提供当前已提交官方连接身份；未启动、停机和非官方平台均不提供可选群上下文。 */
+    fun groupContext(): PlatformGroupContext? = synchronized(lifecycleLock) {
+        val gate = groupGate ?: return@synchronized null
+        if (lifecycleState != ConnectorLifecycleState.STARTED || gate.accountId.isBlank()) return@synchronized null
+        PlatformGroupContext(gate.accountId, gate.generation, platformAdapter?.runtimeStatus()?.connected == true)
+    }
+
+    /** 查询绑定指定运行代际，网络请求期间不持有生命周期锁，切换后丢弃旧结果。 */
+    suspend fun lookupGroup(context: PlatformGroupContext, id: String, queryName: Boolean, queryState: Boolean): PlatformGroupProfile {
+        val adapter = synchronized(lifecycleLock) {
+            if (groupGate?.generation == context.generation && lifecycleState == ConnectorLifecycleState.STARTED) platformAdapter else null
+        } ?: return PlatformGroupProfile()
+        // 目录查询也走能力门禁，不允许其他适配器被强行调用官方补全接口。
+        if (adapter.guardCapability(CapabilityRequest(PlatformCapability.GROUP_DIRECTORY)).stopCurrentOperation) return PlatformGroupProfile()
+        val result = adapter.lookupGroup(id, queryName, queryState)
+        return if (groupContext()?.generation == context.generation) result else PlatformGroupProfile()
+    }
+
+    /** 只有官方应用拥有群目录命名空间，其他适配器的默认回调保持空操作。 */
+    private fun newGroupGate(config: BotConfig) = PlatformGroupObservationGate(
+        if (config.selectedAdapterKind() == PlatformAdapterKind.QQ_OFFICIAL) config.platform.qqOfficial.appId else "",
+        groupObserver,
+    )
+
     /**
      * 将平台选择与 vendor 组装收口到 connector 层，避免业务启动入口继续直接 new adapter。
+     * groupGate 接收本代际事件，避免候选状态泄漏给业务目录。
      */
     private fun createPlatformAdapter(
         config: BotConfig = activeConfig,
         overrideFactory: (() -> PlatformAdapter)? = adapterFactory,
+        groupGate: PlatformGroupObservationGate,
     ): PlatformAdapter {
         overrideFactory?.let { factory ->
             return factory.invoke()
@@ -235,6 +279,7 @@ class PlatformConnectorManager(
             PlatformAdapterKind.QQ_OFFICIAL -> QQOfficialAdapter(
                 config.platform.qqOfficial,
                 additionalInboundFilter = additionalInboundFilter,
+                groupObserver = groupGate::observe,
             )
         }
     }
@@ -244,7 +289,7 @@ class PlatformConnectorManager(
      */
     private fun adapter(): PlatformAdapter {
         return synchronized(lifecycleLock) {
-            platformAdapter ?: createPlatformAdapter().also { adapter ->
+            platformAdapter ?: createPlatformAdapter(groupGate = newGroupGate(activeConfig).also { groupGate = it }).also { adapter ->
                 platformAdapter = adapter
             }
         }
@@ -309,6 +354,7 @@ class PlatformConnectorManager(
 data class PreparedPlatformConnector internal constructor(
     internal val candidateConfig: BotConfig,
     internal val candidateAdapter: PlatformAdapter,
+    internal val groupGate: PlatformGroupObservationGate,
 ) {
     internal var committed: Boolean = false
     internal var closed: Boolean = false
@@ -321,6 +367,7 @@ data class PreparedPlatformConnector internal constructor(
             return
         }
         closed = true
+        groupGate.close()
         runBlocking {
             runCatching { candidateAdapter.stop() }
         }

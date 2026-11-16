@@ -39,6 +39,7 @@ data class WebUiSubscriptionItemDto(
 
 /**
  * WebUI 新增订阅请求只承载页面表单字段，具体类型校验由后端 facade 统一执行。
+ * 官方平台使用 targetGroups 和 directoryGeneration，单值保留兼容。
  */
 @Serializable
 data class WebUiSubscriptionCreateRequestDto(
@@ -47,6 +48,8 @@ data class WebUiSubscriptionCreateRequestDto(
     val targetGroup: String = "",
     val groupName: String = "",
     val bangumiId: String = "",
+    val targetGroups: List<String> = emptyList(),
+    val directoryGeneration: String = "",
 )
 
 /**
@@ -80,10 +83,13 @@ data class WebUiSubscriptionTargetItemDto(
 
 /**
  * 推送群聊保存请求只接受正整数群号，认证与 CSRF 由统一路由 guard 负责。
+ * 上述旧单值规则保留；官方多选分支使用完整 subject 与目录代际。
  */
 @Serializable
 data class WebUiSubscriptionTargetSaveRequestDto(
-    val targetGroup: String,
+    val targetGroup: String = "",
+    val targetGroups: List<String> = emptyList(),
+    val directoryGeneration: String = "",
 )
 
 /**

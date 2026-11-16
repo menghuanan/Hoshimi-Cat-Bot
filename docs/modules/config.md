@@ -118,3 +118,7 @@ Config 模块拥有配置文件和业务数据文件的写入权，但不拥有�
 `bot.yml.admin` 保存官方 QQ 私聊 `user_openid`，与群管理员映射 `admins` 独立。字段缺省或 null 时兼容 `BiliConfig.yml.admin_contact` 中有效的官方私聊 subject；显式空串表示未绑定，空白、错误 subject 和其它平台身份不算有效官方管理员。OneBot11 继续使用原有管理员配置。
 
 权限、管理通知和首次运行提示统一通过 `ConfigManager.resolvedAdminSubject()` 解析。绑定只修改 `admin`，由 `ConfigManager` 原子保存后安装运行态；写盘失败不授予权限。绑定与 WebUI 保存、回滚及显式重载共用 `ConfigManager.withConfigLock`，旧页面 snapshot token 会因绑定写入而失效。新字段不改变 BiliData 版本，不需要迁移或重连平台。
+
+## 群目录持久化
+
+`PlatformGroupDirectoryStore` 独占 `data/platform-groups.json` 写入，按 AppID + OpenID 保存群名、用户备注、成员/通知状态与时间。文件独立版本为 1，不修改 BiliData 迁移版本；UTF-8、10000 条/16 MiB 上限、临时文件同步与原子替换，并保留 `.bak`。损坏或未知版本文件不得被默认空目录覆盖，服务显示错误并只在内存中收集新记录；修复文件后重启加载。

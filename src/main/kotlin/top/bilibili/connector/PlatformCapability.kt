@@ -6,6 +6,8 @@ enum class PlatformCapability {
     REPLY,
     AT_ALL,
     LINK_RESOLVE,
+    // 群目录查询的实现能力；应用白名单权限由查询结果进一步表达。
+    GROUP_DIRECTORY,
 }
 
 data class CapabilityRequest(

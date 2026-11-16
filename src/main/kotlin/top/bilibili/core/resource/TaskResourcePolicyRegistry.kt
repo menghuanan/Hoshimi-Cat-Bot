@@ -23,6 +23,7 @@ object TaskResourcePolicyRegistry {
         "LiveMessageTasker" to TaskResourcePolicy("LiveMessageTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "持续消费消息通道"),
         "SendTasker" to TaskResourcePolicy("SendTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "持续消费发送队列"),
         "CacheClearTasker" to TaskResourcePolicy("CacheClearTasker", ResourceStrictness.STRICT, "周期缓存维护"),
+        "PlatformGroupDirectoryTasker" to TaskResourcePolicy("PlatformGroupDirectoryTasker", ResourceStrictness.STRICT, "限速刷新并持久化已知群目录"),
         "LogClearTasker" to TaskResourcePolicy("LogClearTasker", ResourceStrictness.STRICT, "周期日志维护"),
         "SkiaCleanupTasker" to TaskResourcePolicy("SkiaCleanupTasker", ResourceStrictness.STRICT, "周期 Skia 维护"),
         "ProcessGuardian" to TaskResourcePolicy("ProcessGuardian", ResourceStrictness.STRICT, "系统守护与监控"),

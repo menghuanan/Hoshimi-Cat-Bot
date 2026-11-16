@@ -1,5 +1,7 @@
 package top.bilibili.connector.qqofficial
 
+import io.ktor.http.encodeURLPathPart
+
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +45,15 @@ import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
+import top.bilibili.connector.PlatformGroupObservation
+import top.bilibili.connector.PlatformGroupProfile
+import top.bilibili.connector.GroupLookupStatus
+import top.bilibili.connector.validPlatformGroupId
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import top.bilibili.utils.toSubject
 import java.net.URI
 import java.nio.file.Files
@@ -53,7 +64,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
-/** 官方协议转换保留原有门禁，仅允许装配层注入当前绑定消息的额外放行谓词。 */
+/**
+ * 官方协议转换保留原有门禁，仅允许装配层注入当前绑定消息的额外放行谓词。
+ * 群目录观察回调只更新内存，不改变原消息门禁。
+ */
 internal class QQOfficialAdapter(
     private val config: QQOfficialConfig = QQOfficialConfig(),
     internal val transport: QQOfficialTransport = KtorQQOfficialTransport(),
@@ -66,6 +80,7 @@ internal class QQOfficialAdapter(
     internal val groupPassiveReplyWindowMillis: Long = DEFAULT_GROUP_PASSIVE_REPLY_WINDOW_MILLIS,
     internal val privatePassiveReplyWindowMillis: Long = DEFAULT_PRIVATE_PASSIVE_REPLY_WINDOW_MILLIS,
     private val additionalInboundFilter: (PlatformInboundMessage) -> Boolean = { false },
+    private val groupObserver: (PlatformGroupObservation) -> Unit = {},
 ) : PlatformAdapter {
     private val logger = LoggerFactory.getLogger(QQOfficialAdapter::class.java)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -120,6 +135,7 @@ internal class QQOfficialAdapter(
             PlatformCapability.SEND_IMAGES,
             PlatformCapability.REPLY,
             PlatformCapability.LINK_RESOLVE,
+            PlatformCapability.GROUP_DIRECTORY,
         )
     }
 
@@ -131,6 +147,48 @@ internal class QQOfficialAdapter(
             return CapabilityGuardResult.Unsupported(reason = "QQ 官方平台不支持 @全体")
         }
         return super.guardCapability(request)
+    }
+
+    /** 网关只报告中立群观察事实，持久化与刷新由外层目录服务及受管 Tasker 负责。 */
+    private fun observeGroup(id: String, joined: Boolean = true, acceptsProactive: Boolean? = null) {
+        if (validPlatformGroupId(id)) groupObserver(PlatformGroupObservation(id, joined, acceptsProactive, currentTimeMillis()))
+    }
+
+    /** 两个白名单接口独立降级；复用官方 token 刷新链，不因无权限导致网关断连。 */
+    override suspend fun lookupGroup(id: String, queryName: Boolean, queryState: Boolean): PlatformGroupProfile {
+        if (!validPlatformGroupId(id) || !connected.get() || !started.get()) return PlatformGroupProfile()
+        val info = if (queryName) lookupGroupJson(id, "info") else null
+        val state = if (queryState) lookupGroupJson(id, "bot_state") else null
+        // 成功 HTTP 响应仍须具备对应字段，异常结构按临时失败重试而非记录伪成功。
+        val name = (info?.second?.get("group_name") as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull?.takeIf { it.isNotBlank() }?.take(256)
+        val proactive = (state?.second?.get("allow_proactive_msg") as? JsonPrimitive)?.booleanOrNull
+        return PlatformGroupProfile(
+            name = name,
+            acceptsProactive = proactive,
+            nameStatus = if (info?.first == GroupLookupStatus.AVAILABLE && name == null) GroupLookupStatus.UNAVAILABLE else info?.first ?: GroupLookupStatus.UNSUPPORTED,
+            stateStatus = if (state?.first == GroupLookupStatus.AVAILABLE && proactive == null) GroupLookupStatus.UNAVAILABLE else state?.first ?: GroupLookupStatus.UNSUPPORTED,
+        )
+    }
+
+    /** 同时兼容新 err_code 和旧 code；取消继续向上抛出，错误正文不进入管理面或日志。 */
+    private suspend fun lookupGroupJson(id: String, endpoint: String): Pair<GroupLookupStatus, JsonObject?> {
+        return try {
+            val body = authenticatedGetJson("$QQ_OFFICIAL_API_BASE/v2/groups/${id.encodeURLPathPart()}/$endpoint").jsonObject
+            val code = body["err_code"]?.jsonPrimitive?.intOrNull ?: body["code"]?.jsonPrimitive?.intOrNull ?: 0
+            when (code) {
+                0 -> GroupLookupStatus.AVAILABLE to body
+                11253 -> GroupLookupStatus.FORBIDDEN to null
+                else -> GroupLookupStatus.UNAVAILABLE to null
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: QQOfficialHttpException) {
+            val body = runCatching { QQOfficialJson.decodeFromString<JsonObject>(error.responseBody) }.getOrNull()
+            val code = body?.get("err_code")?.jsonPrimitive?.intOrNull ?: body?.get("code")?.jsonPrimitive?.intOrNull
+            (if (code == 11253) GroupLookupStatus.FORBIDDEN else GroupLookupStatus.UNAVAILABLE) to null
+        } catch (_: Exception) {
+            GroupLookupStatus.UNAVAILABLE to null
+        }
     }
 
     /**
@@ -428,6 +486,7 @@ internal class QQOfficialAdapter(
             PlatformCapability.REPLY -> "回复消息"
             PlatformCapability.AT_ALL -> "@全体"
             PlatformCapability.LINK_RESOLVE -> "链接解析"
+            PlatformCapability.GROUP_DIRECTORY -> "群目录"
         }
     }
 
@@ -651,6 +710,10 @@ internal class QQOfficialAdapter(
                 true
             }
             "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE" -> {
+                // 目录发现独立于命令过滤和发送者解析，普通群消息也能补录 OpenID。
+                (frame.d as? JsonObject)?.get("group_openid")?.jsonPrimitive?.contentOrNull?.let {
+                    observeGroup(it)
+                }
                 // 群普通消息与 AT 消息都先归一化并刷新运行态，是否下传业务链由适配器门禁决定。
                 val inbound = normalizeMessage(
                     frame = frame,
@@ -668,6 +731,8 @@ internal class QQOfficialAdapter(
             "GROUP_ADD_ROBOT", "GROUP_MSG_RECEIVE" -> {
                 val event = frame.d?.let { QQOfficialJson.decodeFromJsonElement<QQOfficialGroupManageEvent>(it) } ?: return false
                 event.groupOpenId?.let { groupOpenId ->
+                    // 入群本身不证明主动消息授权；只有开启通知事件明确记录 true。
+                    observeGroup(groupOpenId, acceptsProactive = if (frame.t == "GROUP_MSG_RECEIVE") true else null)
                     markReachable(PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, groupOpenId))
                 }
                 true
@@ -675,6 +740,8 @@ internal class QQOfficialAdapter(
             "GROUP_DEL_ROBOT", "GROUP_MSG_REJECT" -> {
                 val event = frame.d?.let { QQOfficialJson.decodeFromJsonElement<QQOfficialGroupManageEvent>(it) } ?: return false
                 event.groupOpenId?.let { groupOpenId ->
+                    // 关闭通知仍保留成员身份；退出群才标记 joined=false。
+                    observeGroup(groupOpenId, joined = frame.t != "GROUP_DEL_ROBOT", acceptsProactive = false)
                     markUnreachable(PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, groupOpenId))
                 }
                 true

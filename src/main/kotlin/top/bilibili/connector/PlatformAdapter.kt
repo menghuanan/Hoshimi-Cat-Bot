@@ -7,6 +7,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 interface PlatformAdapter {
     val eventFlow: Flow<PlatformInboundMessage>
 
+    /** 群资料查询是可选能力；未实现的适配器显式返回不支持，不暴露底层协议对象。 */
+    suspend fun lookupGroup(id: String, queryName: Boolean, queryState: Boolean): PlatformGroupProfile = PlatformGroupProfile()
+
     /**
      * 启动底层平台连接与事件分发，供 manager 在完成初始化后显式接通适配器生命周期。
      */

@@ -14,6 +14,21 @@ val pgcRegex = """^((?:ss)|(?:md)|(?:ep))(\d{4,10})$""".toRegex()
  * 统一封装番剧订阅与取消订阅流程，避免命令层分别处理 ss、md、ep 三种入口。
  */
 object PgcService {
+    /** 批量目标共用一次番剧解析与关注请求，返回尚未写入本地订阅的元数据。 */
+    suspend fun prepareSubscription(id: String): Bangumi {
+        require(pgcRegex.matches(id)) { "番剧 ID 格式错误" }
+        val value = id.drop(2).toLong()
+        val bangumi = when (id.take(2)) {
+            "ss" -> {
+                val existing = BiliDataRuntimeCoordinator.snapshot().bangumi[value]
+                existing ?: client.getSeasonInfo(value)?.let { Bangumi(it.title, it.seasonId, it.mediaId, type(it.type)) }
+            }
+            "md" -> client.getMediaInfo(value)?.media?.let { Bangumi(it.title, it.seasonId, it.mediaId, it.typeName) }
+            else -> client.getEpisodeInfo(value)?.let { Bangumi(it.title, it.seasonId, it.mediaId, type(it.type)) }
+        } ?: error("获取番剧信息失败")
+        client.followPgc(bangumi.seasonId) ?: error("追番失败")
+        return bangumi
+    }
     /**
      * 解析番剧标识并分发到对应订阅实现，保持命令层只需传入原始 ID。
      */

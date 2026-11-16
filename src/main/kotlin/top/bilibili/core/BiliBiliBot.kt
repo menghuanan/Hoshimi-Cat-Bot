@@ -148,6 +148,12 @@ object BiliBiliBot : CoroutineScope {
     private var connectorManager: PlatformConnectorManager? = null
     // 绑定只保留一个内存会话，关闭权随 gateway-platform 入口回收，不另建后台任务。
     val qqAdminBinding = top.bilibili.service.QQAdminBindingService()
+    // 群目录只持有元数据；网络借用当前 connector，刷新协程由受管 Tasker 拥有。
+    val groupDirectory = top.bilibili.service.PlatformGroupDirectoryService(
+        contextProvider = { connectorManager?.groupContext() },
+        officialSelected = { runCatching { ConfigManager.botConfig.selectedAdapterKind() == top.bilibili.connector.PlatformAdapterKind.QQ_OFFICIAL }.getOrDefault(false) },
+        lookup = { context, id, name, state -> connectorManager?.lookupGroup(context, id, name, state) ?: top.bilibili.connector.PlatformGroupProfile() },
+    )
     // Bot 启动层只保留 WebUI 生命周期接线权，不在 core 内承载任何路由或页面逻辑。
     private var webUiManager: WebUiManager? = null
     private var webUiManagerPendingStop: WebUiManager? = null
@@ -564,7 +570,9 @@ object BiliBiliBot : CoroutineScope {
 
             logger.info("正在初始化平台适配器...")
             // 启动入口只依赖 connector manager，由其统一封装平台选择、适配器组装与生命周期。
-            connectorManager = PlatformConnectorManager(config, additionalInboundFilter = qqAdminBinding::matches).also { manager ->
+            // 本地目录先恢复，候选/启动握手事件才能在 commit 后安全合并。
+            groupDirectory.initialize()
+            connectorManager = PlatformConnectorManager(config, additionalInboundFilter = qqAdminBinding::matches, groupObserver = groupDirectory::observe).also { manager ->
                 manager.initialize()
             }
             MessageGatewayProvider.register(
@@ -926,6 +934,7 @@ object BiliBiliBot : CoroutineScope {
                         requireConnectorManager().stop()
                     }
                     connectorManager = null
+                    groupDirectory.flush()
                     MessageGatewayProvider.unregister()
                 },
             ),
@@ -1025,6 +1034,7 @@ object BiliBiliBot : CoroutineScope {
                 requireConnectorManager().stop()
             }
             connectorManager = null
+            groupDirectory.flush()
             MessageGatewayProvider.unregister()
         }
 

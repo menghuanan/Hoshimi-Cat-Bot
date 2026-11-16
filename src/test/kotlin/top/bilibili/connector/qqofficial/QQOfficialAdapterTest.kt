@@ -44,6 +44,39 @@ import top.bilibili.connector.PlatformType
 class QQOfficialAdapterTest {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** 业务门禁丢弃普通文本前仍发现群，通知拒收与真正退群分别更新状态。 */
+    @Test fun `directory observes ordinary messages and distinguishes removal`() = runBlocking {
+        val observations = java.util.concurrent.CopyOnWriteArrayList<top.bilibili.connector.PlatformGroupObservation>()
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport, groupObserver = observations::add)
+        try {
+            transport.emitGatewayText(groupMessageFrame(eventType = "GROUP_MESSAGE_CREATE", content = "普通文本"))
+            transport.emitGatewayText(manageGroupFrame(eventType = "GROUP_MSG_REJECT", groupOpenId = "known-group"))
+            transport.emitGatewayText(manageGroupFrame(eventType = "GROUP_DEL_ROBOT", groupOpenId = "known-group"))
+            withTimeout(2000) { while (observations.size < 3) delay(10) }
+            assertTrue(observations[0].joined)
+            assertTrue(observations[1].joined); assertFalse(observations[1].acceptsProactive!!)
+            assertFalse(observations[2].joined)
+        } finally { stopAdapter(adapter) }
+    }
+
+    /** 群名无白名单仍可读取群状态，查询使用 token 且不能授予发送缓存权限。 */
+    @Test fun `directory lookup maps independent endpoint permissions`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        try {
+            transport.groupInfoResponse = buildJsonObject { put("err_code", 11253) }
+            val result = adapter.lookupGroup("unobserved", true, true)
+            assertEquals(top.bilibili.connector.GroupLookupStatus.FORBIDDEN, result.nameStatus)
+            assertEquals(top.bilibili.connector.GroupLookupStatus.AVAILABLE, result.stateStatus)
+            assertEquals(true, result.acceptsProactive)
+            assertFalse(adapter.canSendMessage(PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "unobserved")))
+            transport.groupInfoResponse = buildJsonObject { put("group_name", "官方名称") }
+            assertEquals("官方名称", adapter.lookupGroup("unobserved", true, false).name)
+            assertTrue(transport.requests.filter { it.url.contains("/v2/groups/") }.all { it.headers["Authorization"]?.startsWith("QQBot ") == true })
+        } finally { stopAdapter(adapter) }
+    }
+
     /** 真实网关归一链放行指定私聊绑定码，群内相同文本和普通私聊仍被原门禁拦截。 */
     @Test
     fun `binding predicate only extends private inbound gate`() = runBlocking {
@@ -1062,6 +1095,7 @@ class QQOfficialAdapterTest {
 
     // 启动测试适配器时，预置 Hello/Ready 帧，确保启动路径能完成首轮网关握手。
     /** additionalInboundFilter 用来验证装配层绑定谓词，不替换真实网关归一与门禁。 */
+    /** groupObserver 验证目录采集不依赖消息门禁，也不改变发送授权缓存。 */
     private fun createStartedAdapter(
         transport: FakeTransport,
         currentTimeMillis: () -> Long = { System.currentTimeMillis() },
@@ -1072,6 +1106,7 @@ class QQOfficialAdapterTest {
         groupPassiveReplyWindowMillis: Long = QQOfficialAdapter.DEFAULT_GROUP_PASSIVE_REPLY_WINDOW_MILLIS,
         privatePassiveReplyWindowMillis: Long = QQOfficialAdapter.DEFAULT_PRIVATE_PASSIVE_REPLY_WINDOW_MILLIS,
         additionalInboundFilter: (top.bilibili.connector.PlatformInboundMessage) -> Boolean = { false },
+        groupObserver: (top.bilibili.connector.PlatformGroupObservation) -> Unit = {},
     ): QQOfficialAdapter {
         val adapter = QQOfficialAdapter(
             config = QQOfficialConfig(
@@ -1087,6 +1122,7 @@ class QQOfficialAdapterTest {
             groupPassiveReplyWindowMillis = groupPassiveReplyWindowMillis,
             privatePassiveReplyWindowMillis = privatePassiveReplyWindowMillis,
             additionalInboundFilter = additionalInboundFilter,
+            groupObserver = groupObserver,
         )
         adapter.start()
         return adapter
@@ -1316,6 +1352,7 @@ class QQOfficialAdapterTest {
     }
 
     private inner class FakeTransport : QQOfficialTransport {
+        var groupInfoResponse: JsonObject = buildJsonObject { put("group_name", "测试群") }
         val requests = mutableListOf<RecordedRequest>()
         val gatewaySessions = mutableListOf<FakeGatewaySession>()
         var heartbeatIntervalMillis: Int = 30_000
@@ -1330,6 +1367,9 @@ class QQOfficialAdapterTest {
 
         override suspend fun getJson(url: String, headers: Map<String, String>): JsonObject {
             requests += RecordedRequest("GET", url, null, headers)
+            // 目录端点和网关地址端点分别返回其业务结构，支持权限降级测试。
+            if (url.endsWith("/info")) return groupInfoResponse
+            if (url.endsWith("/bot_state")) return buildJsonObject { put("allow_proactive_msg", true) }
             return buildJsonObject {
                 put("url", "wss://gateway.example.qq.com")
                 put("shards", 1)

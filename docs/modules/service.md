@@ -179,3 +179,9 @@ Service 可以通过 manager 或协调器修改订阅、分组、过滤、模板
 `QQAdminBindingService` 由 core 持有。启动或配置保存成功后，若官方平台没有有效管理员，生成 96 位安全随机代码并在日志中提示；WebUI 复用同一个未过期会话。只接受同一 AppID 的好友私聊、非自回显、完整代码匹配，不能使用群成员 OpenID 领取管理员。代码有效期 10 分钟，成功或写盘失败后失效，已有管理员时禁止直接覆盖。
 
 服务只有一个内存会话，不创建 worker、定时任务或客户端；过期在访问时处理，终态不保留代码。`MessageEventDispatchService` 在消息日志和普通命令权限检查之前消费代码。配置基线变更或平台切换撤销等待态，`gateway-platform` 分区及 fallback 停机清空会话。验证入口：`QQAdminBindingServiceTest`。
+
+## 群目录与批量目标
+
+`PlatformGroupDirectoryService` 由 core 持有，只接受中立观察；外部查询借用当前 connector，磁盘经 config Store，周期任务由 `PlatformGroupDirectoryTasker` 负责。每轮最多刷新一个已知群，至少间隔 2.1 秒，两个接口分别低于 30 QPM。重启/连接代际变更重新排队；成功信息每六小时更新、临时失败五分钟重试，白名单拒绝停止该端点自动重试，手动刷新每分钟一次可重新探测。事件先合并内存，周期落盘；备注保存成功后才确认，坏文件不覆盖，文件错误公开到目录状态。
+
+目录最多 10000 条，按 AppID 隔离。退出群禁选但不删已有订阅；通知关闭仍可配置订阅，并在 UI 提示。新通知事件优先于在途资料响应。每次新增最多 100 个群，提交前和外部元数据准备后复核连接代际。`DynamicService.prepareSubscriptionName`/`PgcService.prepareSubscription` 只准备一次外部元数据，绑定由 BiliData 候选事务一次提交；direct/groupRef 来源模型与容量限制保持一致。外部关注行为无法随本地磁盘失败回滚，本地目标不能出现部分保存。

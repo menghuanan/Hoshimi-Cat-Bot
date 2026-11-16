@@ -76,6 +76,7 @@ object CapabilityGuard {
                 adapter.canAtAll(contact)
             } == true
             PlatformCapability.LINK_RESOLVE -> true
+            PlatformCapability.GROUP_DIRECTORY -> adapter.runtimeStatus().connected
         }
     }
 }

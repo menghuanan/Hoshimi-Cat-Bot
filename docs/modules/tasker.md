@@ -153,3 +153,7 @@ WebUI 热重载应用 `BiliConfig.yml` 后，读取启动期缓存的 Tasker 必
 - [ ] 新配置、数据结构、资源、协程、客户端、缓存、channel 或 native 对象是否有明确生命周期和归属边界？
 - [ ] 新外部行为是否同步更新相关 domain、architecture、development 或 operations 文档？
 - [ ] 新测试是否只验证源码行为或产物，不复制项目文档内容？
+
+## 群目录维护任务
+
+`PlatformGroupDirectoryTasker` 每三秒调用目录服务单次 tick，仅处理已知群；无官方连接时只保存已收到的记录。它登记在 TaskBootstrapService 的非关键自动恢复列表和 TaskResourcePolicyRegistry 的 STRICT 策略中，复用 BiliTasker 的启动、恢复预算与取消/等待，不创建独立定时线程。查询复用 connector transport 的超时和 token 生命周期。

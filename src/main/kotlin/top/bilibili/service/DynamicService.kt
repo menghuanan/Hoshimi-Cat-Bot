@@ -28,6 +28,25 @@ object DynamicService {
     private const val MAX_SUBSCRIPTIONS = 50000
     private const val MAX_CONTACTS_PER_UID = 1000
 
+    /** 批量订阅只准备一次 UP 元数据与外部关注；本地联系人必须由调用方一次候选事务提交。 */
+    suspend fun prepareSubscriptionName(uid: Long): String = mutex.withLock {
+        require(uid > 0) { "UID 必须是正整数" }
+        BiliDataRuntimeCoordinator.snapshot().dynamic[uid]?.name?.let { return@withLock it }
+        val (name, error) = resolveNewSubscriptionName(uid)
+        require(error == null && name != null) { error ?: "获取 UP 信息失败" }
+        name
+    }
+
+    /** 向隔离候选一次添加全部 direct 来源或一个 groupRef，复用联系人展开并校验原有容量上限。 */
+    fun bindPreparedSubscriptionIn(candidate: BiliDataWrapper, uid: Long, name: String, subjects: List<String>, groupName: String? = null) {
+        require(uid in candidate.dynamic || candidate.dynamic.size < MAX_SUBSCRIPTIONS) { "订阅数量已达上限" }
+        val subscription = candidate.dynamic.getOrPut(uid) { SubData(name) }
+        if (groupName != null) subscription.sourceRefs.add(groupSourceRef(groupName))
+        else subjects.forEach { subject -> subscription.sourceRefs.add(directSourceRef(requireNotNull(normalizeSubject(subject)))) }
+        rebuildContactsFromSources(subscription, candidate.group)
+        require(subscription.contacts.size <= MAX_CONTACTS_PER_UID) { "联系人数量超限" }
+    }
+
     // sourceRefs 统一订阅来源:
     // - direct:<contact>
     // - groupRef:<groupName>
@@ -339,6 +358,8 @@ object DynamicService {
             if (sourceRef !in subData.sourceRefs) return@forEach
             val oldContacts = subData.contacts.toSet()
             rebuildContactsFromSources(subData, candidate.group)
+            // 分组新增多个目标同样受每个 UID 的容量上限约束，任一超限拒绝整个候选。
+            require(subData.contacts.size <= MAX_CONTACTS_PER_UID) { "联系人数量超限" }
             cleanupRemovedContactFilters(candidate.filter, uid, oldContacts - subData.contacts)
         }
     }

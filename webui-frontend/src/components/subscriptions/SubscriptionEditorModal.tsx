@@ -2,6 +2,9 @@ import { useRef, useState, type FormEvent } from 'react'
 import { ModalPortal } from '../ModalPortal'
 import { useToast } from '../../hooks/useToast'
 import { formatPasswordErrorMessage } from '../../utils/errorMessages'
+import { usePlatformGroups } from '../../hooks/usePlatformGroups'
+import { GroupTargetPicker } from './GroupTargetPicker'
+import type { SubscriptionTargetPayload } from '../../subscriptions/subscriptionPayloads'
 
 type EditorAction = 'overview' | 'targets' | 'uids' | 'filters' | 'templates' | 'atall' | 'theme'
 type EditorFormMode = 'none' | 'target' | 'uid' | 'filter' | 'template' | 'atall'
@@ -18,7 +21,7 @@ type SubscriptionEditorActions = {
   saveTemplate: (itemId: string, draft: {key: string, type: string, name: string, content: string, targetGroups?: string[]}) => Promise<unknown>
   saveAtAll: (itemId: string, draft: {type: string, targetGroups: string[]}) => Promise<unknown>
   saveTheme: (itemId: string, draft: {color: string, targetGroups: string[]}) => Promise<unknown>
-  saveTarget: (itemId: string, draft: {targetGroup: string}) => Promise<unknown>
+  saveTarget: (itemId: string, draft: SubscriptionTargetPayload) => Promise<unknown>
   saveUid: (itemId: string, draft: {uid: string}) => Promise<unknown>
   removeConfig: (itemId: string, kind: 'filter' | 'template' | 'atall', key: string) => Promise<unknown>
   removeTarget: (itemId: string, key: string) => Promise<unknown>
@@ -306,6 +309,7 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
 
   /**
    * 推送群聊新增只接受正整数群号，后端再转换为平台 subject。
+   * 官方 QQ 使用目录多选分支，提交完整 subject 和连接代际。
    */
   const submitTarget = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -315,13 +319,19 @@ export function SubscriptionEditorModal({item, actions, onClose, onReload}: Subs
     }
     const form = new FormData(event.currentTarget)
     const targetGroup = String(form.get('targetGroup') || '').trim()
-    if (!isPositiveIntegerText(targetGroup)) {
+    const official = form.get('official') === 'true'
+    const targetGroups = form.getAll('officialTargets').map(String)
+    const directoryGeneration = String(form.get('directoryGeneration') || '')
+    if (official && (!directoryGeneration || !targetGroups.length)) {
+      setStatus('请至少选择一个群聊'); setStatusTone('error'); return
+    }
+    if (!official && !isPositiveIntegerText(targetGroup)) {
       setStatus('推送群聊必须是正整数')
       setStatusTone('error')
       return
     }
     try {
-      await actions.saveTarget(itemId, {targetGroup})
+      await actions.saveTarget(itemId, official ? {targetGroup: '', targetGroups, directoryGeneration} : {targetGroup})
       setFormMode('none')
       await openAction('targets')
       await onReload()
@@ -692,15 +702,35 @@ function AtAllForm({targets, draft, onSubmit, onCancel}: {targets: string[], dra
 
 /**
  * 推送群聊表单只暴露群号输入，完整 subject 由后端根据平台默认规则生成。
+ * 官方 QQ 共享群目录选择器；表单挂载期间轮询，保存期间禁止重复提交。
  */
-function TargetForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormElement>) => void, onCancel: () => void}) {
+function TargetForm({onSubmit, onCancel}: {onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>, onCancel: () => void}) {
+  const directory = usePlatformGroups(true)
+  const [pending, setPending] = useState(false)
+  const official = directory.data?.enabled === true
+  /** 保存全过程锁住表单，目录加载失败或平台尚未就绪时禁止写入。 */
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!directory.ready || pending) return
+    setPending(true)
+    try { await onSubmit(event) } finally { setPending(false) }
+  }
   return (
-    <form className="grid gap-3" onSubmit={onSubmit}>
-      <label className="grid gap-1 text-sm font-medium text-slate-700">
+    <form className="grid gap-3" onSubmit={submit}>
+      {official ? <>
+        <GroupTargetPicker directory={directory} label="推送群聊" />
+        <input type="hidden" name="official" value="true" />
+        <input type="hidden" name="directoryGeneration" value={directory.data!.generation} />
+        {directory.selected.map((value) => <input key={value} type="hidden" name="officialTargets" value={value} />)}
+      </> : <label className="grid gap-1 text-sm font-medium text-slate-700">
         <span>推送群聊</span>
         <input name="targetGroup" inputMode="numeric" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
-      </label>
-      <FormButtons submitText="保存推送群聊" onCancel={onCancel} />
+      </label>}
+      {!official && directory.error ? <p role="alert" className="text-sm text-rose-700">{directory.error}</p> : null}
+      <div className="flex justify-end gap-3">
+        <button type="button" onClick={onCancel} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">取消</button>
+        <button type="submit" disabled={!directory.ready || pending} className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{pending ? '保存中…' : '保存推送群聊'}</button>
+      </div>
     </form>
   )
 }

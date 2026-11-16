@@ -1,6 +1,11 @@
 package top.bilibili.webui.service
 
 import top.bilibili.AtAllType
+import top.bilibili.Bangumi
+import top.bilibili.config.ConfigManager
+import top.bilibili.connector.PlatformAdapterKind
+import kotlinx.coroutines.CancellationException
+import top.bilibili.core.BiliBiliBot
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
@@ -44,6 +49,7 @@ import top.bilibili.webui.model.WebUiSubscriptionUidSaveRequestDto
 /**
  * WebUI 订阅管理 facade 复用业务服务写入运行态，再通过 BiliConfigManager 统一持久化业务数据。
  * 时钟通过构造参数注入，便于卡片管理更新时间在测试中保持确定性。
+ * 官方群多选使用可注入的元数据准备与目录校验，外部关注完成后只提交一次本地候选事务。
  */
 class WebUiSubscriptionManagementFacade(
     private val configProvider: () -> BiliConfig = { runCatching { BiliConfigManager.config }.getOrDefault(BiliConfig()) },
@@ -66,6 +72,10 @@ class WebUiSubscriptionManagementFacade(
     private val deletePgcAction: suspend (String, String) -> String = { id, subject ->
         PgcService.delPgc(id, subject)
     },
+    private val officialPlatform: () -> Boolean = { runCatching { ConfigManager.botConfig.selectedAdapterKind() == PlatformAdapterKind.QQ_OFFICIAL }.getOrDefault(false) },
+    private val validateGroupSelection: (List<String>, String) -> Unit = { subjects, generation -> BiliBiliBot.groupDirectory.validateSelection(subjects, generation) },
+    private val prepareDynamic: suspend (Long) -> String = DynamicService::prepareSubscriptionName,
+    private val prepareBangumi: suspend (String) -> Bangumi = PgcService::prepareSubscription,
 ) {
     companion object {
         /** 稳定默认函数值用于区分生产候选保存与测试注入的失败模拟。 */
@@ -125,6 +135,10 @@ class WebUiSubscriptionManagementFacade(
      * 按页面选择的类型分发新增订阅请求，并保持各类型的校验口径和页面文案一致。
      */
     suspend fun createSubscription(request: WebUiSubscriptionCreateRequestDto): WebUiSubscriptionMutationResultDto {
+        // 多选只能通过已提交的官方目录验证；非官方平台继续保持原单群兼容语义。
+        if (officialPlatform() || request.targetGroups.isNotEmpty() || request.directoryGeneration.isNotBlank()) {
+            return createOfficialSubscription(request)
+        }
         return when (request.type.trim().lowercase()) {
             "dynamic", "subscription" -> createDynamicSubscription(request)
             "group" -> createGroupSubscription(request)
@@ -176,11 +190,15 @@ class WebUiSubscriptionManagementFacade(
 
     /**
      * 新增推送群聊按卡片类型分发到底层来源模型，输入只允许正整数群号。
+     * 官方目录模式追加完整 subject 列表，保留旧数字入口的兼容行为。
      */
     suspend fun saveSubscriptionTarget(
         itemId: String,
         request: WebUiSubscriptionTargetSaveRequestDto,
     ): WebUiSubscriptionMutationResultDto {
+        if (officialPlatform() || request.targetGroups.isNotEmpty() || request.directoryGeneration.isNotBlank()) {
+            return addOfficialTargets(itemId, request)
+        }
         val context = resolveEditContext(itemId) ?: return validationFailure("订阅不存在或不支持推送群聊")
         val subject = normalizePositiveGroupTarget(request.targetGroup) ?: return validationFailure("推送群聊必须是正整数")
         val result = when (context.kind) {
@@ -191,6 +209,91 @@ class WebUiSubscriptionManagementFacade(
         }
         if (!result.success) return result
         return result
+    }
+
+    /** 官方创建的全部目标在同一候选事务绑定；重复目标幂等，落盘失败不会留下部分群订阅。 */
+    private suspend fun createOfficialSubscription(request: WebUiSubscriptionCreateRequestDto): WebUiSubscriptionMutationResultDto {
+        return try {
+            require(officialPlatform()) { "当前平台不支持官方群选择，请刷新页面" }
+            val kind = request.type.trim().lowercase()
+            require(kind in setOf("dynamic", "subscription", "bangumi", "group")) { "添加类型无效" }
+            val subjects = officialTargets(request.targetGroups, request.targetGroup)
+            require(kind == "group" || subjects.isNotEmpty()) { "目标群聊必须至少选择一个" }
+            validateGroupSelection(subjects, request.directoryGeneration)
+            val uid = request.uid.trim().takeIf { it.isNotBlank() }?.let { it.toLongOrNull()?.takeIf { value -> value > 0 } ?: error("UID 必须是正整数") }
+            val groupName = request.groupName.trim()
+            require(kind != "group" || groupName.isNotBlank()) { "分组名必须填写" }
+            require(kind !in setOf("dynamic", "subscription") || uid != null) { "订阅 UID 必须填写" }
+            require(kind != "group" || uid == null || subjects.isNotEmpty()) { "填写分组 UID 时必须至少选择一个群聊" }
+            val name = if (uid != null && kind != "bangumi") prepareDynamic(uid) else null
+            val bangumi = if (kind == "bangumi") prepareBangumi(request.bangumiId.trim().lowercase()) else null
+            val itemId = when (kind) { "group" -> "group:$groupName"; "bangumi" -> "bangumi:${bangumi!!.seasonId}"; else -> "dynamic:$uid" }
+            // 与平台配置事务串行，防止网络准备期间换 AppID 后将旧目标提交到新应用。
+            ConfigManager.withConfigLock {
+                validateGroupSelection(subjects, request.directoryGeneration)
+                mutateDataResult { candidate ->
+                    when (kind) {
+                        "group" -> {
+                            val group = candidate.group.getOrPut(groupName) { Group(groupName, 0L, mutableSetOf(), "", mutableSetOf(), mutableSetOf()) }
+                            group.contacts.addAll(subjects)
+                            // 显式填写 UID 时必须有推送目标，避免成功返回却悄悄忽略 UID。
+                            require(uid == null || group.contacts.isNotEmpty()) { "填写分组 UID 时必须至少选择一个群聊" }
+                            DynamicService.refreshGroupRefIn(candidate, groupName)
+                            if (uid != null && name != null) DynamicService.bindPreparedSubscriptionIn(candidate, uid, name, emptyList(), groupName)
+                        }
+                        "bangumi" -> candidate.bangumi.getOrPut(bangumi!!.seasonId) { bangumi.copy(contacts = mutableSetOf()) }.contacts.addAll(subjects)
+                        else -> DynamicService.bindPreparedSubscriptionIn(candidate, uid!!, name!!, subjects)
+                    }
+                    candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider()
+                    success(itemId, "订阅已保存（${subjects.size} 个目标群聊）")
+                }.toMutationDto()
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: IllegalArgumentException) { validationFailure(error.message ?: "订阅参数无效") }
+        catch (error: IllegalStateException) { validationFailure(error.message ?: "订阅准备失败") }
+    }
+
+    /** 已有订阅批量追加群目标无需重复请求 B 站，保留 direct/groupRef 来源及其他目标配置。 */
+    private fun addOfficialTargets(itemId: String, request: WebUiSubscriptionTargetSaveRequestDto): WebUiSubscriptionMutationResultDto {
+        return try {
+            require(officialPlatform()) { "当前平台不支持官方群选择" }
+            val subjects = officialTargets(request.targetGroups, request.targetGroup)
+            require(subjects.isNotEmpty()) { "目标群聊必须至少选择一个" }
+            ConfigManager.withConfigLock {
+                validateGroupSelection(subjects, request.directoryGeneration)
+                mutateDataResult { candidate ->
+                    val parts = itemId.split(":", limit = 2)
+                    require(parts.size == 2) { "订阅标识无效" }
+                    when (parts[0]) {
+                        "dynamic" -> {
+                            val uid = parts[1].toLongOrNull() ?: error("UID 无效")
+                            val existing = candidate.dynamic[uid] ?: error("订阅不存在")
+                            DynamicService.bindPreparedSubscriptionIn(candidate, uid, existing.name, subjects)
+                        }
+                        "group" -> {
+                            val group = candidate.group[parts[1]] ?: error("分组不存在")
+                            group.contacts.addAll(subjects)
+                            DynamicService.refreshGroupRefIn(candidate, parts[1])
+                        }
+                        "bangumi" -> {
+                            val existing = candidate.bangumi[parts[1].removePrefix("ss").toLongOrNull()] ?: error("番剧订阅不存在")
+                            existing.contacts.addAll(subjects)
+                        }
+                        else -> error("订阅类型无效")
+                    }
+                    candidate.subscriptionCardUpdatedAt[itemId] = currentTimeMillisProvider()
+                    success(itemId, "推送群聊已保存")
+                }.toMutationDto()
+            }
+        } catch (error: IllegalArgumentException) { validationFailure(error.message ?: "目标群聊无效") }
+        catch (error: IllegalStateException) { validationFailure(error.message ?: "目标群聊无效") }
+    }
+
+    /** 多值与旧单值不能冲突；目录 subject 原样校验，不自动将裸 OpenID 归到其他平台。 */
+    private fun officialTargets(multiple: List<String>, single: String): List<String> {
+        require(multiple.size <= 100) { "目标群聊最多选择 100 个" }
+        require(multiple.isEmpty() || single.isBlank()) { "不能同时提交单个目标和多个目标" }
+        return (if (multiple.isEmpty()) listOf(single).filter { it.isNotBlank() } else multiple).map { it.trim() }.distinct()
     }
 
     /**
