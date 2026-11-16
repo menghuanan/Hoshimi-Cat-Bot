@@ -39,6 +39,7 @@
 ## 构建约束
 
 - 构建基线固定为 Gradle wrapper 8.5、JDK 17（完整 JDK，包含 `jmods`）和 `webui-frontend/.node-version` 指定的 Node.js；wrapper 通过 `distributionSha256Sum` 校验发行包。
+- `distributionSha256Sum` 必须使用 Gradle 官方发布的 64 位小写十六进制摘要；当前 Wrapper 按大小写敏感的字符串比较。修改该配置后须使用无已安装发行版和 `.ok` 标记的独立 `GRADLE_USER_HOME` 验证首次安装，不能只依赖本机已安装缓存通过的构建。
 - `gradle.properties` 中的 `org.gradle.jvmargs` 只影响构建期 Gradle daemon，不进入发行包运行参数；调整时必须同时验证完整包与测试包。
 - 完整包入口为 `./gradlew fullPackage`，按构建机平台产出内置 jlink runtime 的 Windows zip 或 Linux tar.gz。
 - 测试包入口为 `./gradlew testPackage`，产出 `hoshimi-cat-bot-windows-x64-test-v<版本>.zip` 或 `hoshimi-cat-bot-linux-x64-test-v<版本>.tar.gz`，不内置 runtime，要求目标机器安装 JDK 17。
@@ -57,6 +58,7 @@
 ## CI 约束
 
 - CI workflow 必须保持可重复执行，不依赖本地未提交文件。
+- 环境诊断的日志管道必须启用 `pipefail`；Wrapper 或工具链探测失败应立即阻断后续构建，保留诊断日志，并在 CI 摘要中单独展示环境步骤的状态。
 - CI 的 `Build Test Package` 阶段执行 `./gradlew testPackage`，验证测试包在没有内置 runtime 时仍可产出并上传归档。
 - 新增缓存必须有 key 失效策略，不能缓存 secrets 或临时诊断输出。
 - 新增矩阵维度必须说明覆盖目的，避免无意义拉长反馈时间。

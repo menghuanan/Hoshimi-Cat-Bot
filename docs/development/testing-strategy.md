@@ -121,6 +121,8 @@ Skia native memory 证据测试：
 
 修改 Dockerfile、entrypoint、Gradle 发布任务或 CI 时必须运行。
 
+`CiWorkflowObservabilityTest` 同时检查 Wrapper 摘要的小写 SHA-256 格式和环境诊断管道的失败传播。修改 Wrapper 配置时，还须在独立缓存中执行 `gradlew --version`，确认首次安装能通过校验；允许预置经官方摘要核验的发行 ZIP，但不能预置解压目录或 `.ok` 标记。
+
 ### Utils 与 Resources
 
 代表测试：

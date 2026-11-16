@@ -52,7 +52,10 @@ jobs:
 
     # 步骤 5：先采集环境信息。
     - name: Environment Diagnostics
+      id: environment_diagnostics
       run: |
+        # tee 只负责保存日志，工具链探测失败必须让当前步骤失败并阻断后续构建。
+        set -o pipefail
         chmod +x gradlew
         mkdir -p diagnostics/ci
         {
@@ -129,6 +132,7 @@ jobs:
           echo "- Event: $GITHUB_EVENT_NAME"
           echo "- Ref: $GITHUB_REF"
           echo "- SHA: $GITHUB_SHA"
+          echo "- Environment step: ${{ steps.environment_diagnostics.outcome }}"
           echo "- Compile step: ${{ steps.gradle_compile.outcome }}"
           echo "- Test step: ${{ steps.gradle_test.outcome }}"
           echo "- Package step: ${{ steps.gradle_package.outcome }}"
